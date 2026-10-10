@@ -121,6 +121,7 @@ function General({ status }: { status: Status }) {
   const [enhanced, setEnhanced] = useState(false);
   const [daemon, setDaemon] = useState(false);
   const [login, setLogin] = useState(false);
+  const [traySpeed, setTraySpeed] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [mode, setMode, modeErr] = useSetting<string>("capture.mode", "system-proxy");
@@ -134,6 +135,7 @@ function General({ status }: { status: Status }) {
     EnhancedService.Enabled().then(setEnhanced);
     EnhancedService.DaemonInstalled().then(setDaemon);
     SettingsService.LaunchAtLogin().then(setLogin);
+    SettingsService.TraySpeed().then(setTraySpeed);
   }, []);
   useEffect(() => {
     load();
@@ -194,6 +196,9 @@ function General({ status }: { status: Status }) {
         <div className="section-title">应用</div>
         <Row title="开机时启动" desc="登录 macOS 后自动打开 Clash One。">
           <Switch on={login} onChange={(v) => run("login", SettingsService.SetLaunchAtLogin(v))} />
+        </Row>
+        <Row title="菜单栏显示网速" desc="在菜单栏图标旁显示上传与下载速度。">
+          <Switch on={traySpeed} onChange={(v) => run("tray", SettingsService.SetTraySpeed(v))} />
         </Row>
       </div>
     </>

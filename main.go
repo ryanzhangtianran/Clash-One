@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/ryanzhangtianran/Clash-One/internal/core"
 	"github.com/ryanzhangtianran/Clash-One/internal/profile"
@@ -15,6 +16,9 @@ import (
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed build/tray.png
+var trayIcon []byte
 
 var modes = []struct{ key, label string }{
 	{"rule", "规则判定"},
@@ -39,7 +43,7 @@ func main() {
 	sysProxy := &SystemProxyService{core: svc.core, settings: settings}
 	enhanced := &EnhancedService{core: svc.core, profiles: profiles, settings: settings}
 	devices := &DeviceService{core: svc, profiles: profiles}
-	settingsSvc := &SettingsService{core: svc}
+	settingsSvc := &SettingsService{core: svc, settings: settings}
 	if err := profiles.WriteConfig(); err != nil {
 		log.Printf("build config: %v (keeping the previous config.yaml)", err)
 	}
@@ -85,7 +89,20 @@ func main() {
 	})
 
 	tray := app.SystemTray.New()
-	tray.SetLabel("Clash One")
+	tray.SetTemplateIcon(trayIcon)
+	var shown struct { // what the menu bar item displays; traffic and mode arrive on different goroutines
+		sync.Mutex
+		t               Traffic
+		mode            string
+		proxy, enhanced bool
+	}
+	shown.proxy, shown.enhanced = sysProxy.Enabled(), enhanced.Enabled()
+	redraw := func(change func()) {
+		shown.Lock()
+		defer shown.Unlock()
+		change()
+		showTray(tray, shown.t, shown.mode, shown.proxy || shown.enhanced, !settings.Get().HideTraySpeed)
+	}
 	menu := application.NewMenu()
 	items := map[string]*application.MenuItem{}
 	for _, m := range modes {
@@ -105,6 +122,7 @@ func main() {
 	sysProxy.onChange = func(on bool) {
 		proxyItem.SetChecked(on)
 		menu.Update()
+		redraw(func() { shown.proxy = on })
 	}
 	enhancedItem := menu.AddCheckbox("增强模式", settings.Get().Enhanced).OnClick(func(ctx *application.Context) {
 		if err := enhanced.SetEnabled(ctx.ClickedMenuItem().Checked()); err != nil {
@@ -115,6 +133,7 @@ func main() {
 	enhanced.onChange = func(on bool) {
 		enhancedItem.SetChecked(on)
 		menu.Update()
+		redraw(func() { shown.enhanced = on })
 	}
 	menu.AddSeparator()
 	menu.Add("打开 Clash One").OnClick(func(*application.Context) {
@@ -129,24 +148,23 @@ func main() {
 			item.SetChecked(key == mode)
 		}
 		menu.Update()
+		redraw(func() { shown.mode = mode })
 	}
-	svc.onTraffic = func(t Traffic) {
-		tray.SetLabel(fmt.Sprintf("↑%s ↓%s", rate(t.Up), rate(t.Down)))
-	}
+	svc.onTraffic = func(t Traffic) { redraw(func() { shown.t = t }) }
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
 }
 
-// rate formats bytes per second compactly for the menu bar, e.g. 0, 12K, 3.4M.
+// rate formats bytes per second for the menu bar, at most 9 characters: 0 KB/s, 512 KB/s, 3.4 MB/s.
 func rate(b int64) string {
-	switch {
-	case b < 1000:
-		return fmt.Sprintf("%dB", b)
-	case b < 1000*1000:
-		return fmt.Sprintf("%.0fK", float64(b)/1000)
+	switch mb := float64(b) / 1e6; {
+	case b < 1e6:
+		return fmt.Sprintf("%d KB/s", b/1000)
+	case mb < 99.95:
+		return fmt.Sprintf("%.1f MB/s", mb)
 	default:
-		return fmt.Sprintf("%.1fM", float64(b)/1000/1000)
+		return fmt.Sprintf("%.0f MB/s", mb)
 	}
 }

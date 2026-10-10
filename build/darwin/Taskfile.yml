@@ -171,26 +171,26 @@ tasks:
     cmds:
       # A reused bundle can acquire Finder metadata in synced folders. Build a
       # fresh bundle so codesign never has to replace a contaminated signature.
-      - test -n "{{.BIN_DIR}}" && test -n "{{.APP_NAME}}" && rm -rf -- "{{.BIN_DIR}}/{{.APP_NAME}}.app"
-      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
-      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
-      - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
+      - test -n "{{.BIN_DIR}}" && test -n "{{.APP_NAME}}" && rm -rf -- "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app"
+      - mkdir -p "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/MacOS"
+      - mkdir -p "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/Resources"
+      - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/Resources"
       - |
         if [ -f build/darwin/Assets.car ]; then
-          cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
+          cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/Resources"
         fi
-      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
-      - cp "{{.BIN_DIR}}/clash-one-core" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
-      - cp build/darwin/Info.plist "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents"
+      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/MacOS"
+      - cp "{{.BIN_DIR}}/clash-one-core" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/MacOS"
+      - cp build/darwin/Info.plist "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents"
       - task: '{{if eq OS "darwin"}}codesign:adhoc{{else}}codesign:skip{{end}}'
 
   codesign:adhoc:
     summary: Ad-hoc signs the app bundle (macOS only)
     internal: true
     cmds:
-      - xattr -cr "{{.BIN_DIR}}/{{.APP_NAME}}.app"
-      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app"
-      - codesign --verify --deep --strict "{{.BIN_DIR}}/{{.APP_NAME}}.app"
+      - xattr -cr "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app"
+      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app"
+      - codesign --verify --deep --strict "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app"
 
   codesign:skip:
     summary: Skips codesigning when cross-compiling
@@ -201,21 +201,21 @@ tasks:
   run:
     cmds:
       - wails3 tool prepare-macos-output --dir "{{.BIN_DIR}}"
-      - test -n "{{.BIN_DIR}}" && test -n "{{.APP_NAME}}" && rm -rf -- "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app"
-      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
-      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
-      - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
+      - test -n "{{.BIN_DIR}}" && test -n "{{.APP_NAME}}" && rm -rf -- "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app"
+      - mkdir -p "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS"
+      - mkdir -p "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/Resources"
+      - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/Resources"
       - |
         if [ -f build/darwin/Assets.car ]; then
-          cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
+          cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/Resources"
         fi
-      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
-      - cp "{{.BIN_DIR}}/clash-one-core" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
-      - cp "build/darwin/Info.dev.plist" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Info.plist"
-      - xattr -cr "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app"
-      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app"
-      - codesign --verify --deep --strict "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app"
-      - '"{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS/{{.APP_NAME}}"'
+      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS"
+      - cp "{{.BIN_DIR}}/clash-one-core" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS"
+      - cp "build/darwin/Info.dev.plist" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/Info.plist"
+      - xattr -cr "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app"
+      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app"
+      - codesign --verify --deep --strict "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app"
+      - '"{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS/{{.APP_NAME}}"'
 
   sign:
     summary: Signs the application bundle with Developer ID
@@ -226,7 +226,7 @@ tasks:
     deps:
       - task: package
     cmds:
-      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app" {{.CLI_ARGS}}
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app" {{.CLI_ARGS}}
 
   sign:notarize:
     summary: Signs and notarizes the application bundle
@@ -239,4 +239,4 @@ tasks:
     deps:
       - task: package
     cmds:
-      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}.app" --notarize {{.CLI_ARGS}}
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app" --notarize {{.CLI_ARGS}}

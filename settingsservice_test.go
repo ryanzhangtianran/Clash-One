@@ -72,3 +72,11 @@ func TestAppExecutable(t *testing.T) {
 		t.Fatal("a folder that isn't an app must be rejected")
 	}
 }
+
+func TestRate(t *testing.T) {
+	for b, want := range map[int64]string{0: "0 KB/s", 999_999: "999 KB/s", 1_000_000: "1.0 MB/s", 99_949_999: "99.9 MB/s", 99_950_000: "100 MB/s"} {
+		if got := rate(b); got != want {
+			t.Errorf("rate(%d) = %q, want %q", b, got, want)
+		}
+	}
+}

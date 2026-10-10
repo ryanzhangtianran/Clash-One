@@ -19,7 +19,8 @@ const loginItemLabel = "com.ryanzhangtianran.clashone"
 
 // SettingsService covers the GUI-side settings: launch at login and the about page.
 type SettingsService struct {
-	core *CoreService
+	core     *CoreService
+	settings *settingsFile
 }
 
 type About struct {
@@ -60,6 +61,13 @@ func (s *SettingsService) LaunchAtLogin() bool {
 	}
 	_, err = os.Stat(p)
 	return err == nil
+}
+
+// TraySpeed reports whether the menu bar shows the current speed; it applies on the next second's update.
+func (s *SettingsService) TraySpeed() bool { return !s.settings.Get().HideTraySpeed }
+
+func (s *SettingsService) SetTraySpeed(on bool) error {
+	return s.settings.Update(func(st *Settings) { st.HideTraySpeed = !on })
 }
 
 // SetLaunchAtLogin installs or removes a LaunchAgent that opens this app at login.

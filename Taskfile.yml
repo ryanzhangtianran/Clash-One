@@ -1,7 +1,8 @@
 version: '3'
 
 vars:
-  APP_NAME: "clash-one"
+  APP_NAME: "clash-one" # executable name
+  BUNDLE_NAME: "Clash One" # the .app shown in Finder
   BIN_DIR: "bin"
   # clash-one-core checkout, built into the app bundle next to the GUI binary
   CORE_DIR: '{{.CORE_DIR | default "../clash-one-core"}}'

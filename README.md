@@ -14,7 +14,7 @@ go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
 
 ```bash
 wails3 dev        # 开发模式（前端热更新）
-wails3 package    # 产出 bin/clash-one.app，内核打包在 Contents/MacOS/clash-one-core
+wails3 package    # 产出 bin/Clash One.app，内核打包在 Contents/MacOS/clash-one-core
 ```
 
 ## 结构

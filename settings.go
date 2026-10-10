@@ -11,6 +11,8 @@ import (
 type Settings struct {
 	SystemProxy bool `json:"systemProxy"`
 	Enhanced    bool `json:"enhanced"`
+	// HideTraySpeed hides the upload/download speed next to the menu bar icon.
+	HideTraySpeed bool `json:"hideTraySpeed"`
 }
 
 type settingsFile struct {
