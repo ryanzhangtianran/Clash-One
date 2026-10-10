@@ -4,7 +4,7 @@ import { CoreService, EnhancedService, SystemProxyService } from "../bindings/gi
 import type { Activity as ActivityData, LogLine, Status, Traffic } from "../bindings/github.com/ryanzhangtianran/Clash-One";
 import Activity from "./Activity";
 import Proxies from "./Proxies";
-import Connections from "./Connections";
+import Dashboard from "./Dashboard";
 import Rules from "./Rules";
 import Tunnels from "./Tunnels";
 import Devices from "./Devices";
@@ -22,11 +22,15 @@ const icon = (d: string) => (
 
 type Page = { key: string; title: string; icon: JSX.Element; ready: boolean };
 const nav: { section?: string; pages: Page[] }[] = [
-  { pages: [{ key: "activity", title: "活动", ready: true, icon: icon("M3 12h4l3-7 4 14 3-7h4") }] },
+  {
+    pages: [
+      { key: "activity", title: "活动", ready: true, icon: icon("M3 12h4l3-7 4 14 3-7h4") },
+      { key: "dashboard", title: "面板", ready: true, icon: icon("M4 5h16v14H4zM4 9h16M9 9v10") },
+    ],
+  },
   {
     section: "客户端",
     pages: [
-      { key: "connections", title: "连接", ready: true, icon: icon("M4 5h16v14H4zM8 10l2 2-2 2M12 14h4") },
       { key: "devices", title: "设备", ready: true, icon: icon("M3 14h18v5H3zM7 16.5h.01M7 14l4-9M14 9a4 4 0 0 1 5 0") },
     ],
   },
@@ -39,7 +43,7 @@ const nav: { section?: string; pages: Page[] }[] = [
     ],
   },
 ];
-const more: Page = { key: "settings", title: "更多", ready: true, icon: icon("M4 7h10M18 7h2M4 17h2M10 17h10M16 5v4M8 15v4") };
+const settingsPage: Page = { key: "settings", title: "设置", ready: true, icon: icon("M4 7h10M18 7h2M4 17h2M10 17h10M16 5v4M8 15v4") };
 
 export default function App() {
   const [current, setCurrent] = useState("activity");
@@ -96,7 +100,7 @@ export default function App() {
           </div>
         ))}
         <div className="bottom">
-          <button className={`item ${current === more.key ? "active" : ""}`} onClick={() => setCurrent(more.key)}>{more.icon}{more.title}</button>
+          <button className={`item ${current === settingsPage.key ? "active" : ""}`} onClick={() => setCurrent(settingsPage.key)}>{settingsPage.icon}{settingsPage.title}</button>
         </div>
       </nav>
       <main className="main">
@@ -131,7 +135,7 @@ export default function App() {
           <ErrorBoundary key={current} onReset={() => setCurrent("activity")}>
           {current === "activity" && <Activity status={status} activity={activity} history={history} />}
           {current === "proxies" && <Proxies status={status} />}
-          {current === "connections" && <Connections status={status} />}
+          {current === "dashboard" && <Dashboard status={status} logs={logs} onClearLogs={() => setLogs([])} />}
           {current === "rules" && <Rules status={status} />}
           {current === "tunnels" && <Tunnels status={status} />}
           {current === "settings" && <Settings key={current} status={status} logs={logs} onClearLogs={() => setLogs([])} />}

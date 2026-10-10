@@ -230,3 +230,25 @@ tr.muted td { color: var(--text-2); text-decoration: line-through; }
 .picker-menu { position: absolute; right: 0; top: 100%; width: 320px; z-index: 30; }
 .picker-menu input { width: 100%; margin-bottom: 4px; }
 .picker-list { max-height: 260px; overflow: auto; }
+
+/* dashboard */
+.dash { display: flex; flex-direction: column; height: calc(100vh - 46px - 22px); }
+.dash-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.dash-body { flex: 1; min-height: 0; display: flex; gap: 12px; }
+.dash-side { width: 200px; flex: none; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.dash-side .seg { margin-bottom: 8px; }
+.dash-item { display: flex; justify-content: space-between; gap: 8px; padding: 5px 8px; border: 0; border-radius: 6px; background: none; text-align: left; font-size: 12px; }
+.dash-item:hover { background: var(--hover); }
+.dash-item.active { background: var(--active); font-weight: 600; }
+.dash-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-table { flex: 1; min-width: 0; overflow: auto; background: var(--card); border-radius: 12px; border: 1px solid var(--card-line); }
+.dash-table .table th { position: sticky; top: 0; background: var(--card); }
+.dash-table tr:hover td { background: var(--hover); }
+.row-selected td { background: var(--active) !important; }
+.method { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; color: #fff; background: #8e8e93; }
+.m-https { background: #f59e0b; } .m-http { background: #22c55e; } .m-quic { background: #8b5cf6; } .m-udp { background: #0ea5e9; }
+.dash-detail { margin-top: 10px; padding: 10px 14px; border-radius: 12px; background: var(--card); border: 1px solid var(--card-line); }
+.detail-grid { display: grid; grid-template-columns: 90px 1fr 90px 1fr; gap: 4px 12px; margin-top: 8px; font-size: 12px; }
+.selectable { user-select: text; -webkit-user-select: text; word-break: break-all; }
+.dash-toolbar { display: flex; gap: 8px; padding-top: 10px; }
+.menu.up { top: auto; bottom: 100%; }

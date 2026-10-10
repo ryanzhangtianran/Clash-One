@@ -88,6 +88,19 @@ func (s *CoreService) Connections() ([]Conn, error) {
 	return conns, nil
 }
 
+// CloseAll closes every live connection.
+func (s *CoreService) CloseAll() error {
+	return s.core.Do(context.Background(), http.MethodDelete, "/connections", nil, nil)
+}
+
+// Reload re-applies the current config (profile and override) to the core.
+func (s *CoreService) Reload() error {
+	if s.onReady == nil {
+		return nil
+	}
+	return s.onReady()
+}
+
 func (s *CoreService) CloseConnection(id string) error {
 	return s.core.Do(context.Background(), http.MethodDelete, "/connections/"+url.PathEscape(id), nil, nil)
 }

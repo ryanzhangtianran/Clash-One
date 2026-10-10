@@ -34,6 +34,22 @@ func TestConnectionService(t *testing.T) {
 	if len(conns) == 0 || conns[0].Host != "127.0.0.1" || conns[0].Chain == "" || conns[0].Rule == "" {
 		t.Fatalf("connection: %+v", conns)
 	}
+	go client.Get(srv.URL) // a second one, for CloseAll
+	time.Sleep(200 * time.Millisecond)
+	if err := s.CloseAll(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if left, _ := s.Connections(); len(left) != 0 {
+		t.Fatalf("CloseAll left %+v", left)
+	}
+	go client.Get(srv.URL)
+	for i := 0; i < 20; i++ {
+		if conns, _ = s.Connections(); len(conns) > 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err := s.CloseHost("127.0.0.1"); err != nil {
 		t.Fatal(err)
 	}
