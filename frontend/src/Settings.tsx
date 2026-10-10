@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { EnhancedService, ProfileService, SettingsService, SystemProxyService } from "../bindings/github.com/ryanzhangtianran/Clash-One";
-import type { About, LogLine, ProcessChoice, Status } from "../bindings/github.com/ryanzhangtianran/Clash-One";
+import { EnhancedService, ProfileService, SettingsService, SystemProxyService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import type { About, ProcessChoice, Status } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 import Profiles from "./Profiles";
-import Logs from "./Logs";
 
 const tiles = [
   { key: "general", title: "通用", desc: "系统代理、增强模式、端口、开机启动等基础设置。", color: "#3b82f6", icon: "M5 7h14M5 17h14M9 7a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM19 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0z" },
   { key: "dns", title: "DNS", desc: "DNS 模式、上游服务器、系统分域名 DNS 和 hosts。", color: "#f59e0b", icon: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM15 9l-2 4-4 2 2-4z" },
   { key: "profiles", title: "配置", desc: "订阅与本地配置，以及合并在其上的覆写。", color: "#8b5cf6", icon: "M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7" },
-  { key: "logs", title: "日志", desc: "内核实时日志。", color: "#10b981", icon: "M4 6h16M4 10h16M4 14h10M4 18h7" },
   { key: "about", title: "关于", desc: "版本、数据目录与特权服务状态。", color: "#ec4899", icon: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 11v6M12 7.5v.5" },
 ];
 
@@ -23,7 +21,7 @@ function Row({ title, desc, children }: { title: string; desc?: string; children
 }
 
 // Switch is WebKit's native toggle (<input type=checkbox switch>, Safari 17.4+).
-function Switch({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+export function Switch({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return <input type="checkbox" {...{ switch: "" }} checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />;
 }
 
@@ -35,10 +33,14 @@ function sameShape<T>(v: unknown, fallback: T): T {
 }
 
 // useSetting reads a dotted config value and writes it through the override.
-function useSetting<T>(path: string, fallback: T): [T, (v: T) => Promise<void>, string] {
+export function useSetting<T>(path: string, fallback: T): [T, (v: T) => Promise<void>, string] {
   const [value, setValue] = useState<T>(fallback);
   const [error, setError] = useState("");
-  useEffect(() => { ProfileService.Value(path).then((v) => setValue(sameShape(v, fallback))).catch(() => {}); }, [path]);
+  useEffect(() => {
+    const load = () => ProfileService.Value(path).then((v) => setValue(sameShape(v, fallback))).catch(() => {});
+    load();
+    return Events.On("setting", (e) => e.data === path && load()); // also changed from the menu bar
+  }, [path]);
   const save = (v: T) => {
     setError("");
     return ProfileService.Set(path, v).then(() => setValue(v)).catch((e) => setError(String(e)));
@@ -48,7 +50,7 @@ function useSetting<T>(path: string, fallback: T): [T, (v: T) => Promise<void>, 
 
 // ProcessPicker edits the enhanced-mode process list by picking running apps, networked
 // processes or an app from Finder; each change is saved right away.
-function ProcessPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+export function ProcessPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const [open, setOpen] = useState(false);
   const [choices, setChoices] = useState<ProcessChoice[]>([]);
   const [query, setQuery] = useState("");
@@ -155,31 +157,32 @@ function General({ status }: { status: Status }) {
       {[error, modeErr, procErr, portErr, logErr].filter(Boolean).map((e, i) => <div key={i} className="card error" style={{ marginBottom: 12 }}>{e}</div>)}
       <div className="card settings-card">
         <div className="section-title">接入</div>
-        <Row title="系统代理" desc="将 macOS 的 HTTP / HTTPS / SOCKS 代理指向本机代理端口，被其他程序改掉会自动恢复。">
+        <Row title="系统代理">
           <Switch on={sysProxy} disabled={!status.running} onChange={(v) => run("sys", SystemProxyService.SetEnabled(v))} />
         </Row>
-        <Row title="增强模式" desc="以 TUN 接管流量，包括不遵循系统代理的程序。首次开启需要管理员授权安装特权服务。">
+        <Row title="增强模式">
           <Switch on={enhanced} disabled={!status.running || busy === "enh"} onChange={(v) => run("enh", EnhancedService.SetEnabled(v))} />
         </Row>
-        <Row title="增强模式范围" desc="仅指定进程：只有这些进程及其子进程按规则分流，其余流量直连，DNS 不被接管。">
+        <Row title="增强模式范围">
           <div className="seg">
             <button className={scope === "all" ? "on" : ""} onClick={() => setMode("tun")}>全部流量</button>
             <button className={scope === "process" ? "on" : ""} onClick={() => setMode("process-tun")}>仅指定进程</button>
           </div>
         </Row>
         {scope === "process" && (
-          <Row title="指定进程" desc="选中的应用及其启动的子进程按规则分流，例如终端里运行的命令。">
+          <Row title="指定进程">
             <ProcessPicker value={processes ?? []} onChange={setProcesses} />
           </Row>
         )}
-        <Row title="特权服务" desc={daemon ? "已安装：内核以 root 身份由 launchd 运行，退出 Clash One 时关闭 TUN。" : "未安装：首次开启增强模式时安装。"}>
+        <Row title="特权服务">
+          <span className="muted">{daemon ? "已安装" : "未安装"}</span>
           {daemon && <button className="btn" disabled={!!busy} onClick={() => run("daemon", EnhancedService.Uninstall())}>{busy === "daemon" ? "卸载中…" : "卸载"}</button>}
         </Row>
       </div>
 
       <div className="card settings-card">
         <div className="section-title">内核</div>
-        <Row title="代理端口" desc="HTTP 与 SOCKS5 共用的 mixed-port；系统代理会跟随变化。">
+        <Row title="代理端口">
           <div className="inline">
             <input value={portText} onChange={(e) => setPortText(e.target.value)} style={{ width: 90 }} />
             <button className="btn" disabled={portText === String(port)} onClick={() => setPort(Number(portText))}>保存</button>
@@ -194,10 +197,10 @@ function General({ status }: { status: Status }) {
 
       <div className="card settings-card">
         <div className="section-title">应用</div>
-        <Row title="开机时启动" desc="登录 macOS 后自动打开 Clash One。">
+        <Row title="开机时启动">
           <Switch on={login} onChange={(v) => run("login", SettingsService.SetLaunchAtLogin(v))} />
         </Row>
-        <Row title="菜单栏显示网速" desc="在菜单栏图标旁显示上传与下载速度。">
+        <Row title="菜单栏显示网速">
           <Switch on={traySpeed} onChange={(v) => run("tray", SettingsService.SetTraySpeed(v))} />
         </Row>
       </div>
@@ -218,21 +221,21 @@ function Dns() {
     <>
       {[e1, e2, e3, e4, e5, e6].filter(Boolean).map((e, i) => <div key={i} className="card error" style={{ marginBottom: 12 }}>{e}</div>)}
       <div className="card settings-card">
-        <Row title="启用 DNS" desc="由内核解析域名；增强模式下劫持系统 DNS 时需要开启。"><Switch on={enable} onChange={setEnable} /></Row>
-        <Row title="模式" desc="fake-ip：返回虚拟 IP、按域名分流最准确；redir-host：返回真实 IP。">
+        <Row title="启用 DNS"><Switch on={enable} onChange={setEnable} /></Row>
+        <Row title="模式">
           <div className="seg">
             {["fake-ip", "redir-host"].map((m) => <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{m}</button>)}
           </div>
         </Row>
-        <Row title="上游服务器" desc="每行一个，支持 223.5.5.5、https://…/dns-query、tls://…、system 等写法。">
-          <div style={{ width: 320 }}>
-            <textarea className="code" rows={4} value={text} onChange={(e) => setText(e.target.value)} />
+        <Row title="上游服务器">
+          <div style={{ width: 320, display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+            <textarea className="code" rows={4} placeholder={"每行一个，如\n223.5.5.5\nhttps://1.12.12.12/dns-query"} value={text} onChange={(e) => setText(e.target.value)} style={{ marginTop: 0 }} />
             <button className="btn" onClick={() => setServers(text.split("\n").map((s) => s.trim()).filter(Boolean))}>保存</button>
           </div>
         </Row>
-        <Row title="跟随系统分域名 DNS" desc="公司 VPN、Tailscale 等为特定域名设置的 DNS 继续生效，这些域名不分配 fake-ip。"><Switch on={split} onChange={setSplit} /></Row>
-        <Row title="使用系统 hosts" desc="读取 /etc/hosts。"><Switch on={hosts} onChange={setHosts} /></Row>
-        <Row title="DNS 查询遵循规则" desc="DNS 请求本身也按规则走代理（respect-rules）。"><Switch on={respect} onChange={setRespect} /></Row>
+        <Row title="跟随系统分域名 DNS" desc="VPN 等为特定域名设置的 DNS 继续生效。"><Switch on={split} onChange={setSplit} /></Row>
+        <Row title="使用系统 hosts"><Switch on={hosts} onChange={setHosts} /></Row>
+        <Row title="DNS 查询遵循规则"><Switch on={respect} onChange={setRespect} /></Row>
       </div>
     </>
   );
@@ -252,29 +255,21 @@ function AboutPage() {
   );
 }
 
-export default function Settings({ status, logs, onClearLogs }: { status: Status; logs: LogLine[]; onClearLogs: () => void }) {
+export default function Settings({ status }: { status: Status }) {
   const [sub, setSub] = useState("");
   const tile = tiles.find((t) => t.key === sub);
-  if (tile) {
-    return (
-      <>
-        <button className="back" onClick={() => setSub("")}>‹ 设置</button>
-        {sub !== "profiles" && sub !== "logs" && <h1 className="page-title">{tile.title}</h1>}
-        {sub === "general" && <General status={status} />}
-        {sub === "dns" && <Dns />}
-        {sub === "profiles" && <Profiles />}
-        {sub === "logs" && <Logs lines={logs} onClear={onClearLogs} />}
-        {sub === "about" && <AboutPage />}
-      </>
-    );
-  }
+  useEffect(() => {
+    if (!tile) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setSub("");
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [tile]);
   return (
     <>
-      <h1 className="page-title">设置</h1>
       <div className="settings-grid">
         {tiles.map((t) => (
           <button key={t.key} className="settings-tile" onClick={() => setSub(t.key)}>
-            <span className="settings-icon" style={{ background: t.color }}>
+            <span className="settings-icon" style={{ "--c": t.color } as React.CSSProperties}>
               <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={t.icon} /></svg>
             </span>
             <span className="settings-name">{t.title}</span>
@@ -282,6 +277,20 @@ export default function Settings({ status, logs, onClearLogs }: { status: Status
           </button>
         ))}
       </div>
+      {tile && (
+        <div className="modal-bg" onClick={() => setSub("")}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-head"><div className="sheet-title">{tile.title}</div><div className="muted small">{tile.desc}</div></div>
+            <div className="sheet-body">
+              {sub === "general" && <General status={status} />}
+              {sub === "dns" && <Dns />}
+              {sub === "profiles" && <Profiles />}
+              {sub === "about" && <AboutPage />}
+            </div>
+            <div className="sheet-foot"><button className="btn primary" onClick={() => setSub("")}>完成</button></div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

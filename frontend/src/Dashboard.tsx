@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { CoreService } from "../bindings/github.com/ryanzhangtianran/Clash-One";
-import type { Conn, LogLine, Status, TempRule } from "../bindings/github.com/ryanzhangtianran/Clash-One";
+import { CoreService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import type { Conn, LogLine, Status, TempRule } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 import { RuleDialog, age } from "./RuleDialog";
 import Devices from "./Devices";
 import Logs from "./Logs";
@@ -75,10 +75,31 @@ export default function Dashboard({ status, logs, onClearLogs }: { status: Statu
   return (
     <div className="dash">
       <div className="dash-top">
-        <div className="seg big-seg" style={{ maxWidth: 420 }}>
+        <div className="seg big-seg">
           {tabs.map((t) => <button key={t} className={t === tab ? "on" : ""} onClick={() => setTab(t)}>{t}</button>)}
         </div>
-        {tab === "活动连接" && <input placeholder="搜索客户端、主机、规则、策略" value={query} onChange={(e) => setQuery(e.target.value)} style={{ width: 260 }} />}
+        {tab === "活动连接" && <input className="dash-search" placeholder="搜索客户端、主机、规则、策略" value={query} onChange={(e) => setQuery(e.target.value)} />}
+        {tab === "活动连接" && (
+          <div className="dash-actions">
+            <button className="btn" disabled={!status.running} onClick={() => run(CoreService.CloseAll())}>断开全部</button>
+            <button className="btn" disabled={!status.running} onClick={() => run(CoreService.Reload())}>重新载入</button>
+            <span className="tile-wrap">
+              <button className="btn" onClick={(e) => { e.stopPropagation(); setTempOpen(!tempOpen); }}>临时规则（{temp.length}）</button>
+              {tempOpen && (
+                <div className="menu members detail drop" onClick={(e) => e.stopPropagation()}>
+                  {temp.length === 0 && <div className="detail-head">没有临时规则，重载配置后会清空</div>}
+                  {temp.map((r) => (
+                    <div key={r.id} className="detail-row">
+                      <span>{r.type},{r.payload} → <b>{r.proxy}</b></span>
+                      <span className="muted">命中 {r.hits}</span>
+                      <button className="btn small-btn" onClick={() => CoreService.RemoveTempRule(r.id)}>删除</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </span>
+          </div>
+        )}
       </div>
       {error && <div className="error">{error}</div>}
 
@@ -103,18 +124,17 @@ export default function Dashboard({ status, logs, onClearLogs }: { status: Statu
             </aside>
             <div className="dash-table">
               <table className="table">
-                <thead><tr><th>客户端</th><th>规则</th><th>策略</th><th>上传</th><th>下载</th><th>时长</th><th>方法</th><th>地址</th></tr></thead>
+                <colgroup><col style={{ width: "13%" }} /><col /><col style={{ width: "19%" }} /><col style={{ width: 74 }} /><col style={{ width: 74 }} /><col style={{ width: 52 }} /></colgroup>
+                <thead><tr><th>客户端</th><th className="addr">地址</th><th>策略</th><th className="num">上传</th><th className="num">下载</th><th className="num">时长</th></tr></thead>
                 <tbody>
                   {shown.map((c) => (
                     <tr key={c.id} className={c.id === detail ? "row-selected" : ""} onClick={() => setDetail(c.id === detail ? "" : c.id)}>
                       <td title={c.path}>{client(c)}</td>
-                      <td title={c.rule}>{c.rule}</td>
-                      <td title={c.chain}>{c.chain}</td>
-                      <td>{sizeText(c.upload)}</td>
-                      <td>{sizeText(c.download)}</td>
-                      <td>{age(c.start)}</td>
-                      <td><span className={`method m-${method(c).toLowerCase()}`}>{method(c)}</span></td>
-                      <td title={`${c.host}:${c.port}`}>{c.host}:{c.port}</td>
+                      <td className="addr" title={`${c.host}:${c.port}`}><span className={`method m-${method(c).toLowerCase()}`}>{method(c)}</span>{c.host}:{c.port}</td>
+                      <td title={`${c.rule} → ${c.chain}`}>{c.chain}</td>
+                      <td className="num">{sizeText(c.upload)}</td>
+                      <td className="num">{sizeText(c.download)}</td>
+                      <td className="num">{age(c.start)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -123,26 +143,6 @@ export default function Dashboard({ status, logs, onClearLogs }: { status: Statu
             </div>
           </div>
           {current && <Detail c={current} onRule={() => setDialog(current)} onClose={() => setDetail("")} />}
-          <div className="dash-toolbar">
-            <button className="btn" disabled={!status.running} onClick={() => run(CoreService.CloseAll())}>断开全部</button>
-            <button className="btn" disabled={!status.running} onClick={() => run(CoreService.Reload())}>重新载入</button>
-            <button className="btn" disabled={!current} onClick={() => current && setDialog(current)}>代理控制</button>
-            <span className="tile-wrap">
-              <button className="btn" onClick={(e) => { e.stopPropagation(); setTempOpen(!tempOpen); }}>临时规则（{temp.length}）</button>
-              {tempOpen && (
-                <div className="menu members detail up" onClick={(e) => e.stopPropagation()}>
-                  {temp.length === 0 && <div className="detail-head">没有临时规则，重载配置后会清空</div>}
-                  {temp.map((r) => (
-                    <div key={r.id} className="detail-row">
-                      <span>{r.type},{r.payload} → <b>{r.proxy}</b></span>
-                      <span className="muted">命中 {r.hits}</span>
-                      <button className="btn small-btn" onClick={() => CoreService.RemoveTempRule(r.id)}>删除</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </span>
-          </div>
         </>
       )}
       {dialog && <RuleDialog conn={dialog} onClose={() => setDialog(null)} />}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One";
+import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 
 type Row = Record<string, string>;
 
@@ -67,9 +67,9 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal card wide" onClick={(e) => e.stopPropagation()}>
-        <h2 className="modal-title">增加反向隧道</h2>
+        <h2 className="modal-title">增加隧道</h2>
         <div className="seg" style={{ marginBottom: 8 }}>
-          <button className={kind === "frp" ? "on" : ""} onClick={() => setKind("frp")}>frp</button>
+          <button className={kind === "frp" ? "on" : ""} onClick={() => setKind("frp")}>FRP</button>
           <button className={kind === "ssh" ? "on" : ""} onClick={() => setKind("ssh")}>SSH -R</button>
         </div>
         <div className="form-grid">
@@ -96,7 +96,7 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
             {names.map((n) => <option key={n}>{n}</option>)}
           </select>
         </div>
-        <div className="section-title">{kind === "frp" ? "frp 代理" : "转发（远端监听 → 本地目标）"}</div>
+        <div className="section-title">{kind === "frp" ? "FRP 代理" : "转发（远端监听 → 本地目标）"}</div>
         {kind === "frp"
           ? <Rows cols={[["name", "名称"], ["type", "类型"], ["localIP", "本地 IP"], ["localPort", "本地端口"], ["remotePort", "远端端口"], ["customDomains", "域名（http/https）"]]} rows={frpRows} setRows={setFrpRows} />
           : <Rows cols={[["remote", "远端监听"], ["local", "本地目标"]]} rows={sshRows} setRows={setSshRows} />}

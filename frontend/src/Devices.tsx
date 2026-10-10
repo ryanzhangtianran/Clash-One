@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { CoreService, DeviceService } from "../bindings/github.com/ryanzhangtianran/Clash-One";
-import type { Device, LanInfo, Status } from "../bindings/github.com/ryanzhangtianran/Clash-One";
+import { CoreService, DeviceService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import type { Device, LanInfo, Status } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 import { sizeText } from "./format";
 
 function PolicyMenu({ device, policies, onDone }: { device: Device; policies: string[]; onDone: (err?: unknown) => void }) {
@@ -51,7 +51,6 @@ export default function Devices({ status }: { status: Status }) {
 
   return (
     <>
-      <h1 className="page-title">设备</h1>
       <div className="seg big-seg" style={{ maxWidth: 400 }}>
         <button className={!lan?.allowLan ? "on accent" : ""} disabled={!status.running} onClick={() => lan?.allowLan && toggleLan()}>仅本机</button>
         <button className={lan?.allowLan ? "on accent" : ""} disabled={!status.running} onClick={() => !lan?.allowLan && toggleLan()}>允许局域网设备</button>

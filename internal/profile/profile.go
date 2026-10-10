@@ -225,6 +225,22 @@ func (s *Store) SetOverride(content string) error {
 // Build returns the config for the core: app defaults, then the current profile, then the override.
 // enhanced is the GUI's enhanced-mode switch: TUN capture needs the root daemon.
 func (s *Store) Build(enhanced bool) ([]byte, error) {
+	cfg, err := s.merged(enhanced)
+	if err != nil {
+		return nil, err
+	}
+	// process-tun with no processes picked yet captures nothing, and the core refuses it: run without
+	// TUN until some are picked. Value still reads process-tun, so the GUI keeps showing the choice.
+	if capture, _ := cfg["capture"].(map[string]any); capture != nil && capture["mode"] == "process-tun" {
+		if ps, _ := capture["processes"].([]any); len(ps) == 0 {
+			capture["mode"] = "system-proxy"
+		}
+	}
+	return yaml.Marshal(cfg)
+}
+
+// merged is the config as the user set it: defaults, profile and override, aligned with enhanced mode.
+func (s *Store) merged(enhanced bool) (map[string]any, error) {
 	s.mu.Lock()
 	current := s.index.Current
 	s.mu.Unlock()
@@ -249,7 +265,7 @@ func (s *Store) Build(enhanced bool) ([]byte, error) {
 	}
 	cfg := Merge(profile, override)
 	Capture(cfg, enhanced)
-	return yaml.Marshal(cfg)
+	return cfg, nil
 }
 
 // tunDNS is used when TUN hijacks DNS and the profile brings no DNS section of its own.
@@ -288,7 +304,8 @@ func Capture(cfg map[string]any, enhanced bool) {
 
 // Merge layers profile and override over the app defaults. Maps merge deeply, other values are
 // replaced; prepend-/append-{rules,proxies,proxy-groups} in the override extend the profile's lists,
-// and group-members (name -> proxies) puts proxies at the front of existing groups.
+// group-members (name -> proxies) puts proxies at the front of existing groups, and
+// remove-proxies / remove-proxy-groups drop the profile's items along with every reference to them.
 func Merge(profile, override map[string]any) map[string]any {
 	cfg := merge(clone(appDefaults), profile)
 	for _, k := range controlKeys {
@@ -303,6 +320,16 @@ func Merge(profile, override map[string]any) map[string]any {
 	}
 	members, _ := override["group-members"].(map[string]any)
 	delete(override, "group-members")
+	removed := map[string]bool{}
+	for _, key := range []string{"remove-proxies", "remove-proxy-groups"} {
+		names, _ := override[key].([]any)
+		for _, n := range names {
+			if name, ok := n.(string); ok {
+				removed[name] = true
+			}
+		}
+		delete(override, key)
+	}
 	cfg = merge(cfg, override)
 	for _, key := range []string{"rules", "proxies", "proxy-groups"} {
 		list, _ := cfg[key].([]any)
@@ -328,7 +355,54 @@ func Merge(profile, override map[string]any) map[string]any {
 		current, _ := group["proxies"].([]any)
 		group["proxies"] = append(slices.Clone(extra), slices.DeleteFunc(slices.Clone(current), func(p any) bool { return slices.Contains(extra, p) })...)
 	}
+	if len(removed) > 0 {
+		dropRemoved(cfg, removed)
+	}
 	return cfg
+}
+
+// dropRemoved deletes the named proxies and groups, takes them out of other groups (an emptied
+// group falls back to DIRECT) and drops the rules that target them, so the core still accepts it.
+func dropRemoved(cfg map[string]any, removed map[string]bool) {
+	named := func(v any) bool {
+		m, _ := v.(map[string]any)
+		name, _ := m["name"].(string)
+		return removed[name]
+	}
+	for _, key := range []string{"proxies", "proxy-groups"} {
+		if list, ok := cfg[key].([]any); ok {
+			cfg[key] = slices.DeleteFunc(slices.Clone(list), named)
+		}
+	}
+	groups, _ := cfg["proxy-groups"].([]any)
+	for _, g := range groups {
+		group, _ := g.(map[string]any)
+		list, ok := group["proxies"].([]any)
+		if !ok {
+			continue
+		}
+		list = slices.DeleteFunc(slices.Clone(list), func(p any) bool { s, _ := p.(string); return removed[s] })
+		if len(list) == 0 && group["use"] == nil {
+			list = []any{"DIRECT"}
+		}
+		group["proxies"] = list
+	}
+	if rules, ok := cfg["rules"].([]any); ok {
+		cfg["rules"] = slices.DeleteFunc(slices.Clone(rules), func(r any) bool { s, _ := r.(string); return removed[ruleTarget(s)] })
+	}
+}
+
+// ruleTarget is the policy a rule sends traffic to: its last field, past options like no-resolve.
+func ruleTarget(rule string) string {
+	fields := strings.Split(rule, ",")
+	for len(fields) > 1 {
+		last := strings.TrimSpace(fields[len(fields)-1])
+		if last != "no-resolve" && last != "src" {
+			return last
+		}
+		fields = fields[:len(fields)-1]
+	}
+	return ""
 }
 
 // MergeYAML deep-merges the YAML mapping in text (may be empty) into dst, e.g. a form's
@@ -529,9 +603,13 @@ func (s *Store) AddProxy(proxy map[string]any, groups []string) error {
 	})
 }
 
-// RemoveProxy deletes a user node and its group memberships.
+// RemoveProxy deletes a user node and its group memberships; a profile's node is listed under
+// remove-proxies instead, which Merge applies.
 func (s *Store) RemoveProxy(name string) error {
 	return s.editOverride(func(root *yaml.Node) error {
+		if findNamed(listOf(root, "prepend-proxies"), name) < 0 {
+			return listName(root, "remove-proxies", name)
+		}
 		removeNamed(root, "prepend-proxies", name)
 		if members := valueOf(root, "group-members"); members != nil && members.Kind == yaml.MappingNode {
 			for i := 1; i < len(members.Content); i += 2 {
@@ -556,11 +634,23 @@ func (s *Store) AddGroup(group map[string]any) error {
 	})
 }
 
+// RemoveGroup deletes a user group, or lists a profile's group under remove-proxy-groups.
 func (s *Store) RemoveGroup(name string) error {
 	return s.editOverride(func(root *yaml.Node) error {
+		if findNamed(listOf(root, "prepend-proxy-groups"), name) < 0 {
+			return listName(root, "remove-proxy-groups", name)
+		}
 		removeNamed(root, "prepend-proxy-groups", name)
 		return nil
 	})
+}
+
+// listName adds name to the override's string list key, once.
+func listName(root *yaml.Node, key, name string) error {
+	if seq := listOf(root, key); seq != nil && slices.ContainsFunc(seq.Content, func(n *yaml.Node) bool { return n.Value == name }) {
+		return nil
+	}
+	return appendItem(root, key, name)
 }
 
 func (s *Store) AddTunnel(tunnel map[string]any) error {
@@ -703,9 +793,13 @@ func (s *Store) SetPath(path []string, value any) error {
 	})
 }
 
-// Value reads a dotted path from the config the core would get, e.g. "dns.nameserver".
+// Value reads a dotted path from the merged config, e.g. "dns.nameserver".
 func (s *Store) Value(enhanced bool, path []string) (any, error) {
-	b, err := s.Build(enhanced)
+	cfg, err := s.merged(enhanced)
+	if err != nil {
+		return nil, err
+	}
+	b, err := yaml.Marshal(cfg) // round-trip so values come back in the same shapes as the core's YAML
 	if err != nil {
 		return nil, err
 	}

@@ -1,4 +1,4 @@
-package main
+package app
 
 /*
 #cgo CFLAGS: -x objective-c
@@ -65,6 +65,51 @@ static void setTray(void *item, const void *icon, int iconLen, const char *badge
 		}];
 	});
 }
+
+// setMenuDecor gives a menu item a capsule badge (macOS 14+), plain grey text right-aligned after
+// its label, and the Finder icon of path; NULL or "" clears each. Runs on the main thread.
+static void setMenuDecor(void *p, const char *label, const char *badge, const char *detail, const char *path) {
+	static NSMutableDictionary *icons;
+	NSMenuItem *item = p;
+	NSString *d = detail && *detail ? @(detail) : nil;
+	if (!d) {
+		if (item.attributedTitle) item.attributedTitle = nil;
+	} else {
+		NSString *l = @(label), *want = [NSString stringWithFormat:@"%@\t%@", l, d];
+		if (![item.attributedTitle.string isEqualToString:want]) {
+			NSMutableParagraphStyle *para = [[NSMutableParagraphStyle new] autorelease];
+			para.tabStops = @[[[[NSTextTab alloc] initWithTextAlignment:NSTextAlignmentRight location:240 options:@{}] autorelease]];
+			NSFont *f = [NSFont menuFontOfSize:0];
+			NSMutableAttributedString *s = [[[NSMutableAttributedString alloc] initWithString:[l stringByAppendingString:@"\t"]
+				attributes:@{NSFontAttributeName: f, NSParagraphStyleAttributeName: para}] autorelease];
+			[s appendAttributedString:[[[NSAttributedString alloc] initWithString:d attributes:@{
+				NSFontAttributeName: [NSFont monospacedDigitSystemFontOfSize:f.pointSize weight:NSFontWeightRegular],
+				NSForegroundColorAttributeName: NSColor.secondaryLabelColor, NSParagraphStyleAttributeName: para}] autorelease]];
+			item.attributedTitle = s;
+		}
+	}
+	if (@available(macOS 14, *)) {
+		NSString *b = badge && *badge ? @(badge) : nil;
+		if (!b) {
+			item.badge = nil;
+		} else if (![item.badge.stringValue isEqualToString:b]) {
+			item.badge = [[[NSMenuItemBadge alloc] initWithString:b] autorelease];
+		}
+	}
+	NSImage *img = nil;
+	if (path && *path) {
+		if (!icons) icons = [NSMutableDictionary new];
+		NSString *key = @(path);
+		img = icons[key];
+		if (!img) {
+			img = [[[NSWorkspace sharedWorkspace] iconForFile:key] copy];
+			img.size = NSMakeSize(16, 16);
+			icons[key] = img;
+			[img release];
+		}
+	}
+	if (item.image != img) item.image = img;
+}
 */
 import "C"
 
@@ -80,16 +125,39 @@ import (
 
 // statusItem digs Wails' NSStatusItem out of the tray, which it doesn't expose; nil if a Wails
 // upgrade moved it, or before the app has started.
-func statusItem(tray *application.SystemTray) unsafe.Pointer {
-	impl := reflect.ValueOf(tray).Elem().FieldByName("impl")
+func statusItem(tray *application.SystemTray) unsafe.Pointer { return native(tray, "nsStatusItem") }
+
+// native reads field of the platform impl behind a Wails tray or menu item.
+func native(v any, field string) unsafe.Pointer {
+	impl := reflect.ValueOf(v).Elem().FieldByName("impl")
 	if !impl.IsValid() || impl.IsNil() || impl.Elem().Kind() != reflect.Pointer {
 		return nil
 	}
-	f := impl.Elem().Elem().FieldByName("nsStatusItem")
+	f := impl.Elem().Elem().FieldByName(field)
 	if !f.IsValid() || f.Kind() != reflect.UnsafePointer {
 		return nil
 	}
 	return unsafe.Pointer(f.Pointer())
+}
+
+// decorate draws the badges and icons Wails menus can't. On the main thread, which is also where
+// Menu.Update swaps the NSMenuItems, so none is freed mid-call.
+func decorate(badges, details, icons map[*application.MenuItem]string) {
+	application.InvokeSync(func() {
+		for _, items := range []map[*application.MenuItem]string{badges, details, icons} {
+			for item := range items {
+				p := native(item, "nsMenuItem")
+				if p == nil {
+					continue
+				}
+				strs := []*C.char{C.CString(item.Label()), C.CString(badges[item]), C.CString(details[item]), C.CString(icons[item])}
+				C.setMenuDecor(p, strs[0], strs[1], strs[2], strs[3])
+				for _, s := range strs {
+					C.free(unsafe.Pointer(s))
+				}
+			}
+		}
+	})
 }
 
 // padRate left-pads a rate with figure spaces (digit-wide) to the length of "999 KB/s", which keeps
@@ -103,7 +171,7 @@ var modeBadges = map[string]string{"rule": "R", "global": "G", "direct": "D"}
 
 // showTray draws the menu bar item: the cat badged with the outbound mode, greyed while nothing is
 // captured (no system proxy, no enhanced mode), plus upload over download unless the speed is hidden.
-func showTray(tray *application.SystemTray, t Traffic, mode string, capturing, showSpeed bool) {
+func showTray(tray *application.SystemTray, icon []byte, t Traffic, mode string, capturing, showSpeed bool) {
 	item := statusItem(tray)
 	if item == nil {
 		if showSpeed {
@@ -119,7 +187,7 @@ func showTray(tray *application.SystemTray, t Traffic, mode string, capturing, s
 		up, down = C.CString(padRate(t.Up)), C.CString(padRate(t.Down))
 	}
 	// the icon is copied on the first call only, before setTray returns
-	C.setTray(item, unsafe.Pointer(&trayIcon[0]), C.int(len(trayIcon)), badge, C.bool(!capturing), up, down)
+	C.setTray(item, unsafe.Pointer(&icon[0]), C.int(len(icon)), badge, C.bool(!capturing), up, down)
 	for _, p := range []unsafe.Pointer{unsafe.Pointer(badge), unsafe.Pointer(up), unsafe.Pointer(down)} {
 		C.free(p) // free(NULL) is a no-op
 	}

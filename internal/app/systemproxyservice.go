@@ -1,9 +1,8 @@
-package main
+package app
 
 import (
 	"context"
 	"errors"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -111,11 +110,11 @@ func (s *SystemProxyService) guard() {
 		return
 	}
 	if err := sysproxy.Set(port); err != nil {
-		log.Printf("system proxy: %v", err)
+		notify("error", "设置系统代理失败：%v", err)
 		return
 	}
 	if s.port == port {
-		log.Printf("system proxy was changed by another app, restored 127.0.0.1:%d", port)
+		notify("warning", "系统代理被其他程序修改，已恢复为 127.0.0.1:%d", port)
 	}
 	s.port = port
 	if s.onChange != nil {

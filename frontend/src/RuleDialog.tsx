@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One";
-import type { Conn } from "../bindings/github.com/ryanzhangtianran/Clash-One";
+import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import type { Conn } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 
 const ruleTypes = ["DOMAIN-SUFFIX", "DOMAIN", "DOMAIN-KEYWORD", "IP-CIDR", "PROCESS-NAME", "PROCESS-ANCESTOR"];
 const isIP = (h: string) => /^[\d.]+$/.test(h) || h.includes(":");

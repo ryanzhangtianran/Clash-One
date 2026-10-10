@@ -3,6 +3,7 @@ package profile
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -268,5 +269,61 @@ func TestSetPath(t *testing.T) {
 	}
 	if v, _ := s.Value(false, []string{"capture", "mode"}); v != "system-proxy" {
 		t.Fatalf("default still there next to a new key: %v", v)
+	}
+}
+
+func TestMergeRemoved(t *testing.T) {
+	profile := map[string]any{
+		"proxies": []any{map[string]any{"name": "A"}, map[string]any{"name": "B"}},
+		"proxy-groups": []any{
+			map[string]any{"name": "G", "proxies": []any{"A", "B"}},
+			map[string]any{"name": "H", "proxies": []any{"B"}},
+			map[string]any{"name": "K", "proxies": []any{"A"}},
+		},
+		"rules": []any{"DOMAIN,x.com,A", "IP-CIDR,1.1.1.1/32,H,no-resolve", "DOMAIN,y.com,K", "MATCH,G"},
+	}
+	override := map[string]any{"remove-proxies": []any{"A"}, "remove-proxy-groups": []any{"H"}}
+	cfg := Merge(profile, override)
+	names := func(key string) (out []string) {
+		for _, v := range cfg[key].([]any) {
+			out = append(out, v.(map[string]any)["name"].(string))
+		}
+		return out
+	}
+	if got := names("proxies"); !slices.Equal(got, []string{"B"}) {
+		t.Fatalf("proxies %v", got)
+	}
+	if got := names("proxy-groups"); !slices.Equal(got, []string{"G", "K"}) {
+		t.Fatalf("groups %v", got)
+	}
+	groups := cfg["proxy-groups"].([]any)
+	if g := groups[0].(map[string]any)["proxies"]; !slices.Equal(g.([]any), []any{"B"}) {
+		t.Fatalf("G members %v", g)
+	}
+	if k := groups[1].(map[string]any)["proxies"]; !slices.Equal(k.([]any), []any{"DIRECT"}) {
+		t.Fatalf("emptied K should fall back to DIRECT, got %v", k)
+	}
+	if r := cfg["rules"].([]any); !slices.Equal(r, []any{"DOMAIN,y.com,K", "MATCH,G"}) {
+		t.Fatalf("rules %v", r)
+	}
+}
+
+func TestBuildProcessTunWithoutProcesses(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetOverride("capture:\n  mode: process-tun\n"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := s.Build(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "mode: system-proxy") {
+		t.Fatalf("process-tun with no processes should build as system-proxy:\n%s", b)
+	}
+	if v, _ := s.Value(true, []string{"capture", "mode"}); v != "process-tun" {
+		t.Fatalf("Value should still read the user's choice, got %v", v)
 	}
 }

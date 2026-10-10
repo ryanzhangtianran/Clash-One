@@ -1,10 +1,11 @@
-package main
+package app
 
 import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -78,5 +79,29 @@ func TestConnectionService(t *testing.T) {
 	}
 	if rules, _ = s.TempRules(); len(rules) != 0 {
 		t.Fatalf("not removed: %+v", rules)
+	}
+}
+
+func TestTrayProcessRows(t *testing.T) {
+	l := openLedger(filepath.Join(t.TempDir(), "traffic.json"))
+	chrome := "/Applications/Google Chrome.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper"
+	conns := []Conn{
+		{ID: "1", Path: chrome, Upload: 100},
+		{ID: "2", Process: "curl", Path: "/usr/bin/curl", Download: 50},
+		{ID: "3", Source: "192.168.1.9", Download: 10},
+	}
+	if rows := processRows(conns, l.add(conns, time.Now())); rows[0].rate != 0 {
+		t.Fatalf("first tick has no baseline, got %+v", rows)
+	}
+	conns[0].Upload, conns[1].Download = 400, 60
+	conns = append(conns, Conn{ID: "4", Path: chrome, Download: 1000}) // new since the last tick: counts in full
+	rows := processRows(conns, l.add(conns, time.Now()))
+	want := []procRow{
+		{name: "Google Chrome", icon: "/Applications/Google Chrome.app", rate: 1300, total: 1400},
+		{name: "curl", icon: "/usr/bin/curl", rate: 10, total: 60},
+		{name: "192.168.1.9", rate: 0, total: 10},
+	}
+	if !slices.Equal(rows, want) {
+		t.Fatalf("got %+v\nwant %+v", rows, want)
 	}
 }

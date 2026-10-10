@@ -1,8 +1,9 @@
-package main
+package app
 
 import (
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -51,4 +52,35 @@ func TestPortWarning(t *testing.T) {
 		t.Fatalf("expected a warning naming port %d, got %q", port, w)
 	}
 	t.Logf("warning: %s", w)
+}
+
+func TestLedger(t *testing.T) {
+	l := openLedger(filepath.Join(t.TempDir(), "traffic.json"))
+	day1 := time.Date(2026, 10, 9, 23, 0, 0, 0, time.Local)
+	day2 := day1.Add(2 * time.Hour)
+	l.add([]Conn{{ID: "old", Chain: "代理 → HK 01", Download: 500}}, day1) // baseline only
+	l.add([]Conn{
+		{ID: "old", Chain: "代理 → HK 01", Download: 800},
+		{ID: "new", Chain: "DIRECT", Upload: 100},
+	}, day1)
+	l.add([]Conn{{ID: "new", Chain: "DIRECT", Upload: 150}}, day2)
+	today, month := l.totals(day2)
+	if today != (Split{Direct: 50}) || month != (Split{Direct: 150, Proxy: 300}) {
+		t.Fatalf("today %+v month %+v", today, month)
+	}
+	if err := l.save(); err != nil {
+		t.Fatal(err)
+	}
+	if _, month := openLedger(l.path).totals(day2); month != (Split{Direct: 150, Proxy: 300}) {
+		t.Fatalf("reloaded month %+v", month)
+	}
+}
+
+func TestPingMs(t *testing.T) {
+	if ms := pingMs(t.Context(), "127.0.0.1"); ms < 1 {
+		t.Fatalf("ping 127.0.0.1 = %d ms", ms)
+	}
+	if ms := pingMs(t.Context(), "invalid.invalid"); ms != 0 {
+		t.Fatalf("ping of an unresolvable host = %d ms, want 0", ms)
+	}
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { LogLine } from "../bindings/github.com/ryanzhangtianran/Clash-One";
+import type { LogLine } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 
 const levels = ["debug", "info", "warning", "error"];
 
@@ -11,7 +11,6 @@ export default function Logs({ lines, onClear }: { lines: LogLine[]; onClear: ()
   const shown = lines.filter((l) => levels.indexOf(l.type) >= min && (!q || l.payload.toLowerCase().includes(q)));
   return (
     <>
-      <h1 className="page-title">日志</h1>
       <div className="card">
         <div className="head">
           <div className="seg">

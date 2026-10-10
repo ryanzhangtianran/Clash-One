@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One";
-import type { Rule, Status } from "../bindings/github.com/ryanzhangtianran/Clash-One";
+import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import type { Rule, Status } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 
 const ruleTypes = ["DOMAIN-SUFFIX", "DOMAIN", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "DOMAIN-WILDCARD", "GEOSITE", "IP-CIDR", "IP-CIDR6", "SRC-IP-CIDR", "GEOIP", "IP-ASN",
   "DST-PORT", "SRC-PORT", "PROCESS-NAME", "PROCESS-PATH", "PROCESS-ANCESTOR", "PROCESS-ANCESTOR-PATH", "IN-NAME", "IN-TYPE", "NETWORK", "RULE-SET"];
@@ -57,7 +57,6 @@ export default function Rules({ status }: { status: Status }) {
 
   return (
     <>
-      <h1 className="page-title">规则</h1>
       {error && <div className="card error" style={{ marginBottom: 16 }}>{error}</div>}
       {status.running && <AddRule onAdded={load} />}
       {mine.length > 0 && (

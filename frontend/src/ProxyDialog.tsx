@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One";
+import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 
 type Field = {
   key: string; // mihomo key; dots nest: "ws-opts.path"

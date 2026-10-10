@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,44 @@ func init() {
 }
 
 // emit sends an event to the frontend; a no-op without a running app (tests).
+func init() {
+	application.RegisterEvent[Event]("event")
+}
+
+// Event is something worth telling the user, listed under the topbar's events button.
+type Event struct {
+	Time  string `json:"time"`  // 15:04:05
+	Level string `json:"level"` // info, warning or error
+	Text  string `json:"text"`
+}
+
+var eventLog struct {
+	sync.Mutex
+	list []Event // newest last, at most 50
+}
+
+// notify logs an event and adds it to the window's event list.
+func notify(level, format string, args ...any) {
+	e := Event{Time: time.Now().Format(time.TimeOnly), Level: level, Text: fmt.Sprintf(format, args...)}
+	log.Printf("%s: %s", level, e.Text)
+	eventLog.Lock()
+	eventLog.list = append(eventLog.list[max(0, len(eventLog.list)-49):], e)
+	eventLog.Unlock()
+	emit("event", e)
+}
+
+func (s *CoreService) Events() []Event {
+	eventLog.Lock()
+	defer eventLog.Unlock()
+	return slices.Clone(eventLog.list)
+}
+
+func (s *CoreService) ClearEvents() {
+	eventLog.Lock()
+	eventLog.list = nil
+	eventLog.Unlock()
+}
+
 func emit(name string, data any) {
 	if app := application.Get(); app != nil {
 		app.Event.Emit(name, data)
@@ -59,9 +98,11 @@ func emit(name string, data any) {
 // CoreService owns the clash-one-core child process and exposes its API to the frontend.
 type CoreService struct {
 	core      *core.Core
-	onReady   func() error  // pushes the GUI's config once a core answers
-	onTraffic func(Traffic) // menu bar speed
-	onMode    func(string)  // menu bar mode radio
+	ledger    *ledger                                     // today's and this month's traffic; nil in tests
+	onReady   func() error                                // pushes the GUI's config once a core answers
+	onTraffic func(Traffic)                               // menu bar speed
+	onMode    func(string)                                // menu bar mode radio
+	onConns   func(conns []Conn, deltas map[string]int64) // menu bar process rows, from the ledger's count
 
 	mu     sync.Mutex
 	status Status
@@ -80,14 +121,23 @@ func (s *CoreService) ServiceStartup(ctx context.Context, _ application.ServiceO
 		}
 		if err != nil {
 			s.setStatus(Status{Error: err.Error()})
+			notify("error", "内核启动失败：%v", err)
 			return
 		}
 		version, _ := s.core.Version(ctx)
-		s.setStatus(Status{Running: true, Version: version, Warning: s.portWarning()})
+		st := Status{Running: true, Version: version, Warning: s.portWarning()}
+		s.setStatus(st)
+		notify("info", "内核已启动（%s）", version)
+		if st.Warning != "" {
+			notify("warning", "%s", st.Warning)
+		}
 		if mode, err := s.Mode(); err == nil {
 			s.modeChanged(mode)
 		}
 		go s.streamLogs(ctx)
+		if s.ledger != nil {
+			go s.countTraffic(ctx)
+		}
 		s.streamTraffic(ctx)
 	}()
 	return nil
@@ -106,6 +156,11 @@ func (s *CoreService) portWarning() string {
 }
 
 func (s *CoreService) ServiceShutdown() error {
+	if s.ledger != nil {
+		if err := s.ledger.save(); err != nil {
+			log.Printf("save traffic: %v", err)
+		}
+	}
 	if s.core.Daemon() {
 		return s.core.Reload(context.Background(), []byte(daemon.BootConfig))
 	}

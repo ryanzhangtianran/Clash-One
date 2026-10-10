@@ -1,9 +1,8 @@
-package main
+package app
 
 import (
 	"context"
 	"errors"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,6 +24,7 @@ type Profiles struct {
 
 func init() {
 	application.RegisterEvent[Profiles]("profiles")
+	application.RegisterEvent[string]("setting") // dotted path of a setting that changed
 }
 
 // ProfileService manages subscriptions and the override, and feeds the merged config to the core.
@@ -118,6 +118,23 @@ func (s *ProfileService) AddLocal(name, content string) error {
 		return s.apply()
 	}
 	return nil
+}
+
+// ImportFile lets the user pick a Clash YAML file and adds it as a local profile named after it.
+func (s *ProfileService) ImportFile() error {
+	path, err := application.Get().Dialog.OpenFile().
+		SetTitle("导入配置").
+		CanChooseFiles(true).
+		AddFilter("Clash 配置", "*.yaml;*.yml").
+		PromptForSingleSelection()
+	if err != nil || path == "" {
+		return err
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return s.AddLocal(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), string(b))
 }
 
 func (s *ProfileService) Update(id string) error {
@@ -237,12 +254,17 @@ func (s *ProfileService) RemoveTunnel(name string) error {
 
 // Set writes a dotted setting such as "dns.enhanced-mode" into the override and applies it.
 func (s *ProfileService) Set(path string, value any) error {
-	return s.edit(func() error { return s.store.SetPath(strings.Split(path, "."), value) })
+	if err := s.edit(func() error { return s.store.SetPath(strings.Split(path, "."), value) }); err != nil {
+		return err
+	}
+	emit("setting", path)
+	return nil
 }
 
 // Value reads a dotted setting from the effective config (defaults, profile and override merged).
+// capture.* reads as if enhanced, so the chosen scope shows while enhanced mode is off too.
 func (s *ProfileService) Value(path string) (any, error) {
-	enhanced := s.settings != nil && s.settings.Get().Enhanced && s.core.Daemon()
+	enhanced := s.settings != nil && s.settings.Get().Enhanced && s.core.Daemon() || strings.HasPrefix(path, "capture.")
 	return s.store.Value(enhanced, strings.Split(path, "."))
 }
 
@@ -257,7 +279,7 @@ func (s *ProfileService) ServiceStartup(ctx context.Context, _ application.Servi
 			case now := <-t.C:
 				for _, id := range s.store.Due(now) {
 					if err := s.Update(id); err != nil {
-						log.Printf("auto-update profile %s: %v", id, err)
+						notify("error", "订阅自动更新失败（%s）：%v", id, err)
 					}
 				}
 			}

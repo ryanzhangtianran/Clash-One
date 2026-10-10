@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { CoreService, EnhancedService, SystemProxyService } from "../bindings/github.com/ryanzhangtianran/Clash-One";
-import type { Activity as ActivityData, LogLine, Status, Traffic } from "../bindings/github.com/ryanzhangtianran/Clash-One";
+import { CoreService, EnhancedService, SystemProxyService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import type { Activity as ActivityData, Event as AppEvent, LogLine, Status, Traffic } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 import Activity from "./Activity";
+import Overview from "./Overview";
 import Proxies from "./Proxies";
 import Dashboard from "./Dashboard";
 import Rules from "./Rules";
@@ -12,10 +13,11 @@ import Settings from "./Settings";
 import ErrorBoundary from "./ErrorBoundary";
 
 const HISTORY = 60; // seconds of traffic kept for the sparklines
+
 const LOG_LINES = 500;
 
 const icon = (d: string) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
     <path d={d} />
   </svg>
 );
@@ -24,26 +26,67 @@ type Page = { key: string; title: string; icon: JSX.Element; ready: boolean };
 const nav: { section?: string; pages: Page[] }[] = [
   {
     pages: [
-      { key: "activity", title: "活动", ready: true, icon: icon("M3 12h4l3-7 4 14 3-7h4") },
-      { key: "dashboard", title: "面板", ready: true, icon: icon("M4 5h16v14H4zM4 9h16M9 9v10") },
+      { key: "activity", title: "活动", ready: true, icon: icon("M3 12h3.5l2.5-6.5 5 13 2.5-6.5H21") },
+      { key: "overview", title: "概览", ready: true, icon: icon("M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z") },
+      { key: "dashboard", title: "面板", ready: true, icon: icon("M4.79 17.5A8.5 8.5 0 1 1 19.21 17.5M12 13l4-4M10.8 13a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0-2.4 0") },
     ],
   },
   {
     section: "客户端",
     pages: [
-      { key: "devices", title: "设备", ready: true, icon: icon("M3 14h18v5H3zM7 16.5h.01M7 14l4-9M14 9a4 4 0 0 1 5 0") },
+      { key: "devices", title: "设备", ready: true, icon: icon("M3 15V6.5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1V15M1.5 18.5h14M18.5 9h2.5a1 1 0 0 1 1 1v8.5a1 1 0 0 1-1 1h-2.5a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1z") },
     ],
   },
   {
     section: "代理",
     pages: [
-      { key: "proxies", title: "策略", ready: true, icon: icon("M12 21v-8M12 13 6 4M12 13l6-9M4 4h4M16 4h4") },
-      { key: "rules", title: "规则", ready: true, icon: icon("M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12h2M4 18h2") },
-      { key: "tunnels", title: "反向隧道", ready: true, icon: icon("M4 17V7l8-4 8 4v10l-8 4zM12 3v18") },
+      { key: "proxies", title: "策略", ready: true, icon: icon("M3 12h5.5c2 0 3-1.5 4-3s2-3 4-3H21M8.5 12c2 0 3 1.5 4 3s2 3 4 3H21M18 3l3 3-3 3M18 15l3 3-3 3") },
+      { key: "rules", title: "规则", ready: true, icon: icon("M4 5h16l-6 7.5V18l-4 2v-7.5z") },
+      { key: "tunnels", title: "反向", ready: true, icon: icon("M4 8.5h15M15.5 5l3.5 3.5-3.5 3.5M20 15.5H5M8.5 12 5 15.5 8.5 19") },
     ],
   },
 ];
-const settingsPage: Page = { key: "settings", title: "设置", ready: true, icon: icon("M4 7h10M18 7h2M4 17h2M10 17h10M16 5v4M8 15v4") };
+const settingsPage: Page = { key: "settings", title: "设置", ready: true, icon: icon("M4 7h8M16 7h4M12 7a2 2 0 1 0 4 0a2 2 0 1 0-4 0M4 17h4M12 17h8M8 17a2 2 0 1 0 4 0a2 2 0 1 0-4 0") };
+
+// EventsButton lists what the app has to tell (core started, proxy restored, failed actions…).
+function EventsButton() {
+  const [list, setList] = useState<AppEvent[]>([]);
+  const [seen, setSeen] = useState(0);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    CoreService.Events().then((l) => setList(l ?? []));
+    return Events.On("event", (e) => setList((l) => [...l.slice(-49), e.data]));
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [open]);
+  const unread = Math.max(0, list.length - seen);
+  const last = list[list.length - 1];
+  const label = list.length === 0 ? "无事件" : unread > 0 ? `${unread} 个新事件` : `${list.length} 个事件`;
+  const toggle = (e: React.MouseEvent) => { e.stopPropagation(); setOpen(!open); setSeen(list.length); };
+  const clear = () => { CoreService.ClearEvents(); setList([]); setSeen(0); setOpen(false); };
+  return (
+    <div className="events">
+      <button className="pill small" onClick={toggle}>
+        <span className={`dot ${unread > 0 && last ? { error: "err", warning: "warn", info: "on" }[last.level] ?? "" : ""}`} />{label}
+      </button>
+      {open && (
+        <div className="menu events-menu" onClick={(e) => e.stopPropagation()}>
+          {list.length === 0 && <div className="detail-head">暂无事件</div>}
+          {[...list].reverse().map((ev, i) => (
+            <div key={i} className={`event-row ${ev.level}`}>
+              <span className="dot" /><span className="event-text">{ev.text}</span><span className="muted">{ev.time}</span>
+            </div>
+          ))}
+          {list.length > 0 && <div className="event-foot"><button className="btn small-btn" onClick={clear}>清除</button></div>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function App() {
   const [current, setCurrent] = useState("activity");
@@ -70,6 +113,14 @@ export default function App() {
     ];
     return () => offs.forEach((off) => off());
   }, []);
+
+  // the "status" event can be missed while the page loads, and the first Status() reply can land
+  // after it with the stale "starting"; ask again until the core has settled either way
+  useEffect(() => {
+    if (status.running || status.error) return;
+    const t = setInterval(() => CoreService.Status().then(setStatus), 1000);
+    return () => clearInterval(t);
+  }, [status.running, status.error]);
 
   useEffect(() => {
     if (!status.running) return;
@@ -105,6 +156,7 @@ export default function App() {
       </nav>
       <main className="main">
         <div className="topbar">
+          <EventsButton />
           <button
             className="pill"
             disabled={!status.running}
@@ -134,11 +186,12 @@ export default function App() {
           {status.warning && <div className="card error" style={{ marginBottom: 16 }}>⚠︎ {status.warning}</div>}
           <ErrorBoundary key={current} onReset={() => setCurrent("activity")}>
           {current === "activity" && <Activity status={status} activity={activity} history={history} />}
+          {current === "overview" && <Overview status={status} onOpen={setCurrent} />}
           {current === "proxies" && <Proxies status={status} />}
           {current === "dashboard" && <Dashboard status={status} logs={logs} onClearLogs={() => setLogs([])} />}
           {current === "rules" && <Rules status={status} />}
           {current === "tunnels" && <Tunnels status={status} />}
-          {current === "settings" && <Settings key={current} status={status} logs={logs} onClearLogs={() => setLogs([])} />}
+          {current === "settings" && <Settings key={current} status={status} />}
           </ErrorBoundary>
           {current === "devices" && <Devices status={status} />}
         </div>

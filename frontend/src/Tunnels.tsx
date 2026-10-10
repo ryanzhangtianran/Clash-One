@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One";
-import type { Status, Tunnel } from "../bindings/github.com/ryanzhangtianran/Clash-One";
+import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import type { Status, Tunnel } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 import TunnelDialog from "./TunnelDialog";
 import { nonNull } from "./format";
 
 const stateLabel: Record<string, string> = { running: "运行中", connecting: "连接中", retrying: "重试中" };
 const stateClass: Record<string, string> = { running: "delay-good", connecting: "delay-warn", retrying: "delay-bad" };
-const kinds: [string, string, string][] = [["frp", "frp", "groups"], ["ssh", "SSH -R", "proxies"]];
+const kindLabel: Record<string, string> = { frp: "FRP", ssh: "SSH -R" };
 
 export default function Tunnels({ status }: { status: Status }) {
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
@@ -31,47 +31,42 @@ export default function Tunnels({ status }: { status: Status }) {
 
   return (
     <>
-      <h1 className="page-title">反向隧道</h1>
-      <div className="hint">把本机服务经 frps 或 SSH 服务器暴露出去；反代进来的流量按规则分流（IN-TYPE 为 FRP / SSH，IN-NAME 为隧道名）。</div>
+      <div className="hint">通过 FRP 或 SSH 把本机服务暴露到公网。</div>
       {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
 
-      {kinds.map(([type, title, color]) => (
-        <div key={type}>
-          <div className="tile-head"><span className={`tile-title ${color}`}>{title}</span></div>
-          <div className="tiles">
-            {tunnels.filter((t) => t.type === type).map((t) => {
-              const forwards = t.forwards ?? [];
-              return (
-                <div key={t.name} className="tile-wrap">
-                  <button className={`tile ${open === t.name ? "selected" : ""}`} onClick={() => setOpen(open === t.name ? "" : t.name)}>
-                    <span className="kind">{t.type.toUpperCase()} · {forwards.length} 条转发</span>
-                    <span className="name">{t.name}</span>
-                    <span className={`foot ${stateClass[t.state] ?? ""}`}>{stateLabel[t.state] ?? t.state}{t.error && " · 有错误"}</span>
-                  </button>
-                  {open === t.name && (
-                    <div className="menu members detail" onClick={(e) => e.stopPropagation()}>
-                      <div className="detail-head">
-                        {stateLabel[t.state] ?? t.state} · 自 {new Date(t.since).toLocaleTimeString()}
-                      </div>
-                      {t.error && <div className="error small detail-head">{t.error}</div>}
-                      {forwards.map((f, i) => (
-                        <div key={i} className="detail-row">
-                          <span>{f.name ? `${f.name} · ` : ""}{f.type || "tcp"}</span>
-                          <span className="muted">{f.remote || "—"} → {f.local}</span>
-                          {f.state && <span className={f.state === "running" ? "delay-good" : "delay-warn"}>{f.state}</span>}
-                          {f.error && <span className="error small">{f.error}</span>}
-                        </div>
-                      ))}
-                      {mine.includes(t.name) && <button className="danger" onClick={() => { remove(t.name); setOpen(""); }}>删除此隧道</button>}
+      <div className="tile-head"><span className="tile-title groups">隧道</span></div>
+      <div className="tiles">
+        {tunnels.map((t) => {
+          const forwards = t.forwards ?? [];
+          return (
+            <div key={t.name} className="tile-wrap">
+              <button className={`tile ${open === t.name ? "selected" : ""}`} onClick={() => setOpen(open === t.name ? "" : t.name)}>
+                <span className="kind">{kindLabel[t.type] ?? t.type} · {forwards.length} 条转发</span>
+                <span className="name">{t.name}</span>
+                <span className={`foot ${stateClass[t.state] ?? ""}`}>{stateLabel[t.state] ?? t.state}{t.error && " · 有错误"}</span>
+              </button>
+              {open === t.name && (
+                <div className="menu members detail" onClick={(e) => e.stopPropagation()}>
+                  <div className="detail-head">
+                    {stateLabel[t.state] ?? t.state} · 自 {new Date(t.since).toLocaleTimeString()}
+                  </div>
+                  {t.error && <div className="error small detail-head">{t.error}</div>}
+                  {forwards.map((f, i) => (
+                    <div key={i} className="detail-row">
+                      <span>{f.name ? `${f.name} · ` : ""}{f.type || "tcp"}</span>
+                      <span className="muted">{f.remote || "—"} → {f.local}</span>
+                      {f.state && <span className={f.state === "running" ? "delay-good" : "delay-warn"}>{f.state}</span>}
+                      {f.error && <span className="error small">{f.error}</span>}
                     </div>
-                  )}
+                  ))}
+                  {mine.includes(t.name) && <button className="danger" onClick={() => { remove(t.name); setOpen(""); }}>删除此隧道</button>}
                 </div>
-              );
-            })}
-            <button className="tile add" disabled={!status.running} onClick={() => setDialog(true)} title="增加隧道">＋</button>
-          </div>
-        </div>
-      ))}
+              )}
+            </div>
+          );
+        })}
+        <button className="tile add" disabled={!status.running} onClick={() => setDialog(true)} title="增加隧道">＋</button>
+      </div>
 
       {dialog && <TunnelDialog onClose={() => { setDialog(false); load(); }} />}
     </>
