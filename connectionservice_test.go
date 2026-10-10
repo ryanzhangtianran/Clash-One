@@ -1,0 +1,66 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"slices"
+	"testing"
+	"time"
+)
+
+// Needs a built core: CLASH_ONE_CORE=/path/to/clash-one-core go test -run TestConnectionService .
+func TestConnectionService(t *testing.T) {
+	s, _, port := startCore(t, "")
+
+	hold := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.(http.Flusher).Flush()
+		<-hold
+	}))
+	defer srv.Close()
+	defer close(hold)
+	proxy, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy)}}
+	go client.Get(srv.URL) // stays open until hold closes
+
+	var conns []Conn
+	for i := 0; i < 20 && len(conns) == 0; i++ {
+		time.Sleep(100 * time.Millisecond)
+		conns, _ = s.Connections()
+	}
+	if len(conns) == 0 || conns[0].Host != "127.0.0.1" || conns[0].Chain == "" || conns[0].Rule == "" {
+		t.Fatalf("connection: %+v", conns)
+	}
+	if err := s.CloseHost("127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if conns, _ = s.Connections(); len(conns) != 0 {
+		t.Fatalf("CloseHost left %+v", conns)
+	}
+
+	policies, err := s.Policies()
+	if err != nil || !slices.Contains(policies, "代理") || !slices.Contains(policies, "DIRECT") || slices.Contains(policies, "GLOBAL") {
+		t.Fatalf("policies %v %v", policies, err)
+	}
+	if _, err := s.AddTempRule("DOMAIN,a.com,NoSuchPolicy"); err == nil {
+		t.Fatal("unknown policy accepted")
+	}
+	id, err := s.AddTempRule("DOMAIN-SUFFIX,example.com,DIRECT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, _ := s.TempRules()
+	if len(rules) != 1 || rules[0].ID != id || rules[0].Payload != "example.com" || rules[0].Proxy != "DIRECT" {
+		t.Fatalf("temp rules %+v", rules)
+	}
+	if err := s.RemoveTempRule(id); err != nil {
+		t.Fatal(err)
+	}
+	if rules, _ = s.TempRules(); len(rules) != 0 {
+		t.Fatalf("not removed: %+v", rules)
+	}
+}

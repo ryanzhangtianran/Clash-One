@@ -1,0 +1,113 @@
+// Package sysproxy points the macOS system proxy (HTTP, HTTPS, SOCKS) of every enabled network
+// service at the core's mixed-port, via networksetup.
+package sysproxy
+
+import (
+	"fmt"
+	"os/exec"
+	"strconv"
+	"strings"
+)
+
+// bypass keeps local and LAN traffic off the proxy.
+var bypass = []string{"localhost", "127.0.0.1", "::1", "*.local", "169.254.0.0/16", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+
+func Set(port int) error {
+	services, err := services()
+	if err != nil {
+		return err
+	}
+	return run(setCommands(services, port))
+}
+
+// Clear switches the proxies off.
+// ponytail: turns them off instead of restoring settings the user had before Clash One.
+func Clear() error {
+	services, err := services()
+	if err != nil {
+		return err
+	}
+	return run(clearCommands(services))
+}
+
+// IsSet reports whether every enabled service still proxies to 127.0.0.1:port (another app may
+// have replaced it).
+func IsSet(port int) (bool, error) {
+	services, err := services()
+	if err != nil {
+		return false, err
+	}
+	for _, s := range services {
+		for _, get := range []string{"-getwebproxy", "-getsecurewebproxy"} {
+			out, err := exec.Command("networksetup", get, s).Output()
+			if err != nil {
+				return false, err
+			}
+			if !pointsAt(string(out), port) {
+				return false, nil
+			}
+		}
+	}
+	return len(services) > 0, nil
+}
+
+// pointsAt parses `networksetup -getwebproxy` output ("Enabled: Yes", "Server: ...", "Port: ...").
+func pointsAt(out string, port int) bool {
+	fields := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		if k, v, ok := strings.Cut(line, ":"); ok {
+			fields[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	return fields["Enabled"] == "Yes" && fields["Server"] == "127.0.0.1" && fields["Port"] == strconv.Itoa(port)
+}
+
+// services lists enabled network services; the first line is a notice and "*" marks disabled ones.
+func services() ([]string, error) {
+	out, err := exec.Command("networksetup", "-listallnetworkservices").Output()
+	if err != nil {
+		return nil, fmt.Errorf("networksetup -listallnetworkservices: %w", err)
+	}
+	var list []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n")[1:] {
+		if line != "" && !strings.HasPrefix(line, "*") {
+			list = append(list, line)
+		}
+	}
+	return list, nil
+}
+
+func setCommands(services []string, port int) [][]string {
+	p := strconv.Itoa(port)
+	var cmds [][]string
+	for _, s := range services {
+		cmds = append(cmds,
+			[]string{"-setwebproxy", s, "127.0.0.1", p},
+			[]string{"-setsecurewebproxy", s, "127.0.0.1", p},
+			[]string{"-setsocksfirewallproxy", s, "127.0.0.1", p},
+			append([]string{"-setproxybypassdomains", s}, bypass...),
+		)
+	}
+	return cmds
+}
+
+func clearCommands(services []string) [][]string {
+	var cmds [][]string
+	for _, s := range services {
+		cmds = append(cmds,
+			[]string{"-setwebproxystate", s, "off"},
+			[]string{"-setsecurewebproxystate", s, "off"},
+			[]string{"-setsocksfirewallproxystate", s, "off"},
+		)
+	}
+	return cmds
+}
+
+func run(cmds [][]string) error {
+	for _, args := range cmds {
+		if out, err := exec.Command("networksetup", args...).CombinedOutput(); err != nil {
+			return fmt.Errorf("networksetup %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		}
+	}
+	return nil
+}
