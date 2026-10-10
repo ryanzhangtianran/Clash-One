@@ -174,3 +174,32 @@ tr.muted td { color: var(--text-2); text-decoration: line-through; }
 .checks { display: flex; flex-direction: column; }
 .checks.scroll { max-height: 220px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
 .toolbar { display: flex; gap: 8px; margin-bottom: 16px; }
+
+/* strategy page tiles */
+.big-seg { display: flex; max-width: 600px; padding: 3px; border-radius: 10px; }
+.big-seg button { flex: 1; padding: 6px 0; font-size: 13px; border-radius: 8px; }
+.big-seg button.on.accent { background: var(--accent); color: #fff; }
+.tile-head { display: flex; align-items: center; justify-content: space-between; margin: 26px 0 10px; }
+.tile-title { font-weight: 600; font-size: 14px; }
+.tile-title.proxies { color: #c026d3; }
+.tile-title.groups { color: #0ea5e9; }
+.small-btn { padding: 2px 10px; font-size: 12px; border-radius: 6px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, 178px); gap: 16px; }
+.tile-wrap { position: relative; }
+.tile {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 178px; height: 94px; padding: 12px;
+  border: 1px solid transparent; border-radius: 12px; background: var(--track); text-align: left;
+}
+.tile:hover { background: var(--active); }
+.tile.selected { border-color: var(--accent); }
+.tile .kind { font-size: 11px; color: var(--text-2); }
+.tile .name { font-size: 14px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .foot { margin-top: auto; font-size: 11px; color: var(--text-2); }
+.tile .foot.delay-good { color: var(--good); } .tile .foot.delay-warn { color: var(--warn); } .tile .foot.delay-bad { color: var(--bad); }
+.tile.add { align-items: center; justify-content: center; border: 1.5px dashed var(--line); background: none; font-size: 22px; color: var(--text-2); }
+.menu.members { position: absolute; left: 0; top: 100px; min-width: 240px; max-height: 320px; overflow: auto; }
+.menu button { display: flex; justify-content: space-between; gap: 16px; }
+.menu button:disabled { opacity: 1; color: var(--text); background: none; }
+.menu button.current { font-weight: 600; }
+.menu button.danger { color: var(--bad); }
+.menu button.danger:hover { background: var(--bad); color: #fff; }
