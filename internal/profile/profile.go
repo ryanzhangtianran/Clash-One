@@ -693,3 +693,54 @@ func removeNamed(m *yaml.Node, key, name string) {
 		}
 	}
 }
+
+// SetKey sets a top-level key in the override (e.g. allow-lan), keeping the rest as written.
+func (s *Store) SetKey(key string, value any) error { return s.SetPath([]string{key}, value) }
+
+// SetPath sets a nested key such as dns.enhanced-mode in the override, creating the maps on the
+// way and leaving sibling keys and comments alone.
+func (s *Store) SetPath(path []string, value any) error {
+	if len(path) == 0 {
+		return errors.New("empty path")
+	}
+	return s.editOverride(func(root *yaml.Node) error {
+		m := root
+		for _, key := range path[:len(path)-1] {
+			m = mapOf(m, key)
+			if m.Kind != yaml.MappingNode {
+				return fmt.Errorf("覆写中的 %s 不是字典", key)
+			}
+		}
+		var n yaml.Node
+		if err := n.Encode(value); err != nil {
+			return err
+		}
+		last := path[len(path)-1]
+		if v := valueOf(m, last); v != nil {
+			*v = n
+			return nil
+		}
+		m.Content = append(m.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: last}, &n)
+		return nil
+	})
+}
+
+// Value reads a dotted path from the config the core would get, e.g. "dns.nameserver".
+func (s *Store) Value(enhanced bool, path []string) (any, error) {
+	b, err := s.Build(enhanced)
+	if err != nil {
+		return nil, err
+	}
+	var cur any = map[string]any{}
+	if err := yaml.Unmarshal(b, &cur); err != nil {
+		return nil, err
+	}
+	for _, key := range path {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil, nil
+		}
+		cur = m[key]
+	}
+	return cur, nil
+}

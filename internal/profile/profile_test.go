@@ -240,3 +240,33 @@ func TestBuildDoesNotLeak(t *testing.T) {
 		t.Fatalf("a removed proxy leaked into the next build:\n%s", b)
 	}
 }
+
+func TestSetPath(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	_ = s.SetOverride("# keep me\ndns:\n  enable: true # on\n  nameserver: [1.1.1.1]\n")
+	if err := s.SetPath([]string{"dns", "enhanced-mode"}, "redir-host"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPath([]string{"dns", "nameserver"}, []string{"223.5.5.5", "119.29.29.29"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPath([]string{"capture", "processes"}, []string{"ghostty"}); err != nil {
+		t.Fatal(err)
+	}
+	text, _ := s.Override()
+	if !strings.Contains(text, "# keep me") || !strings.Contains(text, "# on") {
+		t.Fatalf("comments lost:\n%s", text)
+	}
+	if v, _ := s.Value(false, []string{"dns", "enhanced-mode"}); v != "redir-host" {
+		t.Fatalf("enhanced-mode %v", v)
+	}
+	if v, _ := s.Value(false, []string{"dns", "enable"}); v != true {
+		t.Fatalf("sibling kept: %v", v)
+	}
+	if v, _ := s.Value(false, []string{"dns", "nameserver"}); len(v.([]any)) != 2 {
+		t.Fatalf("nameserver replaced: %v", v)
+	}
+	if v, _ := s.Value(false, []string{"capture", "mode"}); v != "system-proxy" {
+		t.Fatalf("default still there next to a new key: %v", v)
+	}
+}

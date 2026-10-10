@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -25,11 +26,12 @@ type Core struct {
 	Dir  string
 	http *http.Client
 
-	mu     sync.Mutex
-	socket string
-	daemon bool
-	cmd    *exec.Cmd
-	exited chan struct{}
+	mu      sync.Mutex
+	socket  string
+	logPath string
+	daemon  bool
+	cmd     *exec.Cmd
+	exited  chan struct{}
 }
 
 func New(dir string) *Core {
@@ -60,11 +62,12 @@ func (c *Core) Daemon() bool {
 func (c *Core) Attach(ctx context.Context, socket string) error {
 	c.mu.Lock()
 	c.socket, c.daemon = socket, true
+	c.logPath = filepath.Join(filepath.Dir(socket), "core.log") // the daemon logs next to its socket
 	c.mu.Unlock()
 	return c.wait(ctx, nil, socket)
 }
 
-func (c *Core) wait(ctx context.Context, exited <-chan struct{}, what string) error {
+func (c *Core) wait(ctx context.Context, exited <-chan struct{}, logPath string) error {
 	deadline := time.After(15 * time.Second)
 	for {
 		if _, err := c.Version(ctx); err == nil {
@@ -72,7 +75,8 @@ func (c *Core) wait(ctx context.Context, exited <-chan struct{}, what string) er
 		}
 		select {
 		case <-exited:
-			return fmt.Errorf("clash-one-core exited, see %s", what)
+			out, _ := os.ReadFile(logPath)
+			return fmt.Errorf("内核已退出: %s（日志 %s）", problems(string(out)), logPath)
 		case <-deadline:
 			return fmt.Errorf("clash-one-core at %s did not answer within 15s", c.Socket())
 		case <-ctx.Done():
@@ -110,7 +114,12 @@ func (c *Core) Start(ctx context.Context) error {
 	if _, err := os.Stat(c.ConfigPath()); err != nil {
 		return fmt.Errorf("no config to start with: %w", err)
 	}
-	logFile, err := os.OpenFile(filepath.Join(c.Dir, "core.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	pidFile := filepath.Join(c.Dir, "core.pid")
+	stopStale(pidFile) // a core left by a crashed or force-quit GUI still holds the ports
+
+	logPath := filepath.Join(c.Dir, "core.log")
+	_ = os.Rename(logPath, filepath.Join(c.Dir, "core.prev.log")) // keep the last run's log for diagnosis
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
@@ -123,16 +132,68 @@ func (c *Core) Start(ctx context.Context) error {
 		logFile.Close()
 		return err
 	}
+	_ = os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0o644)
 	exited := make(chan struct{})
 	c.mu.Lock()
-	c.socket, c.daemon, c.cmd, c.exited = socket, false, cmd, exited
+	c.socket, c.logPath, c.daemon, c.cmd, c.exited = socket, logPath, false, cmd, exited
 	c.mu.Unlock()
 	go func() {
 		_ = cmd.Wait()
 		logFile.Close()
+		_ = os.Remove(pidFile)
 		close(exited)
 	}()
-	return c.wait(ctx, exited, logFile.Name())
+	return c.wait(ctx, exited, logPath)
+}
+
+// stopStale ends the core recorded in pidFile if it is still running, waiting up to 5s.
+func stopStale(pidFile string) {
+	b, err := os.ReadFile(pidFile)
+	if err != nil {
+		return
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil || pid <= 1 {
+		return
+	}
+	// only signal it if the pid still belongs to a clash-one-core (pids get reused)
+	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output()
+	if err != nil || filepath.Base(strings.TrimSpace(string(out))) != "clash-one-core" {
+		_ = os.Remove(pidFile)
+		return
+	}
+	_ = syscall.Kill(pid, syscall.SIGTERM)
+	for i := 0; i < 50 && syscall.Kill(pid, 0) == nil; i++ {
+		time.Sleep(100 * time.Millisecond)
+	}
+	_ = syscall.Kill(pid, syscall.SIGKILL)
+	_ = os.Remove(pidFile)
+}
+
+// BindErrors returns the listeners the core failed to open in its latest config load, from its
+// log: a taken port doesn't stop the core, it just runs without that listener.
+func (c *Core) BindErrors() []string {
+	c.mu.Lock()
+	path := c.logPath
+	c.mu.Unlock()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	text := string(b)
+	if i := strings.LastIndex(text, "Start initial configuration in progress"); i >= 0 {
+		text = text[i:]
+	}
+	var errs []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "address already in use") {
+			if _, msg, ok := strings.Cut(line, `msg="`); ok {
+				line = strings.TrimSuffix(msg, `"`)
+			}
+			errs = append(errs, line)
+		}
+	}
+	return errs
 }
 
 // ConfigPath is the config the core loads from its data dir.
@@ -152,9 +213,10 @@ func (c *Core) Validate(path string) error {
 }
 
 // Reload hands the running core a config. It goes as a payload, not a path, so a root daemon
-// never reads files inside the user's home.
+// never reads files inside the user's home. force=true: without it the core skips inbound settings
+// (ports, allow-lan); listeners whose address is unchanged are kept either way.
 func (c *Core) Reload(ctx context.Context, config []byte) error {
-	return c.Do(ctx, http.MethodPut, "/configs?force=false", map[string]string{"payload": string(config)}, nil)
+	return c.Do(ctx, http.MethodPut, "/configs?force=true", map[string]string{"payload": string(config)}, nil)
 }
 
 // problems keeps the core's error/fatal lines and its verdict from `-t` output.

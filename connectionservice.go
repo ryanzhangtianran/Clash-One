@@ -106,6 +106,20 @@ func (s *CoreService) CloseHost(host string) error {
 	return nil
 }
 
+// CloseSource closes every live connection from a source IP, so a device picks up a new policy.
+func (s *CoreService) CloseSource(ip string) error {
+	conns, err := s.Connections()
+	if err != nil {
+		return err
+	}
+	for _, c := range conns {
+		if c.Source == ip {
+			_ = s.CloseConnection(c.ID)
+		}
+	}
+	return nil
+}
+
 // AddTempRule adds a runtime rule like "DOMAIN-SUFFIX,google.com,DIRECT"; it lasts until the next reload.
 func (s *CoreService) AddTempRule(rule string) (int, error) {
 	var resp struct {

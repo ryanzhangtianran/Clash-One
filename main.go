@@ -38,21 +38,34 @@ func main() {
 	svc.onReady = profiles.apply
 	sysProxy := &SystemProxyService{core: svc.core, settings: settings}
 	enhanced := &EnhancedService{core: svc.core, profiles: profiles, settings: settings}
+	devices := &DeviceService{core: svc, profiles: profiles}
+	settingsSvc := &SettingsService{core: svc}
 	if err := profiles.WriteConfig(); err != nil {
 		log.Printf("build config: %v (keeping the previous config.yaml)", err)
 	}
 
+	var window *application.WebviewWindow
 	app := application.New(application.Options{
+		// a second copy would fight the first over the core's ports; bring the first forward instead
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "com.ryanzhangtianran.clashone",
+			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
+				if window != nil {
+					window.Show()
+					window.Focus()
+				}
+			},
+		},
 		Name:        "Clash One",
 		Description: "Rule-based proxy with reverse tunnels",
-		Services:    []application.Service{application.NewService(svc), application.NewService(profiles), application.NewService(sysProxy), application.NewService(enhanced)},
+		Services:    []application.Service{application.NewService(svc), application.NewService(profiles), application.NewService(sysProxy), application.NewService(enhanced), application.NewService(devices), application.NewService(settingsSvc)},
 		Assets:      application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: false, // lives on in the menu bar
 		},
 	})
 
-	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:          "Clash One",
 		Width:          960,
 		Height:         640,

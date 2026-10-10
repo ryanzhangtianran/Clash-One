@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { EnhancedService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One";
+import { ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One";
 import type { Profiles as ProfilesData } from "../bindings/github.com/ryanzhangtianran/Clash-One";
 import { sizeText } from "./format";
 
@@ -16,13 +16,11 @@ export default function Profiles() {
   const [local, setLocal] = useState("");
   const [override, setOverride] = useState("");
   const [savedOverride, setSavedOverride] = useState("");
-  const [daemon, setDaemon] = useState(false);
 
   const load = useCallback(() => ProfileService.Profiles().then(setData), []);
   useEffect(() => {
     load();
     ProfileService.Override().then((o) => { setOverride(o); setSavedOverride(o); });
-    EnhancedService.DaemonInstalled().then(setDaemon);
     return Events.On("profiles", (e) => setData(e.data));
   }, [load]);
 
@@ -90,22 +88,6 @@ export default function Profiles() {
         </div>
         <textarea className="code" rows={12} spellCheck={false} value={override} onChange={(e) => setOverride(e.target.value)}
           placeholder={"mode: rule\nprepend-rules:\n  - DOMAIN-SUFFIX,corp.example.com,DIRECT"} />
-      </div>
-
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="head">
-          <div className="label">特权服务（增强模式）</div>
-          {daemon && (
-            <button className="btn" disabled={!!busy} onClick={() => run("daemon", () => EnhancedService.Uninstall().then(() => EnhancedService.DaemonInstalled().then(setDaemon)))}>
-              {busy === "daemon" ? "卸载中…" : "卸载"}
-            </button>
-          )}
-        </div>
-        <div className="muted small" style={{ marginTop: 6 }}>
-          {daemon
-            ? "已安装：内核以 root 身份由 launchd 运行（/Library/PrivilegedHelperTools）。退出 Clash One 时会关闭 TUN。"
-            : "未安装：首次开启增强模式时会请求管理员授权并安装。"}
-        </div>
       </div>
     </>
   );

@@ -3,9 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +27,7 @@ type Status struct {
 	Running bool   `json:"running"`
 	Version string `json:"version"`
 	Error   string `json:"error"`
+	Warning string `json:"warning"` // running, but e.g. the proxy port could not be opened
 }
 
 type Proxy struct {
@@ -78,7 +83,7 @@ func (s *CoreService) ServiceStartup(ctx context.Context, _ application.ServiceO
 			return
 		}
 		version, _ := s.core.Version(ctx)
-		s.setStatus(Status{Running: true, Version: version})
+		s.setStatus(Status{Running: true, Version: version, Warning: s.portWarning()})
 		if mode, err := s.Mode(); err == nil {
 			s.modeChanged(mode)
 		}
@@ -90,6 +95,16 @@ func (s *CoreService) ServiceStartup(ctx context.Context, _ application.ServiceO
 
 // ServiceShutdown stops the child core, or puts the daemon back on its boot config so it doesn't
 // keep capturing traffic (TUN) while the GUI is gone.
+// portWarning reports listeners (e.g. mixed-port) the core could not open because another program,
+// such as another proxy app, holds the port.
+func (s *CoreService) portWarning() string {
+	errs := s.core.BindErrors()
+	if len(errs) == 0 {
+		return ""
+	}
+	return "端口被占用，相关代理端口未能打开（可用 lsof -nP -iTCP -sTCP:LISTEN 查看占用者）：" + strings.Join(errs, "；")
+}
+
 func (s *CoreService) ServiceShutdown() error {
 	if s.core.Daemon() {
 		return s.core.Reload(context.Background(), []byte(daemon.BootConfig))
@@ -240,4 +255,14 @@ func (s *CoreService) streamTraffic(ctx context.Context) {
 			time.Sleep(time.Second)
 		}
 	}
+}
+
+// ReportError records a frontend error (render crash, unhandled rejection) in gui-errors.log.
+func (s *CoreService) ReportError(message string) {
+	f, err := os.OpenFile(filepath.Join(s.core.Dir, "gui-errors.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s %s\n\n", time.Now().Format(time.RFC3339), message)
 }

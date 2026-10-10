@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -241,6 +242,22 @@ func (s *ProfileService) AddTunnel(tunnel map[string]any) error {
 
 func (s *ProfileService) RemoveTunnel(name string) error {
 	return s.edit(func() error { return s.store.RemoveTunnel(name) })
+}
+
+// SetKey sets a top-level override key (e.g. allow-lan) and applies it.
+func (s *ProfileService) SetKey(key string, value any) error {
+	return s.edit(func() error { return s.store.SetKey(key, value) })
+}
+
+// Set writes a dotted setting such as "dns.enhanced-mode" into the override and applies it.
+func (s *ProfileService) Set(path string, value any) error {
+	return s.edit(func() error { return s.store.SetPath(strings.Split(path, "."), value) })
+}
+
+// Value reads a dotted setting from the effective config (defaults, profile and override merged).
+func (s *ProfileService) Value(path string) (any, error) {
+	enhanced := s.settings != nil && s.settings.Get().Enhanced && s.core.Daemon()
+	return s.store.Value(enhanced, strings.Split(path, "."))
 }
 
 func (s *ProfileService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {

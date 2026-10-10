@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -31,4 +33,22 @@ func TestActivity(t *testing.T) {
 	if l.Group != "代理" {
 		t.Fatalf("latency group %q", l.Group)
 	}
+}
+
+func TestPortWarning(t *testing.T) {
+	s, _, port := startCore(t, "")
+	if w := s.portWarning(); w != "" {
+		t.Fatalf("port %d is open, got warning %q", port, w)
+	}
+	// a second core told to use the first core's port can't open it, yet keeps running
+	cs, _, _ := startCore(t, "")
+	if err := cs.core.Reload(t.Context(), []byte(fmt.Sprintf("mixed-port: %d\nrules:\n  - MATCH,DIRECT\n", port))); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	w := cs.portWarning()
+	if !strings.Contains(w, strconv.Itoa(port)) {
+		t.Fatalf("expected a warning naming port %d, got %q", port, w)
+	}
+	t.Logf("warning: %s", w)
 }

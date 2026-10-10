@@ -4,11 +4,12 @@ import { CoreService, EnhancedService, SystemProxyService } from "../bindings/gi
 import type { Activity as ActivityData, LogLine, Status, Traffic } from "../bindings/github.com/ryanzhangtianran/Clash-One";
 import Activity from "./Activity";
 import Proxies from "./Proxies";
-import Profiles from "./Profiles";
 import Connections from "./Connections";
 import Rules from "./Rules";
 import Tunnels from "./Tunnels";
-import Logs from "./Logs";
+import Devices from "./Devices";
+import Settings from "./Settings";
+import ErrorBoundary from "./ErrorBoundary";
 
 const HISTORY = 60; // seconds of traffic kept for the sparklines
 const LOG_LINES = 500;
@@ -26,7 +27,7 @@ const nav: { section?: string; pages: Page[] }[] = [
     section: "客户端",
     pages: [
       { key: "connections", title: "连接", ready: true, icon: icon("M4 5h16v14H4zM8 10l2 2-2 2M12 14h4") },
-      { key: "devices", title: "设备", ready: false, icon: icon("M3 14h18v5H3zM7 16.5h.01M7 14l4-9M14 9a4 4 0 0 1 5 0") },
+      { key: "devices", title: "设备", ready: true, icon: icon("M3 14h18v5H3zM7 16.5h.01M7 14l4-9M14 9a4 4 0 0 1 5 0") },
     ],
   },
   {
@@ -37,18 +38,12 @@ const nav: { section?: string; pages: Page[] }[] = [
       { key: "tunnels", title: "反向隧道", ready: true, icon: icon("M4 17V7l8-4 8 4v10l-8 4zM12 3v18") },
     ],
   },
-  {
-    section: "设置",
-    pages: [
-      { key: "profiles", title: "配置", ready: true, icon: icon("M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7") },
-      { key: "logs", title: "日志", ready: true, icon: icon("M4 6h16M4 10h16M4 14h10M4 18h7") },
-    ],
-  },
 ];
+const more: Page = { key: "settings", title: "更多", ready: true, icon: icon("M4 7h10M18 7h2M4 17h2M10 17h10M16 5v4M8 15v4") };
 
 export default function App() {
   const [current, setCurrent] = useState("activity");
-  const [status, setStatus] = useState<Status>({ running: false, version: "", error: "" });
+  const [status, setStatus] = useState<Status>({ running: false, version: "", error: "", warning: "" });
   const [activity, setActivity] = useState<ActivityData | null>(null);
   const [history, setHistory] = useState<Traffic[]>([]);
   const [sysProxy, setSysProxy] = useState(false);
@@ -100,6 +95,9 @@ export default function App() {
             ))}
           </div>
         ))}
+        <div className="bottom">
+          <button className={`item ${current === more.key ? "active" : ""}`} onClick={() => setCurrent(more.key)}>{more.icon}{more.title}</button>
+        </div>
       </nav>
       <main className="main">
         <div className="topbar">
@@ -129,13 +127,16 @@ export default function App() {
           </button>
         </div>
         <div className="page">
+          {status.warning && <div className="card error" style={{ marginBottom: 16 }}>⚠︎ {status.warning}</div>}
+          <ErrorBoundary key={current} onReset={() => setCurrent("activity")}>
           {current === "activity" && <Activity status={status} activity={activity} history={history} />}
           {current === "proxies" && <Proxies status={status} />}
-          {current === "profiles" && <Profiles />}
           {current === "connections" && <Connections status={status} />}
           {current === "rules" && <Rules status={status} />}
           {current === "tunnels" && <Tunnels status={status} />}
-          {current === "logs" && <Logs lines={logs} onClear={() => setLogs([])} />}
+          {current === "settings" && <Settings key={current} status={status} logs={logs} onClearLogs={() => setLogs([])} />}
+          </ErrorBoundary>
+          {current === "devices" && <Devices status={status} />}
         </div>
       </main>
     </div>

@@ -203,3 +203,34 @@ tr.muted td { color: var(--text-2); text-decoration: line-through; }
 .menu button.current { font-weight: 600; }
 .menu button.danger { color: var(--bad); }
 .menu button.danger:hover { background: var(--bad); color: #fff; }
+.menu.detail { min-width: 320px; padding: 8px; }
+.detail-head { padding: 4px 8px 6px; font-size: 12px; color: var(--text-2); }
+.detail-row { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 6px 8px; border-top: 1px solid var(--line); font-size: 12px; }
+
+/* settings */
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); border-top: 1px solid var(--line); }
+.settings-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 40px 20px 28px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; }
+.settings-tile:hover { background: var(--hover); }
+.settings-icon { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 40px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.settings-icon svg { width: 26px; height: 26px; }
+.settings-name { font-size: 16px; font-weight: 600; }
+.settings-card { margin-bottom: 16px; }
+.settings-card .section-title { margin-top: 0; }
+.setting-row { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 12px 0; border-top: 1px solid var(--line); }
+.setting-row:first-of-type { border-top: 0; }
+.setting-title { font-weight: 500; }
+.setting-control { flex: none; display: flex; align-items: center; gap: 8px; }
+.switch { width: 40px; height: 24px; border-radius: 12px; border: 0; background: var(--track); padding: 2px; display: flex; transition: background .15s; }
+.switch i { width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+.switch.on { background: var(--good); }
+.switch.on i { transform: translateX(16px); }
+.back { border: 0; background: none; color: var(--accent); font-size: 13px; padding: 0; margin-bottom: 6px; }
+.sidebar .bottom { margin-top: auto; border-top: 1px solid var(--line); padding-top: 8px; }
+.picker { position: relative; max-width: 420px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; }
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border-radius: 999px; background: var(--track); font-size: 12px; }
+.chip button { border: 0; background: none; color: var(--text-2); font-size: 14px; line-height: 1; padding: 0 4px; }
+.chip button:hover { color: var(--bad); }
+.picker-menu { position: absolute; right: 0; top: 100%; width: 320px; z-index: 30; }
+.picker-menu input { width: 100%; margin-bottom: 4px; }
+.picker-list { max-height: 260px; overflow: auto; }
