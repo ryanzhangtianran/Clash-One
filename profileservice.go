@@ -215,15 +215,6 @@ func (s *ProfileService) AddProxy(proxy map[string]any, extra string, groups []s
 	return s.edit(func() error { return s.store.AddProxy(proxy, groups) })
 }
 
-// AddTunnelYAML adds a reverse tunnel written as YAML (one reverse-tunnels entry).
-func (s *ProfileService) AddTunnelYAML(text string) error {
-	tunnel := map[string]any{}
-	if err := profile.MergeYAML(tunnel, text); err != nil {
-		return err
-	}
-	return s.AddTunnel(tunnel)
-}
-
 func (s *ProfileService) RemoveProxy(name string) error {
 	return s.edit(func() error { return s.store.RemoveProxy(name) })
 }
@@ -242,11 +233,6 @@ func (s *ProfileService) AddTunnel(tunnel map[string]any) error {
 
 func (s *ProfileService) RemoveTunnel(name string) error {
 	return s.edit(func() error { return s.store.RemoveTunnel(name) })
-}
-
-// SetKey sets a top-level override key (e.g. allow-lan) and applies it.
-func (s *ProfileService) SetKey(key string, value any) error {
-	return s.edit(func() error { return s.store.SetKey(key, value) })
 }
 
 // Set writes a dotted setting such as "dns.enhanced-mode" into the override and applies it.

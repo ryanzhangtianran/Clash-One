@@ -8,15 +8,12 @@ const stateLabel: Record<string, string> = { running: "运行中", connecting: "
 const stateClass: Record<string, string> = { running: "delay-good", connecting: "delay-warn", retrying: "delay-bad" };
 const kinds: [string, string, string][] = [["frp", "frp", "groups"], ["ssh", "SSH -R", "proxies"]];
 
-type Menu = { x: number; y: number; name: string };
-
 export default function Tunnels({ status }: { status: Status }) {
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   const [mine, setMine] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [dialog, setDialog] = useState(false);
   const [open, setOpen] = useState("");
-  const [menu, setMenu] = useState<Menu | null>(null);
 
   const load = useCallback(() => {
     CoreService.ReverseTunnels().then((t) => { setTunnels(t ?? []); setError(""); }).catch((e) => setError(String(e)));
@@ -29,12 +26,6 @@ export default function Tunnels({ status }: { status: Status }) {
     const t = setInterval(load, 2000);
     return () => clearInterval(t);
   }, [status.running, load]);
-
-  useEffect(() => {
-    const close = () => setMenu(null);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, []);
 
   const remove = (name: string) => ProfileService.RemoveTunnel(name).then(load).catch((e) => setError(String(e)));
 
@@ -52,8 +43,7 @@ export default function Tunnels({ status }: { status: Status }) {
               const forwards = t.forwards ?? [];
               return (
                 <div key={t.name} className="tile-wrap">
-                  <button className={`tile ${open === t.name ? "selected" : ""}`} onClick={() => setOpen(open === t.name ? "" : t.name)}
-                    onContextMenu={(e) => { e.preventDefault(); if (mine.includes(t.name)) setMenu({ x: e.clientX, y: e.clientY, name: t.name }); }}>
+                  <button className={`tile ${open === t.name ? "selected" : ""}`} onClick={() => setOpen(open === t.name ? "" : t.name)}>
                     <span className="kind">{t.type.toUpperCase()} · {forwards.length} 条转发</span>
                     <span className="name">{t.name}</span>
                     <span className={`foot ${stateClass[t.state] ?? ""}`}>{stateLabel[t.state] ?? t.state}{t.error && " · 有错误"}</span>
@@ -83,11 +73,6 @@ export default function Tunnels({ status }: { status: Status }) {
         </div>
       ))}
 
-      {menu && (
-        <div className="menu" style={{ position: "fixed", left: menu.x, top: menu.y }}>
-          <button className="danger" onClick={() => remove(menu.name)}>删除隧道</button>
-        </div>
-      )}
       {dialog && <TunnelDialog onClose={() => { setDialog(false); load(); }} />}
     </>
   );

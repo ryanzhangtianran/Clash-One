@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"html"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,24 +94,7 @@ func loginItemPlist(exe string) string {
 	<key>RunAtLoad</key><true/>
 </dict>
 </plist>
-`, loginItemLabel, xmlEscape(exe))
-}
-
-func xmlEscape(s string) string {
-	var b []byte
-	for _, r := range s {
-		switch r {
-		case '&':
-			b = append(b, "&amp;"...)
-		case '<':
-			b = append(b, "&lt;"...)
-		case '>':
-			b = append(b, "&gt;"...)
-		default:
-			b = append(b, string(r)...)
-		}
-	}
-	return string(b)
+`, loginItemLabel, html.EscapeString(exe))
 }
 
 // ProcessChoice is something the enhanced-mode scope can name: an app or a networked process.

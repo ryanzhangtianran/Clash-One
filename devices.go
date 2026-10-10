@@ -53,7 +53,7 @@ func (s *DeviceService) Lan() (LanInfo, error) {
 
 // SetAllowLan lets other devices use the proxy port; kept in the override.
 func (s *DeviceService) SetAllowLan(on bool) error {
-	return s.profiles.SetKey("allow-lan", on)
+	return s.profiles.Set("allow-lan", on)
 }
 
 func lanAddresses() []string {

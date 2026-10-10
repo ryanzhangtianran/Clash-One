@@ -184,16 +184,7 @@ func (c *Core) BindErrors() []string {
 	if i := strings.LastIndex(text, "Start initial configuration in progress"); i >= 0 {
 		text = text[i:]
 	}
-	var errs []string
-	for _, line := range strings.Split(text, "\n") {
-		if strings.Contains(line, "address already in use") {
-			if _, msg, ok := strings.Cut(line, `msg="`); ok {
-				line = strings.TrimSuffix(msg, `"`)
-			}
-			errs = append(errs, line)
-		}
-	}
-	return errs
+	return msgs(text, func(line string) bool { return strings.Contains(line, "address already in use") })
 }
 
 // ConfigPath is the config the core loads from its data dir.
@@ -221,19 +212,27 @@ func (c *Core) Reload(ctx context.Context, config []byte) error {
 
 // problems keeps the core's error/fatal lines and its verdict from `-t` output.
 func problems(out string) string {
-	var keep []string
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if strings.Contains(line, "level=error") || strings.Contains(line, "level=fatal") || strings.Contains(line, "failed") {
-			if _, msg, ok := strings.Cut(line, `msg="`); ok {
-				line = strings.TrimSuffix(msg, `"`)
-			}
-			keep = append(keep, line)
-		}
-	}
+	keep := msgs(out, func(line string) bool {
+		return strings.Contains(line, "level=error") || strings.Contains(line, "level=fatal") || strings.Contains(line, "failed")
+	})
 	if len(keep) == 0 {
 		return strings.TrimSpace(out)
 	}
 	return strings.Join(keep, "\n")
+}
+
+// msgs returns the log lines matching keep, reduced to their msg="..." text.
+func msgs(text string, keep func(string) bool) []string {
+	var out []string
+	for _, line := range strings.Split(strings.TrimSpace(text), "\n") {
+		if keep(line) {
+			if _, msg, ok := strings.Cut(line, `msg="`); ok {
+				line = strings.TrimSuffix(msg, `"`)
+			}
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 // Stop ends the GUI's own child (it restores routes and listeners on SIGTERM), killing it after 5s.

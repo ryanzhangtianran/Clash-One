@@ -22,8 +22,9 @@ function Row({ title, desc, children }: { title: string; desc?: string; children
   );
 }
 
+// Switch is WebKit's native toggle (<input type=checkbox switch>, Safari 17.4+).
 function Switch({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return <button className={`switch ${on ? "on" : ""}`} disabled={disabled} onClick={() => onChange(!on)} aria-pressed={on}><i /></button>;
+  return <input type="checkbox" {...{ switch: "" }} checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />;
 }
 
 // sameShape keeps a value only if it matches the fallback's type: an unset Go value can reach JS

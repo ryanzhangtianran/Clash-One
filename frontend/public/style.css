@@ -220,10 +220,6 @@ tr.muted td { color: var(--text-2); text-decoration: line-through; }
 .setting-row:first-of-type { border-top: 0; }
 .setting-title { font-weight: 500; }
 .setting-control { flex: none; display: flex; align-items: center; gap: 8px; }
-.switch { width: 40px; height: 24px; border-radius: 12px; border: 0; background: var(--track); padding: 2px; display: flex; transition: background .15s; }
-.switch i { width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
-.switch.on { background: var(--good); }
-.switch.on i { transform: translateX(16px); }
 .back { border: 0; background: none; color: var(--accent); font-size: 13px; padding: 0; margin-bottom: 6px; }
 .sidebar .bottom { margin-top: auto; border-top: 1px solid var(--line); padding-top: 8px; }
 .picker { position: relative; max-width: 420px; }

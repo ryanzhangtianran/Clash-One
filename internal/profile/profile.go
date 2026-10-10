@@ -459,33 +459,14 @@ func parseUsage(header string) *Usage {
 // PrependRule puts rule first in the override's prepend-rules, keeping the rest of the override,
 // comments included, as the user wrote it.
 func (s *Store) PrependRule(rule string) error {
-	text, err := s.Override()
-	if err != nil {
-		return err
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
-		return err
-	}
-	if doc.Kind == 0 { // empty override
-		doc = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
-	}
-	root := doc.Content[0]
-	if root.Kind != yaml.MappingNode {
-		return errors.New("覆写不是 YAML 字典")
-	}
-	item := &yaml.Node{Kind: yaml.ScalarNode, Value: rule}
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value == "prepend-rules" && root.Content[i+1].Kind == yaml.SequenceNode {
-			seq := root.Content[i+1]
-			seq.Content = append([]*yaml.Node{item}, seq.Content...)
-			return s.writeOverride(&doc)
+	return s.editOverride(func(root *yaml.Node) error {
+		seq := child(root, "prepend-rules", yaml.SequenceNode)
+		if seq.Kind != yaml.SequenceNode {
+			return errors.New("覆写中的 prepend-rules 不是列表")
 		}
-	}
-	root.Content = append(root.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Value: "prepend-rules"},
-		&yaml.Node{Kind: yaml.SequenceNode, Content: []*yaml.Node{item}})
-	return s.writeOverride(&doc)
+		seq.Content = append([]*yaml.Node{{Kind: yaml.ScalarNode, Value: rule}}, seq.Content...)
+		return nil
+	})
 }
 
 func (s *Store) writeOverride(doc *yaml.Node) error {
@@ -693,9 +674,6 @@ func removeNamed(m *yaml.Node, key, name string) {
 		}
 	}
 }
-
-// SetKey sets a top-level key in the override (e.g. allow-lan), keeping the rest as written.
-func (s *Store) SetKey(key string, value any) error { return s.SetPath([]string{key}, value) }
 
 // SetPath sets a nested key such as dns.enhanced-mode in the override, creating the maps on the
 // way and leaving sibling keys and comments alone.
