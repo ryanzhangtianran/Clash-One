@@ -177,7 +177,7 @@ function Ranking({ activity }: { activity: ActivityData }) {
   return (
     <div className="card ranking">
       <div className="head">
-        <div className="label">流量</div>
+        <div className="label">今日流量</div>
         <div className="seg">
           <button className={!proxyOnly ? "on" : ""} onClick={() => setProxyOnly(false)}>全部</button>
           <button className={proxyOnly ? "on" : ""} onClick={() => setProxyOnly(true)}>仅代理</button>
