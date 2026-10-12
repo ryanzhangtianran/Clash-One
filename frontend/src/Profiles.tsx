@@ -109,7 +109,7 @@ export default function Profiles() {
         {adding && (
           <div className="plist-add">
             <input placeholder="名称（可选）" value={name} onChange={(e) => setName(e.target.value)} style={{ width: 130 }} />
-            <input placeholder="订阅链接 https://…" value={link} autoFocus onChange={(e) => setLink(e.target.value)} onKeyDown={(e) => e.key === "Enter" && link && add()} style={{ flex: 1 }} />
+            <input placeholder="订阅链接 https://…" value={link} autoFocus onChange={(e) => setLink(e.target.value)} onKeyDown={(e) => e.key === "Enter" && link && add()} className="grow" />
             <button className="btn primary" disabled={!link || !!busy} onClick={add}>{busy === "add" ? "下载中…" : "添加"}</button>
             <button className="btn" onClick={() => setAdding(false)}>取消</button>
           </div>
@@ -130,7 +130,7 @@ export default function Profiles() {
         <div className="plist-add">
           <input className="field-input" list="override-fields" placeholder="字段，如 dns.enable" value={field} onChange={(e) => setField(e.target.value)} />
           <datalist id="override-fields">{overrideFields.map((f) => <option key={f} value={f} />)}</datalist>
-          <input placeholder="值，如 true、7890、[a, b]" value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && canAdd && addField()} style={{ flex: 1 }} />
+          <input placeholder="值，如 true、7890、[a, b]" value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && canAdd && addField()} className="grow" />
           <button className="btn" disabled={!canAdd} title={override !== savedOverride ? "先保存或还原编辑框里的改动" : ""} onClick={addField}>{busy === "field" ? "添加中…" : "添加"}</button>
         </div>
         <textarea className="code override" rows={10} spellCheck={false} value={override} onChange={(e) => setOverride(e.target.value)} />

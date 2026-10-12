@@ -23,7 +23,7 @@ function AddRule({ onAdded }: { onAdded: () => void }) {
       <div className="label">增加规则</div>
       <div className="form">
         <select value={type} onChange={(e) => setType(e.target.value)}>{ruleTypes.map((t) => <option key={t}>{t}</option>)}</select>
-        <input placeholder="值，如 google.com、10.0.0.0/8、ghostty" value={payload} onChange={(e) => setPayload(e.target.value)} style={{ flex: 1 }} />
+        <input placeholder="值，如 google.com、10.0.0.0/8、ghostty" value={payload} onChange={(e) => setPayload(e.target.value)} className="grow" />
         <select value={policy} onChange={(e) => setPolicy(e.target.value)}>{policies.map((p) => <option key={p}>{p}</option>)}</select>
         {ipTypes.has(type) && <label className="radio"><input type="checkbox" checked={noResolve} onChange={(e) => setNoResolve(e.target.checked)} /> no-resolve</label>}
         <button className="btn primary" disabled={!payload} onClick={add}>增加</button>

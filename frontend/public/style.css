@@ -186,6 +186,8 @@ textarea.code { display: block; width: 100%; margin: 8px 0; font: 12px/1.5 ui-mo
 .form { display: flex; gap: 8px; margin-top: 14px; }
 .small { font-size: 12px; }
 .actions { display: flex; gap: 6px; flex: none; }
+.actions.end { justify-content: flex-end; margin-top: 12px; } /* a dialog's buttons */
+.grow { flex: 1; }
 summary { cursor: default; }
 select { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; }
 .table-wrap { overflow: auto; margin-top: 10px; }
@@ -327,7 +329,6 @@ tr.muted td { color: var(--text-2); text-decoration: line-through; }
 .plist-empty { padding: 18px 16px; }
 .plist-add { display: flex; gap: 8px; padding: 10px 16px; }
 .plist-tools { display: flex; align-items: center; gap: 6px; padding: 8px 10px; }
-.plist-tools .grow { flex: 1; }
 .plist-tools .btn { height: 24px; padding: 0 10px; font-size: 12px; }
 .plist textarea.override { margin: 0; border: 0; border-radius: 0; background: none; padding: 12px 16px; }
 
@@ -344,7 +345,6 @@ tr.muted td { color: var(--text-2); text-decoration: line-through; }
 .form-row > :last-child { justify-self: stretch; }
 .form-row > input[type=checkbox] { justify-self: end; }
 .form-row select, .form-row input:not([type=checkbox]) { width: 100%; }
-.sheet-foot .grow { flex: 1; }
 /* rule actions: borderless, shown on the hovered row only, so the table reads as rules */
 .rule-actions { text-align: right; width: 168px; }
 .table .rule-actions .btn { height: 22px; padding: 0 8px; border-color: transparent; background: none; color: var(--text-2); visibility: hidden; }

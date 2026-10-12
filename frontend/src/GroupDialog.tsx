@@ -50,7 +50,7 @@ export default function GroupDialog({ onClose }: { onClose: () => void }) {
             <div className="section-title">规则（SSID:名称、BSSID:地址、ROUTER:路由器 IP、网段如 192.168.1.0/24、TYPE:WIFI / TYPE:WIRED）</div>
             {rules.map(([cond, target], i) => (
               <div key={i} className="inline" style={{ marginBottom: 6 }}>
-                <input value={cond} placeholder="SSID:我的 Wi-Fi" onChange={(e) => setRules(rules.map((r, j) => (j === i ? [e.target.value, r[1]] : r)))} style={{ flex: 1 }} />
+                <input value={cond} placeholder="SSID:我的 Wi-Fi" onChange={(e) => setRules(rules.map((r, j) => (j === i ? [e.target.value, r[1]] : r)))} className="grow" />
                 <span className="muted">→</span>
                 <select value={target} onChange={(e) => setRules(rules.map((r, j) => (j === i ? [r[0], e.target.value] : r)))}>{names.map((n) => <option key={n}>{n}</option>)}</select>
                 <button className="btn" onClick={() => setRules(rules.filter((_, j) => j !== i))}>×</button>
@@ -68,7 +68,7 @@ export default function GroupDialog({ onClose }: { onClose: () => void }) {
             </div>
           </>
         )}
-        <div className="actions" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+        <div className="actions end">
           <button className="btn" onClick={onClose}>取消</button>
           <button className="btn primary" disabled={!name || (type !== "subnet" && members.length === 0)} onClick={add}>完成</button>
         </div>

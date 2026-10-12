@@ -179,7 +179,7 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
           ? <Rows cols={[["name", "名称"], ["type", "类型"], ["localIP", "本地 IP"], ["localPort", "本地端口"], ["remotePort", "远端端口"], ["customDomains", "域名（http/https）"]]} rows={frpRows} setRows={setFrpRows} />
           : <Rows cols={[["remote", "远端监听"], ["local", "本地目标"]]} rows={sshRows} setRows={setSshRows} />}
         <button className="btn" style={{ marginTop: 8 }} onClick={() => (kind === "frp" ? setFrpRows([...frpRows, { type: "tcp", localIP: "127.0.0.1" }]) : setSshRows([...sshRows, {}]))}>{kind === "frp" ? "添加代理" : "添加转发"}</button>
-        <div className="actions" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+        <div className="actions end">
           <button className="btn" onClick={onClose}>取消</button>
           <button className="btn primary" disabled={!v.name} onClick={add}>完成</button>
         </div>

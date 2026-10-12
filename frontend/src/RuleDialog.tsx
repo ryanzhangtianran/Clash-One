@@ -62,7 +62,7 @@ export function RuleDialog({ conn, onClose }: { conn: Conn; onClose: () => void 
             <label className="radio"><input type="checkbox" checked={reconnect} onChange={(e) => setReconnect(e.target.checked)} /> 断开现有连接以立即生效</label>
           </div>
         </div>
-        <div className="actions" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+        <div className="actions end">
           <button className="btn" onClick={onClose}>取消</button>
           <button className="btn primary" disabled={!value} onClick={add}>增加</button>
         </div>
