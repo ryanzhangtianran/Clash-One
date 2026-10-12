@@ -4,15 +4,21 @@ macOS 桌面客户端（Wails 3 + React），内核是 [connaio-core](https://gi
 
 ## 安装
 
-从 [Releases](https://github.com/ryanzhangtianran/Connaio/releases) 下载 `Connaio-<版本>-macos-arm64.dmg`，打开后把 Connaio 拖到 Applications。需要 Apple 芯片、macOS 15 及以上。
+从 [Releases](https://github.com/ryanzhangtianran/Connaio/releases) 下载对应平台的文件。增强模式（TUN）需要先在「通用」中授予 root 权限（输入一次管理员密码）。
 
-App 没有经过 Apple 公证，首次打开前在终端执行一次：
+**macOS**（Apple 芯片，macOS 15 及以上）：打开 `Connaio-<版本>-macos-arm64.dmg`，把 Connaio 拖到 Applications。App 没有经过 Apple 公证，首次打开前在终端执行一次：
 
 ```bash
 xattr -cr /Applications/Connaio.app
 ```
 
-增强模式（TUN）需要先在「通用」中授予 root 权限（输入一次管理员密码）。
+**Linux**（Ubuntu 22.04 及以上，x86-64）：
+
+```bash
+sudo apt install ./Connaio-<版本>-linux-amd64.deb
+```
+
+托盘图标需要桌面支持 AppIndicator（Ubuntu 自带的 GNOME 默认开启）。
 
 ## 开发
 
@@ -28,6 +34,7 @@ go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
 wails3 dev        # 开发模式（前端热更新）
 wails3 package    # 产出 bin/Connaio.app，内核打包在 Contents/MacOS/connaio-core
 build/darwin/make-dmg.sh bin/Connaio.app bin/Connaio-1.0.0-macos-arm64.dmg   # 发布用的拖拽安装盘
+wails3 task linux:package   # 在 Ubuntu 22.04 上：产出 bin/connaio.deb（GitHub Actions 打标签时自动构建并附到 Release）
 ```
 
 ## 结构
