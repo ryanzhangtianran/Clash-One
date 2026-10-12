@@ -110,7 +110,7 @@ button { font: inherit; color: inherit; }
 
 /* cards */
 /* activity fills the window: the top two rows share the spare height, the page scrolls only when too small */
-.activity { display: flex; flex-direction: column; min-height: calc(100vh - var(--chrome)); }
+.activity { display: flex; flex-direction: column; height: calc(100vh - var(--chrome)); }
 .grid { flex: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: minmax(auto, 1fr) minmax(auto, 1fr) auto; gap: var(--gap); } /* fills the window; small windows scroll */
 .grid .card { padding: 12px 16px; }
 .grid > .card { display: flex; flex-direction: column; }
@@ -120,7 +120,7 @@ button { font: inherit; color: inherit; }
 .split-bar { display: flex; gap: 4px; height: 10px; margin-top: 8px; }
 .split-bar:empty { border-radius: 5px; background: var(--track); }
 .split-bar i { min-width: 6px; border-radius: 5px; }
-.span2 { grid-row: span 2; display: flex; flex-direction: column; min-width: 0; }
+.span2 { grid-row: span 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; } /* the grid row doesn't grow with it: its list scrolls */
 .span2 > .card { flex: 1; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
 .card {
@@ -374,6 +374,8 @@ tr.muted td.rule-actions { text-decoration: none; }
 .list-add .code-input { flex: 1; min-width: 0; font: 12px ui-monospace, "SF Mono", Menlo, monospace; }
 .setting-control .ctl { width: 80px; } /* one column of equal-width controls */
 .setting-control .btn.ctl { height: 24px; font-size: 12px; border-radius: 6px; }
+.ranking { display: flex; flex-direction: column; min-height: 0; }
+.ranking .rank { flex: 1; min-height: 0; overflow-y: auto; }
 .ranking .head { margin-bottom: 4px; }
 .client-icon { width: 24px; height: 24px; flex: none; }
 .client-icon.device { display: grid; place-items: center; border-radius: 6px; background: var(--track); color: var(--text-2); }

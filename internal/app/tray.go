@@ -20,6 +20,9 @@ var modes = []struct{ key, label string }{
 
 const trayProcesses = 5
 
+// trayRecent is how long a process stays listed after its last byte, so rows don't flicker.
+const trayRecent = 10 * time.Second
+
 // modeBadges are the letters for the outbound mode, on the menu bar icon and the mode item
 var modeBadges = map[string]string{"rule": "R", "global": "G", "direct": "D"}
 
@@ -45,12 +48,14 @@ type trayMenu struct {
 	proxy, enhOn bool
 	layout       string // groups and profiles the menu was built for
 	rows         []procRow
+	lastActive   map[string]time.Time // process -> when it last moved bytes
 	modeItem     *application.MenuItem
 	qualityItem  *application.MenuItem
 	proxyItem    *application.MenuItem
 	enhancedItem *application.MenuItem
 	modeItems    map[string]*application.MenuItem
 	partialItem  *application.MenuItem
+	partialMenu  *application.MenuItem // the 部分增强 submenu, which says when it is on
 	procItems    []*application.MenuItem
 	details      map[*application.MenuItem]string // right of the label: grey text, or a pill (see pill)
 	icons        map[*application.MenuItem]string // file whose Finder icon the item shows
@@ -66,12 +71,13 @@ type procRow struct {
 
 func newTrayMenu(t *trayMenu) {
 	t.mode, t.proxy, t.enhOn = "rule", t.sysProxy.Enabled(), t.enhanced.Enabled()
+	t.lastActive = map[string]time.Time{}
 	t.menu = application.NewMenu()
 	t.build(nil, Profiles{})
 	t.tray.SetMenu(t.menu)
 	t.svc.onMode = t.setMode
 	t.svc.onConns = func(conns []Conn, deltas map[string]int64) {
-		t.locked(func() { t.rows = processRows(conns, deltas); t.showRows() })
+		t.locked(func() { t.rows = processRows(conns, deltas, t.lastActive, time.Now()); t.showRows() })
 	}
 	t.svc.onTraffic = func(tr Traffic) { t.locked(func() { t.traffic = tr }) }
 	t.sysProxy.onChange = func(on bool) { t.locked(func() { t.proxy = on; t.proxyItem.SetChecked(on) }) }
@@ -118,6 +124,10 @@ func (t *trayMenu) checkEnhanced() {
 	mode, granted := t.enhanced.Mode(), t.enhanced.DaemonInstalled()
 	t.enhancedItem.SetChecked(mode == "tun").SetEnabled(granted)
 	t.partialItem.SetChecked(mode == "process-tun").SetEnabled(granted)
+	t.details[t.partialMenu] = ""
+	if mode == "process-tun" {
+		t.details[t.partialMenu] = "已开启"
+	}
 }
 
 // toggleEnhanced turns mode on or, when it is the current one, TUN off.
@@ -208,7 +218,7 @@ func menuLayout(groups []Group, list Profiles) string {
 
 // processRows ranks the processes (apps folded into their bundle) by the bytes they moved since the
 // last count.
-func processRows(conns []Conn, deltas map[string]int64) []procRow {
+func processRows(conns []Conn, deltas map[string]int64, lastActive map[string]time.Time, now time.Time) []procRow {
 	byName := map[string]*procRow{}
 	for _, c := range conns {
 		name, icon := clientOf(c)
@@ -221,8 +231,13 @@ func processRows(conns []Conn, deltas map[string]int64) []procRow {
 		r.rate += deltas[c.ID]
 	}
 	rows := make([]procRow, 0, len(byName))
-	for _, r := range byName {
-		rows = append(rows, *r)
+	for name, r := range byName {
+		if r.rate > 0 {
+			lastActive[name] = now
+		}
+		if now.Sub(lastActive[name]) <= trayRecent { // idle connections (kept alive, or opened before the proxy was turned off) stay out
+			rows = append(rows, *r)
+		}
 	}
 	slices.SortFunc(rows, func(a, b procRow) int {
 		return cmp.Or(cmp.Compare(b.rate, a.rate), cmp.Compare(b.total, a.total), strings.Compare(a.name, b.name))
@@ -232,13 +247,17 @@ func processRows(conns []Conn, deltas map[string]int64) []procRow {
 
 func (t *trayMenu) showRows() {
 	for i, item := range t.procItems {
-		if i >= len(t.rows) {
+		switch {
+		case i < len(t.rows):
+			r := t.rows[i]
+			item.SetLabel(r.name).SetEnabled(true).SetHidden(false)
+			t.details[item], t.icons[item] = rate(max(0, r.rate)), r.icon
+		case i == 0:
+			item.SetLabel("暂无流量").SetEnabled(false).SetHidden(false)
+			t.details[item], t.icons[item] = "", ""
+		default:
 			item.SetHidden(true)
-			continue
 		}
-		r := t.rows[i]
-		item.SetLabel(r.name).SetHidden(false)
-		t.details[item], t.icons[item] = rate(max(0, r.rate)), r.icon
 	}
 }
 
@@ -304,7 +323,7 @@ func (t *trayMenu) build(groups []Group, list Profiles) {
 			t.sysProxy.onChange(t.sysProxy.Enabled()) // put the checkbox back
 		}
 	})
-	sub, _ = submenu("部分增强")
+	sub, t.partialMenu = submenu("部分增强")
 	t.partialItem = sub.AddCheckbox("开启", false).OnClick(func(*application.Context) { go t.toggleEnhanced("process-tun") })
 	sub.Add("配置…").OnClick(func(*application.Context) {
 		t.show()

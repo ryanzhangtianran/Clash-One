@@ -60,6 +60,7 @@ static void setTray(void *item, const void *icon, int iconLen, const char *badge
 		p.minimumLineHeight = p.maximumLineHeight = 9;
 		button.attributedTitle = [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%@\n%@", u, d] attributes:@{
 			NSFontAttributeName: [NSFont monospacedDigitSystemFontOfSize:9 weight:NSFontWeightMedium],
+			NSForegroundColorAttributeName: [NSColor.labelColor colorWithAlphaComponent:dim ? 0.4 : 1], // greyed with the cat
 			NSParagraphStyleAttributeName: p,
 			NSBaselineOffsetAttributeName: @(-4), // the button sits a two-line title high; centre it on the bar
 		}];

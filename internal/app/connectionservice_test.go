@@ -90,18 +90,24 @@ func TestTrayProcessRows(t *testing.T) {
 		{ID: "2", Process: "curl", Path: "/usr/bin/curl", Download: 50},
 		{ID: "3", Source: "192.168.1.9", Download: 10},
 	}
-	if rows := processRows(conns, l.add(conns, time.Now())); rows[0].rate != 0 {
-		t.Fatalf("first tick has no baseline, got %+v", rows)
+	active, now := map[string]time.Time{}, time.Now()
+	if rows := processRows(conns, l.add(conns, now), active, now); len(rows) != 0 {
+		t.Fatalf("first tick has no baseline, so nothing moved yet: got %+v", rows)
 	}
 	conns[0].Upload, conns[1].Download = 400, 60
 	conns = append(conns, Conn{ID: "4", Path: chrome, Download: 1000}) // new since the last tick: counts in full
-	rows := processRows(conns, l.add(conns, time.Now()))
-	want := []procRow{
+	rows := processRows(conns, l.add(conns, now), active, now)
+	want := []procRow{ // the idle device stays out
 		{name: "Google Chrome", icon: "/Applications/Google Chrome.app", rate: 1300, total: 1400},
 		{name: "curl", icon: "/usr/bin/curl", rate: 10, total: 60},
-		{name: "192.168.1.9", rate: 0, total: 10},
 	}
 	if !slices.Equal(rows, want) {
 		t.Fatalf("got %+v\nwant %+v", rows, want)
+	}
+	if rows := processRows(conns, map[string]int64{}, active, now.Add(5*time.Second)); len(rows) != 2 {
+		t.Fatalf("recently active rows stay listed while idle: %+v", rows)
+	}
+	if rows := processRows(conns, map[string]int64{}, active, now.Add(11*time.Second)); len(rows) != 0 {
+		t.Fatalf("rows idle for over %v drop out: %+v", trayRecent, rows)
 	}
 }
