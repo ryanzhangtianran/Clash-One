@@ -1,4 +1,9 @@
+/* the monospaced font everywhere (logs, YAML, diagnoses), bundled: Maple Mono Normal NL NF v7.9,
+   SIL Open Font License 1.1 (fonts/MapleMono-OFL.txt) */
+@font-face { font-family: "Maple Mono Normal NL NF"; src: url("fonts/MapleMonoNormalNL-NF-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; }
+
 :root {
+  --mono: "Maple Mono Normal NL NF", ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", monospace;
   --bg: linear-gradient(160deg, rgba(231, 236, 242, 0.62) 0%, rgba(223, 229, 237, 0.62) 45%, rgba(232, 229, 239, 0.62) 100%); /* the window's native blur shows through */
   --panel: rgba(255, 255, 255, 0.55); /* the floating sidebar */
   --panel-ring: rgba(0, 0, 0, 0.07);
@@ -181,7 +186,7 @@ button { font: inherit; color: inherit; }
 input, textarea { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; user-select: text; -webkit-user-select: text; }
 input:not([type=checkbox]):not([type=radio]), select, .btn { height: var(--control-h); }
 input:not([type=checkbox]):not([type=radio]) { padding-block: 0; }
-textarea.code { display: block; width: 100%; margin: 8px 0; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; resize: vertical; }
+textarea.code { display: block; width: 100%; margin: 8px 0; font: 12px/1.5 var(--mono); resize: vertical; }
 .form { display: flex; gap: 8px; margin-top: 14px; }
 .small { font-size: 12px; }
 .actions { display: flex; gap: 6px; flex: none; }
@@ -199,8 +204,8 @@ select { font: inherit; color: var(--text); background: var(--card); border: 1px
 .form-grid { display: grid; grid-template-columns: 96px 1fr; gap: 10px; align-items: center; margin-top: 4px; }
 .form-grid > label { color: var(--text-2); text-align: right; }
 .radio { display: block; margin: 4px 0; }
-.logs { margin-top: 10px; font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; user-select: text; -webkit-user-select: text; max-height: calc(100vh - 220px); overflow: auto; }
-.log { padding: 2px 0; border-bottom: 1px solid var(--line); white-space: pre-wrap; word-break: break-all; }
+.logs { margin-top: 10px; font: 12px/1.5 var(--mono); user-select: text; -webkit-user-select: text; max-height: calc(100vh - 220px); overflow: auto; }
+.log { padding: 2px 0; border-bottom: 1px solid var(--line); white-space: pre; width: max-content; min-width: 100%; } /* one line each; long ones scroll sideways */
 .log .lvl { display: inline-block; width: 64px; color: var(--text-2); }
 .log.warning .lvl { color: var(--warn); }
 .log.error .lvl { color: var(--bad); }
@@ -353,7 +358,7 @@ tr.muted td { color: var(--text-2); text-decoration: line-through; }
 .table tr:hover td { background: var(--hover); }
 tr.muted td.rule-actions { text-decoration: none; }
 .field-input { width: 220px; flex: none; }
-.sheet-body.diag { padding-top: 16px; font: 13px/1.6 ui-monospace, "SF Mono", Menlo, monospace; user-select: text; -webkit-user-select: text; }
+.sheet-body.diag { padding-top: 16px; font: 13px/1.6 var(--mono); user-select: text; -webkit-user-select: text; }
 .diag-section + .diag-section { margin-top: 14px; }
 .diag-title { font: 600 13px -apple-system, "PingFang SC", system-ui, sans-serif; margin-bottom: 2px; }
 .diag-title.bad { color: var(--bad); }
@@ -363,14 +368,14 @@ tr.muted td.rule-actions { text-decoration: none; }
 .list-items { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .list-item { display: flex; align-items: center; gap: 16px; padding: 6px 6px 6px 12px; }
 .list-item + .list-item, .list-item + .list-add { border-top: 1px solid var(--line); }
-.list-value { font: 12px/1.5 ui-monospace, "SF Mono", Menlo, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-value { font: 12px/1.5 var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-item .list-value:first-child { flex: 0 1 40%; }
 .list-item .list-value:only-of-type { flex: 1; }
 .list-item .list-value.muted { flex: 1; }
 .list-remove { margin-left: auto; flex: none; width: 22px; height: 22px; border: 0; border-radius: 6px; background: none; color: var(--text-2); font-size: 15px; }
 .list-remove:hover { background: var(--hover); color: var(--bad); }
 .list-add { display: flex; gap: 6px; padding: 6px; background: var(--hover); }
-.list-add .code-input { flex: 1; min-width: 0; font: 12px ui-monospace, "SF Mono", Menlo, monospace; }
+.list-add .code-input { flex: 1; min-width: 0; font: 12px var(--mono); }
 .setting-control .ctl { width: 80px; } /* one column of equal-width controls */
 .setting-control .btn.ctl { height: 24px; font-size: 12px; border-radius: 6px; }
 .ranking { display: flex; flex-direction: column; min-height: 0; }
