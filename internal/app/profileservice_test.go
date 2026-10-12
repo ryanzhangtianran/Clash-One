@@ -181,7 +181,7 @@ func TestDeleteRule(t *testing.T) {
 	if rules, _ := cs.Rules(); len(rules) != 1 || rules[0].Type != "Match" {
 		t.Fatalf("rules %+v", rules)
 	}
-	if _, err := cs.DNSLeakTest(); err == nil {
+	if _, err := (&ToolService{cs: cs}).DNSLeakTest(); err == nil {
 		t.Fatal("with MATCH,DIRECT there is no proxy whose DNS could leak")
 	}
 }

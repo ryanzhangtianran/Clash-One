@@ -52,7 +52,7 @@ func Run(assets fs.FS, trayIcon []byte) error {
 		},
 		Name:        "Connaio",
 		Description: "Rule-based proxy with reverse tunnels",
-		Services:    []application.Service{application.NewService(svc), application.NewService(profiles), application.NewService(sysProxy), application.NewService(enhanced), application.NewService(devices), application.NewService(settingsSvc)},
+		Services:    []application.Service{application.NewService(svc), application.NewService(&ToolService{cs: svc}), application.NewService(profiles), application.NewService(sysProxy), application.NewService(enhanced), application.NewService(devices), application.NewService(settingsSvc)},
 		Assets:      application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: false, // lives on in the menu bar

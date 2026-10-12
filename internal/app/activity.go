@@ -153,6 +153,19 @@ func (s *CoreService) matchPolicy() string {
 	return ""
 }
 
+// exitOf follows policy through the groups' current choices to the node it uses now.
+func (s *CoreService) exitOf(policy string) string {
+	groups, _ := s.Groups()
+	for range 10 { // ponytail: depth cap instead of cycle detection; groups nest a few levels at most
+		i := slices.IndexFunc(groups, func(g Group) bool { return g.Name == policy })
+		if i < 0 {
+			break
+		}
+		policy = groups[i].Now
+	}
+	return policy
+}
+
 // ExternalIP is the address the internet sees for traffic through the core's mixed-port.
 func (s *CoreService) ExternalIP() (string, error) {
 	port, err := mixedPort(s.core)

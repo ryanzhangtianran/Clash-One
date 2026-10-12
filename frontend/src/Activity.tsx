@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { CoreService, ProfileService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import { CoreService, ProfileService, SettingsService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Activity as ActivityData, DiagSection, Latency, Status, Traffic, Usage } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { size, sizeText, speed, useCachedURL } from "./format";
 import { DiagLog } from "./ProxyDiagnose";
@@ -104,8 +104,8 @@ function Diagnose({ onClose }: { onClose: () => void }) {
   const [running, setRunning] = useState(true);
   useEffect(() => {
     const off = Events.On("diagnose", (e) => setSections((s) => [...s, e.data]));
-    CoreService.Diagnose().finally(() => setRunning(false));
-    return () => { off(); CoreService.CancelDiagnose(); };
+    ToolService.Diagnose().finally(() => setRunning(false));
+    return () => { off(); ToolService.CancelDiagnose(); };
   }, []);
   return (
     <div className="modal-bg">
@@ -118,7 +118,7 @@ function Diagnose({ onClose }: { onClose: () => void }) {
           {running && <span className="spinner" />}
           <span className="grow" />
           {running
-            ? <button className="btn primary" onClick={() => CoreService.CancelDiagnose()}>终止</button>
+            ? <button className="btn primary" onClick={() => ToolService.CancelDiagnose()}>终止</button>
             : <button className="btn primary" onClick={onClose}>完成</button>}
         </div>
       </div>

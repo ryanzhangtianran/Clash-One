@@ -114,9 +114,8 @@ type CoreService struct {
 	onMode    func(string)                                // menu bar mode radio
 	onConns   func(conns []Conn, deltas map[string]int64) // menu bar process rows, from the ledger's count
 
-	mu       sync.Mutex
-	status   Status
-	stopDiag context.CancelFunc // cancels a running Diagnose
+	mu     sync.Mutex
+	status Status
 }
 
 func (s *CoreService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {

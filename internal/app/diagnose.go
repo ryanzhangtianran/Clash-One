@@ -10,8 +10,8 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
-	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -19,6 +19,14 @@ import (
 
 func init() {
 	application.RegisterEvent[DiagSection]("diagnose")
+}
+
+// ToolService runs diagnostics and tests through the core (network diagnosis, DNS leak, speed,
+// UDP and NAT checks) and deploys frps; it keeps no core state of its own.
+type ToolService struct {
+	cs       *CoreService
+	mu       sync.Mutex
+	stopDiag context.CancelFunc // cancels a running Diagnose
 }
 
 // DiagSection is one step of the network diagnosis, sent as it finishes.
@@ -33,7 +41,7 @@ const directTestURL = "http://www.apple.com/library/test/success.html"
 // Diagnose checks, step by step as Surge does, the config, this Mac's network, the router, DNS,
 // a direct connection and the proxies in use, emitting each section as it is done. CancelDiagnose
 // stops it.
-func (s *CoreService) Diagnose() error {
+func (s *ToolService) Diagnose() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	s.mu.Lock()
 	if s.stopDiag != nil {
@@ -53,7 +61,7 @@ func (s *CoreService) Diagnose() error {
 	return nil
 }
 
-func (s *CoreService) CancelDiagnose() {
+func (s *ToolService) CancelDiagnose() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.stopDiag != nil {
@@ -61,8 +69,8 @@ func (s *CoreService) CancelDiagnose() {
 	}
 }
 
-func (s *CoreService) diagConfig(context.Context) DiagSection {
-	if err := s.core.Validate(s.core.ConfigPath()); err != nil {
+func (s *ToolService) diagConfig(context.Context) DiagSection {
+	if err := s.cs.core.Validate(s.cs.core.ConfigPath()); err != nil {
 		return DiagSection{Title: "检查配置", Lines: []string{err.Error()}}
 	}
 	return DiagSection{Title: "检查配置", Lines: []string{"配置检查成功"}, OK: true}
@@ -124,8 +132,8 @@ func diagDirect(ctx context.Context) DiagSection {
 }
 
 // diagProxies tests the node each selectable group currently uses, once per node.
-func (s *CoreService) diagProxies(ctx context.Context) DiagSection {
-	groups, err := s.Groups()
+func (s *ToolService) diagProxies(ctx context.Context) DiagSection {
+	groups, err := s.cs.Groups()
 	if err != nil {
 		return DiagSection{Title: "测试代理策略", Lines: []string{err.Error()}}
 	}
@@ -136,7 +144,7 @@ func (s *CoreService) diagProxies(ctx context.Context) DiagSection {
 			continue
 		}
 		seen[g.Now] = true
-		delay, err := s.TestProxy(g.Now)
+		delay, err := s.cs.TestProxy(g.Now)
 		if err != nil {
 			sec.Lines = append(sec.Lines, fmt.Sprintf("通过 %s 连接失败", g.Now))
 			sec.OK = false
@@ -208,9 +216,9 @@ type DNSLeak struct {
 	Leak   bool     `json:"leak"`
 }
 
-func (s *CoreService) DNSLeakTest() (DNSLeak, error) {
-	policy := s.matchPolicy()
-	if exit := s.exitOf(policy); exit == "" || exit == "DIRECT" || exit == "REJECT" {
+func (s *ToolService) DNSLeakTest() (DNSLeak, error) {
+	policy := s.cs.matchPolicy()
+	if exit := s.cs.exitOf(policy); exit == "" || exit == "DIRECT" || exit == "REJECT" {
 		return DNSLeak{}, fmt.Errorf("未匹配的流量经 %s 直连，没有代理可检测", cmp.Or(policy, "DIRECT"))
 	}
 	host := freshHost()
@@ -224,19 +232,6 @@ func (s *CoreService) DNSLeakTest() (DNSLeak, error) {
 	r.Direct = whoResolves(&http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 10 * time.Second}, freshHost())
 	r.Leak = r.Proxy.IP != "" && r.Proxy.IP == r.Direct.IP
 	return r, nil
-}
-
-// exitOf follows policy through the groups' current choices to the node it uses now.
-func (s *CoreService) exitOf(policy string) string {
-	groups, _ := s.Groups()
-	for range 10 { // ponytail: depth cap instead of cycle detection; groups nest a few levels at most
-		i := slices.IndexFunc(groups, func(g Group) bool { return g.Name == policy })
-		if i < 0 {
-			break
-		}
-		policy = groups[i].Now
-	}
-	return policy
 }
 
 // freshHost is a random subdomain of edns.ip-api.com (it wants exactly 32 characters), so no cache

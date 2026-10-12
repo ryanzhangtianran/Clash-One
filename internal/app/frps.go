@@ -66,7 +66,7 @@ echo "==> frps 正在端口 %[1]d 上运行"
 
 // DeployFRPS logs in over SSH and installs frps with a fresh token, streaming progress lines.
 // ponytail: the host key is accepted on first use and only shown; pin it if this grows past setup.
-func (s *CoreService) DeployFRPS(d FrpsDeploy) (Frps, error) {
+func (s *ToolService) DeployFRPS(d FrpsDeploy) (Frps, error) {
 	if d.Port == 0 {
 		d.Port = 22
 	}
@@ -130,7 +130,7 @@ func (s *CoreService) DeployFRPS(d FrpsDeploy) (Frps, error) {
 }
 
 // HostKey is the SSH server's public key as "type base64", read in the handshake before any login.
-func (s *CoreService) HostKey(host string, port int) (string, error) {
+func (s *ToolService) HostKey(host string, port int) (string, error) {
 	var got ssh.PublicKey
 	cfg := &ssh.ClientConfig{Timeout: 10 * time.Second, HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
 		got = key

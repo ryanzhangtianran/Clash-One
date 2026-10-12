@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import { CoreService, ProfileService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { localRule } from "./Tunnels";
 
 type Row = Record<string, string>;
@@ -50,7 +50,7 @@ function DeployFrps({ onDone, onClose }: { onDone: (host: string, port: number, 
   const f = (k: string, placeholder = "", type = "text") => <input type={type} placeholder={placeholder} value={d[k] ?? ""} onChange={(e) => setD({ ...d, [k]: e.target.value })} />;
   const deploy = () => {
     setBusy(true); setLog([]);
-    CoreService.DeployFRPS({ host: d.host, port: Number(d.port) || 22, user: d.user, password: auth === "password" ? d.password : "", key: auth === "key" ? d.key : "", bindPort: Number(d.bindPort) || 7000 })
+    ToolService.DeployFRPS({ host: d.host, port: Number(d.port) || 22, user: d.user, password: auth === "password" ? d.password : "", key: auth === "key" ? d.key : "", bindPort: Number(d.bindPort) || 7000 })
       .then((r) => onDone(d.host, r.bindPort, r.token)).catch(() => {}).finally(() => setBusy(false)); // a failure is listed in the events
   };
   return (
@@ -160,7 +160,7 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
                 : <><label>私钥</label><textarea className="code" rows={3} placeholder="粘贴私钥内容，如 -----BEGIN OPENSSH PRIVATE KEY-----…" value={v.key ?? ""} onChange={(e) => setV({ ...v, key: e.target.value })} /></>}
               <label>服务器公钥</label>
               <div className="inline">{field("hostKey", "建议填写")}
-                <button className="btn small-btn" disabled={!v.server} onClick={() => CoreService.HostKey(v.server, num(v.port) ?? 22).then((k) => setV({ ...v, hostKey: k }), () => {})}>获取</button></div>
+                <button className="btn small-btn" disabled={!v.server} onClick={() => ToolService.HostKey(v.server, num(v.port) ?? 22).then((k) => setV({ ...v, hostKey: k }), () => {})}>获取</button></div>
             </>
           )}
           <label>跳板代理</label>

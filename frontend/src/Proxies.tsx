@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import { CoreService, ProfileService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Group, Proxy, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import ProxyDialog, { protocols } from "./ProxyDialog";
 import ProxyDiagnose from "./ProxyDiagnose";
@@ -77,7 +77,7 @@ export default function Proxies({ status }: { status: Status }) {
     if (measuring) return;
     setMeasuring(name);
     setBandwidth((b) => ({ ...b, [name]: "测带宽中…" }));
-    CoreService.SpeedTest(name)
+    ToolService.SpeedTest(name)
       .then((r) => setBandwidth((b) => ({ ...b, [name]: `${r.mbps.toFixed(1)} Mbps` })))
       .catch(() => setBandwidth((b) => ({ ...b, [name]: "失败" })))
       .finally(() => setMeasuring(""));

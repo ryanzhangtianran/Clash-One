@@ -29,18 +29,18 @@ var speedMu sync.Mutex // one test at a time: they share the temporary rule's ho
 // viaProxy is an HTTP client whose requests to rawURL's host go through proxy (a node or group): a
 // temporary rule sends the host to it through the mixed-port; done removes the rule. Needs rule
 // mode, since global/direct mode skip rules.
-func (s *CoreService) viaProxy(proxy, rawURL string) (*http.Client, func(), error) {
+func (s *ToolService) viaProxy(proxy, rawURL string) (*http.Client, func(), error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, nil, err
 	}
 	host := u.Hostname()
-	if mode, err := s.Mode(); err != nil {
+	if mode, err := s.cs.Mode(); err != nil {
 		return nil, nil, err
 	} else if mode != "rule" {
 		return nil, nil, errors.New("需要「规则判定」模式，全局和直连模式不经过规则")
 	}
-	port, err := mixedPort(s.core)
+	port, err := mixedPort(s.cs.core)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -48,17 +48,17 @@ func (s *CoreService) viaProxy(proxy, rawURL string) (*http.Client, func(), erro
 	if ip := net.ParseIP(host); ip != nil {
 		rule = "IP-CIDR," + host + "/32," + proxy + ",no-resolve"
 	}
-	id, err := s.AddTempRule(rule)
+	id, err := s.cs.AddTempRule(rule)
 	if err != nil {
 		return nil, nil, err
 	}
 	via := &url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(port)}
 	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(via), DisableKeepAlives: true}}
-	return client, func() { _ = s.RemoveTempRule(id) }, nil
+	return client, func() { _ = s.cs.RemoveTempRule(id) }, nil
 }
 
 // SpeedTest measures download bandwidth through proxy for up to 10s.
-func (s *CoreService) SpeedTest(proxy string) (Speed, error) {
+func (s *ToolService) SpeedTest(proxy string) (Speed, error) {
 	speedMu.Lock()
 	defer speedMu.Unlock()
 	client, done, err := s.viaProxy(proxy, speedURL)
@@ -102,7 +102,7 @@ func (s *CoreService) SpeedTest(proxy string) (Speed, error) {
 var uploadURL = "https://speed.cloudflare.com/__up"
 
 // UploadTest measures upload bandwidth through proxy: zeros are posted for up to 10s.
-func (s *CoreService) UploadTest(proxy string) (Speed, error) {
+func (s *ToolService) UploadTest(proxy string) (Speed, error) {
 	speedMu.Lock()
 	defer speedMu.Unlock()
 	client, done, err := s.viaProxy(proxy, uploadURL)
@@ -142,28 +142,28 @@ func (z *timedZeros) Read(p []byte) (int, error) {
 }
 
 // UDPRelay times a DNS query sent over UDP through proxy.
-func (s *CoreService) UDPRelay(proxy string) (string, error) {
+func (s *ToolService) UDPRelay(proxy string) (string, error) {
 	var r struct {
 		Server string `json:"server"`
 		Delay  int    `json:"delay"`
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := s.core.Do(ctx, http.MethodGet, "/proxies/"+url.PathEscape(proxy)+"/udp", nil, &r); err != nil {
+	if err := s.cs.core.Do(ctx, http.MethodGet, "/proxies/"+url.PathEscape(proxy)+"/udp", nil, &r); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("通过 %s 向 %s 发送 DNS 查询：%d ms", proxy, r.Server, r.Delay), nil
 }
 
 // NATType reports how the proxy's UDP maps, from two STUN servers.
-func (s *CoreService) NATType(proxy string) ([]string, error) {
+func (s *ToolService) NATType(proxy string) ([]string, error) {
 	var r struct {
 		Mapped []string `json:"mapped"`
 		NAT    string   `json:"nat"`
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if err := s.core.Do(ctx, http.MethodGet, "/proxies/"+url.PathEscape(proxy)+"/nat", nil, &r); err != nil {
+	if err := s.cs.core.Do(ctx, http.MethodGet, "/proxies/"+url.PathEscape(proxy)+"/nat", nil, &r); err != nil {
 		return nil, err
 	}
 	lines := []string{"NAT 类型：" + r.NAT}
@@ -174,8 +174,8 @@ func (s *CoreService) NATType(proxy string) ([]string, error) {
 }
 
 // TCPRelay times an HTTP request through proxy on an established connection (as the latency test).
-func (s *CoreService) TCPRelay(proxy string) (string, error) {
-	ms, err := s.TestProxy(proxy)
+func (s *ToolService) TCPRelay(proxy string) (string, error) {
+	ms, err := s.cs.TestProxy(proxy)
 	if err != nil {
 		return "", err
 	}

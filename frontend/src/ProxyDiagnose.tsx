@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CoreService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import { ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 
 type Section = { title: string; lines: string[] | null; ok: boolean };
 
@@ -19,11 +19,11 @@ export default function ProxyDiagnose({ nodes, groups, initial, onClose }: { nod
   const [log, setLog] = useState<Section[]>([]);
   const [busy, setBusy] = useState("");
   const tests: [string, () => Promise<string[]>][] = [
-    ["TCP 转发", () => CoreService.TCPRelay(policy).then((l) => [l])],
-    ["UDP 转发", () => CoreService.UDPRelay(policy).then((l) => [l])],
-    ["NAT 类型", () => CoreService.NATType(policy).then((l) => l ?? [])],
-    ["下载速度", () => CoreService.SpeedTest(policy).then((s) => [`下载：${mbps(s)}`])],
-    ["上传速度", () => CoreService.UploadTest(policy).then((s) => [`上传：${mbps(s)}`])],
+    ["TCP 转发", () => ToolService.TCPRelay(policy).then((l) => [l])],
+    ["UDP 转发", () => ToolService.UDPRelay(policy).then((l) => [l])],
+    ["NAT 类型", () => ToolService.NATType(policy).then((l) => l ?? [])],
+    ["下载速度", () => ToolService.SpeedTest(policy).then((s) => [`下载：${mbps(s)}`])],
+    ["上传速度", () => ToolService.UploadTest(policy).then((s) => [`上传：${mbps(s)}`])],
   ];
   const run = (title: string, test: () => Promise<string[]>) => {
     setBusy(title);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { CoreService, EnhancedService, ProfileService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import { CoreService, EnhancedService, ProfileService, SettingsService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { About, DNSLeak, Resolver } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 
 
@@ -158,7 +158,7 @@ function ListItem({ onRemove, children }: { onRemove: () => void; children: Reac
 function LeakTest() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<DNSLeak | null>(null);
-  const run = () => { setBusy(true); CoreService.DNSLeakTest().then(setResult).catch(() => setResult(null)).finally(() => setBusy(false)); };
+  const run = () => { setBusy(true); ToolService.DNSLeakTest().then(setResult).catch(() => setResult(null)).finally(() => setBusy(false)); };
   const who = (r: Resolver) => r.err ? `失败：${r.err}` : `${r.ip}（${r.geo}）`;
   return (
     <>
