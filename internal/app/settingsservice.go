@@ -13,7 +13,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-const appVersion = "0.1.0"
+const appVersion = "1.0.0"
 
 const loginItemLabel = "com.ryanzhangtianran.connaio"
 

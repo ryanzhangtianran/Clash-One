@@ -2,6 +2,18 @@
 
 macOS 桌面客户端（Wails 3 + React），内核是 [connaio-core](https://github.com/ryanzhangtianran/connaio-core)。
 
+## 安装
+
+从 [Releases](https://github.com/ryanzhangtianran/Connaio/releases) 下载 `Connaio-<版本>-macos-arm64.zip`，解压后把 `Connaio.app` 拖进「应用程序」。需要 Apple 芯片、macOS 15 及以上。
+
+App 没有经过 Apple 公证，首次打开前在终端执行一次：
+
+```bash
+xattr -cr /Applications/Connaio.app
+```
+
+增强模式（TUN）需要先在「通用」中授予 root 权限（输入一次管理员密码）。
+
 ## 开发
 
 需要 Go 1.26、Node 24，以及与 `go.mod` 相同版本的 Wails CLI：

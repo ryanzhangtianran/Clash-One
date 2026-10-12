@@ -21,7 +21,7 @@ import (
 )
 
 // UserAgent makes subscription services answer with Clash/mihomo YAML.
-const UserAgent = "clash.meta/1.10.0 mihomo/1.10.0 Connaio/0.1"
+const UserAgent = "clash.meta/1.10.0 mihomo/1.10.0 Connaio/1.0"
 
 type Usage struct {
 	Upload   int64 `json:"upload"`
