@@ -53,3 +53,21 @@ func parseARP(out string) map[string]string {
 	}
 	return m
 }
+
+// interfaceLabel is iface's hardware port as System Settings names it, e.g. Wi-Fi or USB 10/100/1000 LAN.
+func interfaceLabel(iface string) string {
+	out, _ := exec.Command("networksetup", "-listallhardwareports").Output()
+	return hardwarePort(string(out), iface)
+}
+
+func hardwarePort(out, iface string) string {
+	port := ""
+	for _, line := range strings.Split(out, "\n") {
+		if v, ok := strings.CutPrefix(line, "Hardware Port: "); ok {
+			port = v
+		} else if v, ok := strings.CutPrefix(line, "Device: "); ok && v == iface {
+			return port
+		}
+	}
+	return ""
+}

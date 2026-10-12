@@ -112,3 +112,44 @@ func parseProcARP(table string) map[string]string {
 	}
 	return m
 }
+
+// interfaceLabel is the NetworkManager connection on iface, as Ubuntu's settings name it (e.g.
+// 有线连接 1); else Wi-Fi or 有线连接 by the kind of interface.
+func interfaceLabel(iface string) string {
+	out, _ := exec.Command("nmcli", "-t", "-f", "NAME,DEVICE", "connection", "show", "--active").Output()
+	if name := nmConnection(string(out), iface); name != "" {
+		return name
+	}
+	if _, err := os.Stat("/sys/class/net/" + iface + "/wireless"); err == nil {
+		return "Wi-Fi"
+	}
+	if _, err := os.Stat("/sys/class/net/" + iface + "/device"); err == nil { // a physical interface
+		return "有线连接"
+	}
+	return ""
+}
+
+// nmConnection picks iface's connection from `nmcli -t -f NAME,DEVICE` lines, whose fields escape
+// their colons with a backslash.
+func nmConnection(out, iface string) string {
+	for _, line := range strings.Split(out, "\n") {
+		var fields []string
+		var cur strings.Builder
+		for i := 0; i < len(line); i++ {
+			switch {
+			case line[i] == '\\' && i+1 < len(line):
+				i++
+				cur.WriteByte(line[i])
+			case line[i] == ':':
+				fields = append(fields, cur.String())
+				cur.Reset()
+			default:
+				cur.WriteByte(line[i])
+			}
+		}
+		if fields = append(fields, cur.String()); len(fields) == 2 && fields[1] == iface {
+			return fields[0]
+		}
+	}
+	return ""
+}

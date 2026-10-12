@@ -34,3 +34,13 @@ func TestParseProcARPLinux(t *testing.T) {
 		t.Fatalf("%v", m)
 	}
 }
+
+func TestNMConnectionLinux(t *testing.T) {
+	out := "有线连接 1:enp3s0\nlo:lo\nOffice\\: 5G:wlp2s0\n"
+	if got := nmConnection(out, "enp3s0"); got != "有线连接 1" {
+		t.Fatalf("%q", got)
+	}
+	if got := nmConnection(out, "wlp2s0"); got != "Office: 5G" {
+		t.Fatalf("%q", got)
+	}
+}

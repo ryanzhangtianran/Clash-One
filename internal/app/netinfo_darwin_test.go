@@ -80,3 +80,13 @@ func TestDeviceService(t *testing.T) {
 		t.Fatalf("cleared device still listed: %+v", dev)
 	}
 }
+
+func TestHardwarePort(t *testing.T) {
+	out := "\nHardware Port: Wi-Fi\nDevice: en0\nEthernet Address: aa\n\nHardware Port: USB 10/100/1000 LAN\nDevice: en7\n"
+	if got := hardwarePort(out, "en7"); got != "USB 10/100/1000 LAN" {
+		t.Fatalf("%q", got)
+	}
+	if got := hardwarePort(out, "utun3"); got != "" {
+		t.Fatalf("%q", got)
+	}
+}

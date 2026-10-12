@@ -96,7 +96,11 @@ func (s *CoreService) networkName(ctx context.Context) string {
 	if s.core.Do(ctx, http.MethodGet, "/network", nil, &n) == nil && n.SSID != "" {
 		return n.SSID
 	}
-	return cmp.Or(defaultRoute()["interface"], "未连接")
+	iface := defaultRoute()["interface"]
+	if iface == "" {
+		return "未连接"
+	}
+	return cmp.Or(interfaceLabel(iface), iface) // what the system calls it, e.g. 有线连接 1, not enp3s0
 }
 
 // defaultRoute is the IPv4 default route as key -> value, e.g. interface, gateway.
