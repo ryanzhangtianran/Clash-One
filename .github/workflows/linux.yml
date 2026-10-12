@@ -66,9 +66,9 @@ jobs:
           sudo /usr/lib/connaio/connaio-root enable "$uid" # what pkexec runs
           for i in $(seq 30); do curl -sf --unix-socket "$sock" http://x/version && break; sleep 1; done
           echo
-          # the config the GUI pushes with enhanced mode on: TUN capture, fake-ip DNS
+          # the config the GUI pushes with enhanced mode on: TUN capture, fake-ip DNS, processes always looked up (appDefaults)
           curl -sf --unix-socket "$sock" -X PUT 'http://x/configs?force=true' -H 'Content-Type: application/json' \
-            -d '{"payload":"mixed-port: 7899\nmode: rule\ncapture: {mode: tun}\ndns: {enable: true, enhanced-mode: fake-ip, nameserver: [8.8.8.8]}\nrules:\n  - MATCH,DIRECT\n"}'
+            -d '{"payload":"mixed-port: 7899\nmode: rule\nfind-process-mode: always\ncapture: {mode: tun}\ndns: {enable: true, enhanced-mode: fake-ip, nameserver: [8.8.8.8]}\nrules:\n  - MATCH,DIRECT\n"}'
           sleep 3
           ip -brief link
           curl -s -o /dev/null -w "no proxy set, through TUN: %{http_code}\n" http://www.gstatic.com/generate_204
