@@ -21,14 +21,14 @@ const LOG_LINES = 500;
 // NavIcon is a flat SF Symbol, grey or, for the page shown, the accent colour.
 function NavIcon({ symbol }: { symbol: string }) {
   const src = useCachedURL(symbol, SettingsService.Symbol);
-  return <span className="nav-icon" data-symbol={symbol} style={src ? { maskImage: `url(${src})` } : undefined} />;
+  return <span className="nav-icon" style={src ? { maskImage: `url(${src})` } : undefined} />;
 }
 
 type Page = { key: string; title: string; symbol: string };
 // one list, from what you check most to what you touch least
 const pages: Page[] = [
   { key: "activity", title: "活动", symbol: "waveform.path.ecg" },
-  { key: "proxies", title: "策略", symbol: "signpost.right.and.left" },
+  { key: "proxies", title: "策略", symbol: "signpost.right" },
   { key: "tunnels", title: "反向", symbol: "server.rack" },
   { key: "devices", title: "设备", symbol: "wifi" },
   { key: "rules", title: "规则", symbol: "line.3.horizontal.decrease.circle" },

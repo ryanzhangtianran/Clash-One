@@ -52,15 +52,19 @@ static void makeVibrant(void *w) {
 	});
 }
 
-// pngOf draws img fitted into a px×px PNG (centred at its own size when fit is 0), in a malloc'd
-// buffer of *n bytes, or NULL.
+// pngOf draws img into a px×px PNG, centred: scaled to fit (its longer side filling it) when fit is
+// set, else at its own size; in a malloc'd buffer of *n bytes, or NULL.
 static void *pngOf(NSImage *img, int px, BOOL fit, int *n) {
 	if (!img) return NULL;
 	NSBitmapImageRep *rep = [[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:px pixelsHigh:px
 		bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0] autorelease];
 	[NSGraphicsContext saveGraphicsState];
 	NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep];
-	NSSize s = fit ? NSMakeSize(px, px) : img.size;
+	NSSize s = img.size;
+	if (fit) {
+		CGFloat k = MIN(px / s.width, px / s.height);
+		s = NSMakeSize(s.width * k, s.height * k);
+	}
 	[img drawInRect:NSMakeRect((px - s.width) / 2, (px - s.height) / 2, s.width, s.height)];
 	[NSGraphicsContext restoreGraphicsState];
 	NSData *png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
@@ -80,14 +84,15 @@ static void setDockVisible(int visible) {
 	});
 }
 
-// symbolPNG renders SF Symbol name into a px×px PNG, opaque where the symbol is: the window uses
-// it as a mask, so its colour doesn't matter.
+// symbolPNG renders SF Symbol name into a px×px PNG, its longer side filling it so every symbol
+// looks the same size, opaque where the symbol is: the window uses it as a mask, so its colour
+// doesn't matter.
 static void *symbolPNG(const char *name, int px, int *n) {
 	@autoreleasepool {
 		NSImage *sym = [NSImage imageWithSystemSymbolName:@(name) accessibilityDescription:nil];
 		NSImageSymbolConfiguration *cfg = [NSImageSymbolConfiguration configurationWithPointSize:px * 0.75 weight:NSFontWeightRegular];
 		cfg = [cfg configurationByApplyingConfiguration:[NSImageSymbolConfiguration configurationWithPaletteColors:@[NSColor.whiteColor]]];
-		return pngOf([sym imageWithSymbolConfiguration:cfg], px, NO, n);
+		return pngOf([sym imageWithSymbolConfiguration:cfg], px, YES, n);
 	}
 }
 
