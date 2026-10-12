@@ -4,15 +4,15 @@
         <key>CFBundlePackageType</key>
             <string>APPL</string>
         <key>CFBundleName</key>
-            <string>Clash One</string>
+            <string>Connaio</string>
         <key>CFBundleExecutable</key>
-            <string>clash-one</string>
+            <string>connaio</string>
         <key>CFBundleIdentifier</key>
-            <string>com.ryanzhangtianran.clashone</string>
+            <string>com.ryanzhangtianran.connaio</string>
         <key>CFBundleVersion</key>
             <string>0.1.0</string>
         <key>CFBundleGetInfoString</key>
-            <string>Clash One</string>
+            <string>Connaio</string>
         <key>CFBundleShortVersionString</key>
             <string>0.1.0</string>
         <key>CFBundleIconFile</key>

@@ -11,10 +11,10 @@ import (
 	"time"
 )
 
-// Needs CLASH_ONE_CORE.
+// Needs CONNAIO_CORE.
 func TestStaleCoreAndExitReason(t *testing.T) {
-	if os.Getenv("CLASH_ONE_CORE") == "" {
-		t.Skip("CLASH_ONE_CORE not set")
+	if os.Getenv("CONNAIO_CORE") == "" {
+		t.Skip("CONNAIO_CORE not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -54,8 +54,8 @@ func TestStaleCoreAndExitReason(t *testing.T) {
 
 // mixed-port taken by another program: the core keeps running without it.
 func TestPortTaken(t *testing.T) {
-	if os.Getenv("CLASH_ONE_CORE") == "" {
-		t.Skip("CLASH_ONE_CORE not set")
+	if os.Getenv("CONNAIO_CORE") == "" {
+		t.Skip("CONNAIO_CORE not set")
 	}
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	defer ln.Close()

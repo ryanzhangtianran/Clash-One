@@ -6,8 +6,8 @@ version: '3'
 # This information is used to generate the build assets.
 info:
   companyName: "ryanzhangtianran" # The name of the company
-  productName: "Clash One" # The name of the application
-  productIdentifier: "com.ryanzhangtianran.clashone" # The unique product identifier
+  productName: "Connaio" # The name of the application
+  productIdentifier: "com.ryanzhangtianran.connaio" # The unique product identifier
   description: "Rule-based proxy with reverse tunnels" # The application description
   copyright: "(c) 2026, ryanzhangtianran" # Copyright text
   comments: "Some Product Comments" # Comments

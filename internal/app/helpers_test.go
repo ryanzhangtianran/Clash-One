@@ -8,16 +8,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ryanzhangtianran/Clash-One/internal/core"
-	"github.com/ryanzhangtianran/Clash-One/internal/profile"
+	"github.com/ryanzhangtianran/Connaio/internal/core"
+	"github.com/ryanzhangtianran/Connaio/internal/profile"
 )
 
-// startCore runs a core from CLASH_ONE_CORE on a free mixed-port (a running Clash One may hold
-// 7899), with override on top of the default config. Skips without CLASH_ONE_CORE.
+// startCore runs a core from CONNAIO_CORE on a free mixed-port (a running Connaio may hold
+// 7899), with override on top of the default config. Skips without CONNAIO_CORE.
 func startCore(t *testing.T, override string) (*CoreService, *ProfileService, int) {
 	t.Helper()
-	if os.Getenv("CLASH_ONE_CORE") == "" {
-		t.Skip("CLASH_ONE_CORE not set")
+	if os.Getenv("CONNAIO_CORE") == "" {
+		t.Skip("CONNAIO_CORE not set")
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

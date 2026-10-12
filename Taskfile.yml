@@ -1,11 +1,11 @@
 version: '3'
 
 vars:
-  APP_NAME: "clash-one" # executable name
-  BUNDLE_NAME: "Clash One" # the .app shown in Finder
+  APP_NAME: "connaio" # executable name
+  BUNDLE_NAME: "Connaio" # the .app shown in Finder
   BIN_DIR: "bin"
-  # clash-one-core checkout, built into the app bundle next to the GUI binary
-  CORE_DIR: '{{.CORE_DIR | default "../clash-one-core"}}'
+  # connaio-core checkout, built into the app bundle next to the GUI binary
+  CORE_DIR: '{{.CORE_DIR | default "../connaio-core"}}'
   PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "npm"}}'
   VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
   # Target OS for build/package/run. Defaults to the host OS, and is overridden

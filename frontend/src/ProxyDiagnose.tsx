@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CoreService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 
 type Section = { title: string; lines: string[] | null; ok: boolean };
 

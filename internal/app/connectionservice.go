@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ryanzhangtianran/Clash-One/internal/daemon"
+	"github.com/ryanzhangtianran/Connaio/internal/daemon"
 )
 
 type Conn struct {

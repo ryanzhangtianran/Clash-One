@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { LogLine } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import type { LogLine } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 
 const levels = ["debug", "info", "warning", "error"];
 

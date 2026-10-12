@@ -12,17 +12,17 @@ import (
 )
 
 // TestAttach runs the core like the LaunchDaemon does (its own dir and socket, the socket handed
-// to one uid) and attaches to it. Needs CLASH_ONE_CORE.
+// to one uid) and attaches to it. Needs CONNAIO_CORE.
 func TestAttach(t *testing.T) {
-	bin := os.Getenv("CLASH_ONE_CORE")
+	bin := os.Getenv("CONNAIO_CORE")
 	if bin == "" {
-		t.Skip("CLASH_ONE_CORE not set")
+		t.Skip("CONNAIO_CORE not set")
 	}
 	daemonDir := t.TempDir()
 	socket := filepath.Join(daemonDir, "core.sock")
 	os.WriteFile(filepath.Join(daemonDir, "config.yaml"), []byte("mixed-port: 0\nrules:\n  - MATCH,DIRECT\n"), 0o644)
 	cmd := exec.Command(bin, "-d", daemonDir, "-ext-ctl-unix", socket)
-	cmd.Env = append(os.Environ(), "CLASH_ONE_SOCKET_UID="+strconv.Itoa(os.Getuid()))
+	cmd.Env = append(os.Environ(), "CONNAIO_SOCKET_UID="+strconv.Itoa(os.Getuid()))
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

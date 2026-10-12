@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Needs a built core: CLASH_ONE_CORE=/path/to/clash-one-core go test -run TestConnectionService .
+// Needs a built core: CONNAIO_CORE=/path/to/connaio-core go test -run TestConnectionService .
 func TestConnectionService(t *testing.T) {
 	s, _, port := startCore(t, "")
 

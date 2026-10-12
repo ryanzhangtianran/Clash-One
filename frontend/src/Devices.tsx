@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { CoreService, DeviceService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
-import type { Device, LanInfo, Status } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService, DeviceService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { Device, LanInfo, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { sizeText } from "./format";
 import { Switch } from "./Settings";
 

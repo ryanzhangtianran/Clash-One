@@ -22,7 +22,7 @@ import (
 )
 
 // UserAgent makes subscription services answer with Clash/mihomo YAML.
-const UserAgent = "clash.meta/1.10.0 mihomo/1.10.0 ClashOne/0.1"
+const UserAgent = "clash.meta/1.10.0 mihomo/1.10.0 Connaio/0.1"
 
 type Usage struct {
 	Upload   int64 `json:"upload"`
@@ -40,7 +40,7 @@ type Profile struct {
 	Usage     *Usage    `json:"usage,omitempty"`
 }
 
-// appDefaults are what Clash One needs; a profile and the override may change them.
+// appDefaults are what Connaio needs; a profile and the override may change them.
 var appDefaults = map[string]any{
 	"mixed-port":        7899,
 	"mode":              "rule",

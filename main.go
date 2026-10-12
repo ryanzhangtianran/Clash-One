@@ -4,7 +4,7 @@ import (
 	"embed"
 	"log"
 
-	"github.com/ryanzhangtianran/Clash-One/internal/app"
+	"github.com/ryanzhangtianran/Connaio/internal/app"
 )
 
 //go:embed all:frontend/dist

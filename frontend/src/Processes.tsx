@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { EnhancedService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
-import type { ProcessChoice, Status } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { EnhancedService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { ProcessChoice, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { Switch, useSetting } from "./Settings";
 
 const sources: Record<string, string> = { app: "正在运行", network: "有网络连接" };

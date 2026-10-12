@@ -1,4 +1,4 @@
-module github.com/ryanzhangtianran/Clash-One
+module github.com/ryanzhangtianran/Connaio
 
 go 1.26.0
 

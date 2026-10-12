@@ -1,4 +1,4 @@
-// Package core runs clash-one-core as a child process and talks to its REST API over a Unix socket.
+// Package core runs connaio-core as a child process and talks to its REST API over a Unix socket.
 package core
 
 import (
@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-// Core is the clash-one-core the GUI talks to: its own child process, or an already running root
+// Core is the connaio-core the GUI talks to: its own child process, or an already running root
 // daemon (enhanced mode). Dir is the GUI's data dir: config.yaml, core.log for the child.
 type Core struct {
 	Dir  string
@@ -78,7 +78,7 @@ func (c *Core) wait(ctx context.Context, exited <-chan struct{}, logPath string)
 			out, _ := os.ReadFile(logPath)
 			return fmt.Errorf("内核已退出: %s（日志 %s）", problems(string(out)), logPath)
 		case <-deadline:
-			return fmt.Errorf("clash-one-core at %s did not answer within 15s", c.Socket())
+			return fmt.Errorf("connaio-core at %s did not answer within 15s", c.Socket())
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(200 * time.Millisecond):
@@ -86,18 +86,18 @@ func (c *Core) wait(ctx context.Context, exited <-chan struct{}, logPath string)
 	}
 }
 
-// Binary finds clash-one-core: $CLASH_ONE_CORE for development, else next to the app executable.
+// Binary finds connaio-core: $CONNAIO_CORE for development, else next to the app executable.
 func Binary() (string, error) {
-	if p := os.Getenv("CLASH_ONE_CORE"); p != "" {
+	if p := os.Getenv("CONNAIO_CORE"); p != "" {
 		return p, nil
 	}
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	p := filepath.Join(filepath.Dir(exe), "clash-one-core")
+	p := filepath.Join(filepath.Dir(exe), "connaio-core")
 	if _, err := os.Stat(p); err != nil {
-		return "", fmt.Errorf("clash-one-core not found next to %s (set CLASH_ONE_CORE): %w", exe, err)
+		return "", fmt.Errorf("connaio-core not found next to %s (set CONNAIO_CORE): %w", exe, err)
 	}
 	return p, nil
 }
@@ -156,9 +156,9 @@ func stopStale(pidFile string) {
 	if err != nil || pid <= 1 {
 		return
 	}
-	// only signal it if the pid still belongs to a clash-one-core (pids get reused)
+	// only signal it if the pid still belongs to a connaio-core (pids get reused)
 	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output()
-	if err != nil || filepath.Base(strings.TrimSpace(string(out))) != "clash-one-core" {
+	if err != nil || filepath.Base(strings.TrimSpace(string(out))) != "connaio-core" {
 		_ = os.Remove(pidFile)
 		return
 	}

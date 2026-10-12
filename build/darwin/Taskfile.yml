@@ -57,11 +57,11 @@ tasks:
       MACOSX_DEPLOYMENT_TARGET: "12.0"
 
   build:core:
-    summary: Builds clash-one-core from CORE_DIR into BIN_DIR
+    summary: Builds connaio-core from CORE_DIR into BIN_DIR
     internal: true
     cmds:
       # the core reports constant.Version, a 1.10.0 placeholder unless set here, as mihomo's Makefile does
-      - CGO_ENABLED=0 go -C "{{.CORE_DIR}}" build -tags with_gvisor -trimpath -ldflags="-w -s -X github.com/metacubex/mihomo/constant.Version={{.CORE_VERSION}}" -o "{{.ROOT_DIR}}/{{.BIN_DIR}}/clash-one-core" .
+      - CGO_ENABLED=0 go -C "{{.CORE_DIR}}" build -tags with_gvisor -trimpath -ldflags="-w -s -X github.com/metacubex/mihomo/constant.Version={{.CORE_VERSION}}" -o "{{.ROOT_DIR}}/{{.BIN_DIR}}/connaio-core" .
     vars:
       CORE_VERSION:
         sh: git -C "{{.CORE_DIR}}" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo unknown # the mihomo release it is based on, e.g. 1.19.32
@@ -184,7 +184,7 @@ tasks:
           cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/Resources"
         fi
       - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/MacOS"
-      - cp "{{.BIN_DIR}}/clash-one-core" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/MacOS"
+      - cp "{{.BIN_DIR}}/connaio-core" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/MacOS"
       - cp build/darwin/Info.plist "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents"
       - task: '{{if eq OS "darwin"}}codesign:adhoc{{else}}codesign:skip{{end}}'
 
@@ -214,7 +214,7 @@ tasks:
           cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/Resources"
         fi
       - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS"
-      - cp "{{.BIN_DIR}}/clash-one-core" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS"
+      - cp "{{.BIN_DIR}}/connaio-core" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS"
       - cp "build/darwin/Info.dev.plist" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/Info.plist"
       - xattr -cr "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app"
       - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app"

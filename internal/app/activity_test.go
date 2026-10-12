@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Needs a built core: CLASH_ONE_CORE=/path/to/clash-one-core go test -run TestActivity .
+// Needs a built core: CONNAIO_CORE=/path/to/connaio-core go test -run TestActivity .
 func TestActivity(t *testing.T) {
 	s, _, port := startCore(t, "")
 
@@ -102,7 +102,7 @@ func TestClientOf(t *testing.T) {
 	if n, i := clientOf(Conn{Source: "192.168.1.9"}); n != "192.168.1.9" || i != "" {
 		t.Fatalf("%q %q", n, i)
 	}
-	if n, _ := clientOf(Conn{Inbound: "Inner"}); n != "Clash One" {
+	if n, _ := clientOf(Conn{Inbound: "Inner"}); n != "Connaio" {
 		t.Fatalf("the core's own connection is %q", n)
 	}
 }

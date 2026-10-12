@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { CoreService, ProfileService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
-import type { Activity as ActivityData, DiagSection, Latency, Status, Traffic, Usage } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService, ProfileService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { Activity as ActivityData, DiagSection, Latency, Status, Traffic, Usage } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { size, sizeText, speed, useCachedURL } from "./format";
 import { DiagLog } from "./ProxyDiagnose";
 

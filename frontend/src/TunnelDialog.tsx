@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { localRule } from "./Tunnels";
 
 type Row = Record<string, string>;
@@ -95,12 +95,12 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
   const [deploying, setDeploying] = useState(false);
   const [mixedPort, setMixedPort] = useState(0);
   useEffect(() => { ProfileService.Value("mixed-port").then((p) => setMixedPort(Number(p) || 0)); }, []);
-  // viaRules: a forward from the server to Clash One's proxy port, so devices using it as a proxy
+  // viaRules: a forward from the server to Connaio's proxy port, so devices using it as a proxy
   // through the tunnel get their traffic routed by the rules
   const proxyTarget = `127.0.0.1:${mixedPort}`;
-  const viaRules = kind === "frp" ? frpRows.some((r) => r.name === "clash-one") : sshRows.some((r) => r.local === proxyTarget);
+  const viaRules = kind === "frp" ? frpRows.some((r) => r.name === "connaio") : sshRows.some((r) => r.local === proxyTarget);
   const setViaRules = (on: boolean) => {
-    if (kind === "frp") setFrpRows(on ? [...frpRows, { name: "clash-one", type: "tcp", localIP: "127.0.0.1", localPort: String(mixedPort), remotePort: "17890" }] : frpRows.filter((r) => r.name !== "clash-one"));
+    if (kind === "frp") setFrpRows(on ? [...frpRows, { name: "connaio", type: "tcp", localIP: "127.0.0.1", localPort: String(mixedPort), remotePort: "17890" }] : frpRows.filter((r) => r.name !== "connaio"));
     else setSshRows(on ? [...sshRows, { remote: "0.0.0.0:17890", local: proxyTarget }] : sshRows.filter((r) => r.local !== proxyTarget));
   };
   useEffect(() => { CoreService.ProxyNames().then((n) => setNames(n ?? [])); }, []);
@@ -171,7 +171,7 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
           <label>入站流量</label>
           <label className="radio" style={{ textAlign: "left", color: "var(--text)" }}>
             <input type="checkbox" checked={viaRules} disabled={!mixedPort} onChange={(e) => setViaRules(e.target.checked)} /> 按规则分流
-            <span className="muted small" style={{ marginLeft: 8 }}>服务器 17890 端口作为 HTTP / SOCKS5 代理，接入 Clash One</span>
+            <span className="muted small" style={{ marginLeft: 8 }}>服务器 17890 端口作为 HTTP / SOCKS5 代理，接入 Connaio</span>
           </label>
         </div>
         <div className="section-title">{kind === "frp" ? "FRP 代理" : "转发（远端监听 → 本地目标）"}</div>

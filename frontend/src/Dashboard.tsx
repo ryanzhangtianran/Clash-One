@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { CoreService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
-import type { Conn, Status, TempRule } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { Conn, Status, TempRule } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { RuleDialog, age } from "./RuleDialog";
 import { sizeText } from "./format";
 

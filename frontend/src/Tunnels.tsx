@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
-import type { Status, Tunnel } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { Status, Tunnel } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import TunnelDialog from "./TunnelDialog";
 import { nonNull } from "./format";
 
@@ -8,7 +8,7 @@ const stateLabel: Record<string, string> = { running: "运行中", connecting: "
 const stateClass: Record<string, string> = { running: "delay-good", connecting: "delay-warn", retrying: "delay-bad" };
 const kindLabel: Record<string, string> = { frp: "FRP", ssh: "SSH" };
 
-// localRule takes what comes in through a tunnel straight to its local target (here Clash One's own
+// localRule takes what comes in through a tunnel straight to its local target (here Connaio's own
 // proxy port, whose requests then follow the rules) instead of matching the rules itself.
 export const localRule = (tunnel: string) => `IN-NAME,${tunnel},DIRECT`;
 

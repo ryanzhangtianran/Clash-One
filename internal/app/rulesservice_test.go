@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Needs a built core: CLASH_ONE_CORE=/path/to/clash-one-core go test -run TestRulesService .
+// Needs a built core: CONNAIO_CORE=/path/to/connaio-core go test -run TestRulesService .
 func TestRulesService(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

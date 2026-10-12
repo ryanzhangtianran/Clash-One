@@ -17,7 +17,7 @@ rules:
   - MATCH,代理
 `
 
-// Needs a built core: CLASH_ONE_CORE=/path/to/clash-one-core go test -run TestProfileService .
+// Needs a built core: CONNAIO_CORE=/path/to/connaio-core go test -run TestProfileService .
 func TestProfileService(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -64,7 +64,7 @@ func TestProfileService(t *testing.T) {
 	}
 }
 
-// Needs a built core: CLASH_ONE_CORE=/path/to/clash-one-core go test -run TestUserItemsApplied .
+// Needs a built core: CONNAIO_CORE=/path/to/connaio-core go test -run TestUserItemsApplied .
 func TestUserItemsApplied(t *testing.T) {
 	cs, s, _ := startCore(t, "prepend-proxy-groups:\n  - {name: 代理, type: select, proxies: [DIRECT]}\n")
 

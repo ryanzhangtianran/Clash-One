@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ryanzhangtianran/Clash-One/internal/core"
-	"github.com/ryanzhangtianran/Clash-One/internal/profile"
+	"github.com/ryanzhangtianran/Connaio/internal/core"
+	"github.com/ryanzhangtianran/Connaio/internal/profile"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"go.yaml.in/yaml/v3"
 )

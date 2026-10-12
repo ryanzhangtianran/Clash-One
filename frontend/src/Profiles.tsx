@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { ProfileService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
-import type { Profiles as ProfilesData } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { ProfileService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { Profiles as ProfilesData } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { sizeText } from "./format";
 
 const host = (url: string) => { try { return new URL(url).host; } catch { return url; } };

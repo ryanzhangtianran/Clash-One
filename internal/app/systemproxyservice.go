@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ryanzhangtianran/Clash-One/internal/core"
-	"github.com/ryanzhangtianran/Clash-One/internal/sysproxy"
+	"github.com/ryanzhangtianran/Connaio/internal/core"
+	"github.com/ryanzhangtianran/Connaio/internal/sysproxy"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 

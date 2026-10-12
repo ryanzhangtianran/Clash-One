@@ -7,7 +7,7 @@ package daemon
 #include <stdlib.h>
 
 // runAppleScript runs src inside this app (not via osascript), so the administrator dialog it raises
-// names Clash One and shows its icon. Returns NULL on success, else a malloc'd "number message".
+// names Connaio and shows its icon. Returns NULL on success, else a malloc'd "number message".
 static char *runAppleScript(const char *src) {
 	__block char *res = NULL;
 	void (^run)(void) = ^{

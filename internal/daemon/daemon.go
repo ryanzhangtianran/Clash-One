@@ -1,4 +1,4 @@
-// Package daemon installs clash-one-core as a root LaunchDaemon, which enhanced mode (TUN) needs.
+// Package daemon installs connaio-core as a root LaunchDaemon, which enhanced mode (TUN) needs.
 //
 // Everything root touches is root-owned: the binary is copied out of the (user-writable) app
 // bundle, and the daemon's data dir and socket live under /Library. The GUI sends configs as
@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	Label  = "com.ryanzhangtianran.clashone.core"
+	Label  = "com.ryanzhangtianran.connaio.core"
 	Helper = "/Library/PrivilegedHelperTools/" + Label
 	Plist  = "/Library/LaunchDaemons/" + Label + ".plist"
-	Dir    = "/Library/Application Support/Clash One Core"
+	Dir    = "/Library/Application Support/Connaio Core"
 	Socket = Dir + "/core.sock"
 )
 
@@ -38,7 +38,7 @@ func plist(uid int) string {
 <plist version="1.0">
 <dict>
 	<key>Label</key><string>` + Label + `</string>
-	<key>AssociatedBundleIdentifiers</key><array><string>com.ryanzhangtianran.clashone</string></array>
+	<key>AssociatedBundleIdentifiers</key><array><string>com.ryanzhangtianran.connaio</string></array>
 	<key>ProgramArguments</key>
 	<array>
 		<string>` + Helper + `</string>
@@ -46,7 +46,7 @@ func plist(uid int) string {
 		<string>-ext-ctl-unix</string><string>` + Socket + `</string>
 	</array>
 	<key>EnvironmentVariables</key>
-	<dict><key>CLASH_ONE_SOCKET_UID</key><string>` + strconv.Itoa(uid) + `</string></dict>
+	<dict><key>CONNAIO_SOCKET_UID</key><string>` + strconv.Itoa(uid) + `</string></dict>
 	<key>RunAtLoad</key><true/>
 	<key>KeepAlive</key><true/>
 	<key>StandardOutPath</key><string>` + Dir + `/core.log</string>
@@ -88,7 +88,7 @@ func uninstallScript() string {
 // Install copies core (the app's bundled binary) to a root-owned location and starts the
 // LaunchDaemon for the current user, after one administrator prompt.
 func Install(core string) error {
-	stage, err := os.MkdirTemp("", "clash-one-daemon-")
+	stage, err := os.MkdirTemp("", "connaio-daemon-")
 	if err != nil {
 		return err
 	}
@@ -104,9 +104,9 @@ func Install(core string) error {
 	if err != nil {
 		return err
 	}
-	prompt := "Clash One 需要 root 权限以开启增强（TUN）。"
+	prompt := "Connaio 需要 root 权限以开启增强（TUN）。"
 	if Installed() {
-		prompt = "Clash One 已更新内核，需要重新授予 root 权限。"
+		prompt = "Connaio 已更新内核，需要重新授予 root 权限。"
 	}
 	return asAdmin(installScript(core, coreSum, stage, sum(p)), prompt)
 }
@@ -122,7 +122,7 @@ func Stale(bin string) bool {
 
 // Uninstall stops and removes the LaunchDaemon; its data dir is kept.
 func Uninstall() error {
-	return asAdmin(uninstallScript(), "Clash One 需要移除 root 权限。")
+	return asAdmin(uninstallScript(), "Connaio 需要移除 root 权限。")
 }
 
 // asAdmin runs a shell script as root through the standard macOS administrator prompt.

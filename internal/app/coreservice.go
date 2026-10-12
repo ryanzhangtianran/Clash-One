@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ryanzhangtianran/Clash-One/internal/core"
-	"github.com/ryanzhangtianran/Clash-One/internal/daemon"
+	"github.com/ryanzhangtianran/Connaio/internal/core"
+	"github.com/ryanzhangtianran/Connaio/internal/daemon"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -105,7 +105,7 @@ func emit(name string, data any) {
 	}
 }
 
-// CoreService owns the clash-one-core child process and exposes its API to the frontend.
+// CoreService owns the connaio-core child process and exposes its API to the frontend.
 type CoreService struct {
 	core      *core.Core
 	ledger    *ledger                                     // today's and this month's traffic; nil in tests

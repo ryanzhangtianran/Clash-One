@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { Switch } from "./Settings";
 
 type Field = {

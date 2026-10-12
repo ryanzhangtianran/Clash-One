@@ -9,12 +9,12 @@ import (
 
 func TestLoginItemPlist(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "login.plist")
-	os.WriteFile(p, []byte(loginItemPlist("/Applications/Clash One & Co.app/Contents/MacOS/clash-one")), 0o644)
+	os.WriteFile(p, []byte(loginItemPlist("/Applications/Connaio & Co.app/Contents/MacOS/connaio")), 0o644)
 	if out, err := exec.Command("plutil", "-lint", p).CombinedOutput(); err != nil {
 		t.Fatalf("invalid plist: %s", out)
 	}
 	out, _ := exec.Command("plutil", "-extract", "ProgramArguments.0", "raw", p).Output()
-	if string(out) != "/Applications/Clash One & Co.app/Contents/MacOS/clash-one\n" {
+	if string(out) != "/Applications/Connaio & Co.app/Contents/MacOS/connaio\n" {
 		t.Fatalf("path round trip: %q", out)
 	}
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
-import type { Rule, Status } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { Rule, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 
 const ruleTypes = ["DOMAIN-SUFFIX", "DOMAIN", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "DOMAIN-WILDCARD", "GEOSITE", "IP-CIDR", "IP-CIDR6", "SRC-IP-CIDR", "GEOIP", "IP-ASN",
   "DST-PORT", "SRC-PORT", "PROCESS-NAME", "PROCESS-PATH", "PROCESS-ANCESTOR", "PROCESS-ANCESTOR-PATH", "IN-NAME", "IN-TYPE", "NETWORK", "RULE-SET"];

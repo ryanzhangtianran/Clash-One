@@ -16,7 +16,7 @@ func TestPlist(t *testing.T) {
 	if out, err := exec.Command("plutil", "-lint", p).CombinedOutput(); err != nil {
 		t.Fatalf("plist invalid: %s", out)
 	}
-	out, err := exec.Command("plutil", "-extract", "EnvironmentVariables.CLASH_ONE_SOCKET_UID", "raw", p).Output()
+	out, err := exec.Command("plutil", "-extract", "EnvironmentVariables.CONNAIO_SOCKET_UID", "raw", p).Output()
 	if err != nil || strings.TrimSpace(string(out)) != "501" {
 		t.Fatalf("socket uid: %q %v", out, err)
 	}
@@ -50,9 +50,9 @@ func TestVerify(t *testing.T) {
 
 func TestScripts(t *testing.T) {
 	// a path with spaces and a quote must survive shell and AppleScript quoting
-	core := "/Applications/Clash One's.app/Contents/MacOS/clash-one-core"
+	core := "/Applications/Connaio's.app/Contents/MacOS/connaio-core"
 	script := installScript(core, "abc", "/tmp/stage", "def")
-	if !strings.Contains(script, `'/Applications/Clash One'\''s.app/Contents/MacOS/clash-one-core'`) {
+	if !strings.Contains(script, `'/Applications/Connaio'\''s.app/Contents/MacOS/connaio-core'`) {
 		t.Fatalf("core path quoting:\n%s", script)
 	}
 	if out, err := exec.Command("sh", "-n", "-c", script).CombinedOutput(); err != nil {

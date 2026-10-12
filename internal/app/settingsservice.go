@@ -9,13 +9,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ryanzhangtianran/Clash-One/internal/daemon"
+	"github.com/ryanzhangtianran/Connaio/internal/daemon"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 const appVersion = "0.1.0"
 
-const loginItemLabel = "com.ryanzhangtianran.clashone"
+const loginItemLabel = "com.ryanzhangtianran.connaio"
 
 // SettingsService covers the GUI-side settings: launch at login and the about page.
 type SettingsService struct {

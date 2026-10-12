@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ryanzhangtianran/Clash-One/internal/core"
-	"github.com/ryanzhangtianran/Clash-One/internal/profile"
+	"github.com/ryanzhangtianran/Connaio/internal/core"
+	"github.com/ryanzhangtianran/Connaio/internal/profile"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
@@ -19,7 +19,7 @@ func Run(assets fs.FS, trayIcon []byte) error {
 	if err != nil {
 		return err
 	}
-	dataDir := filepath.Join(configDir, "Clash One")
+	dataDir := filepath.Join(configDir, "Connaio")
 	store, err := profile.Open(dataDir)
 	if err != nil {
 		return err
@@ -42,7 +42,7 @@ func Run(assets fs.FS, trayIcon []byte) error {
 		MarshalError: func(err error) []byte { notify("error", "%v", err); return nil },
 		// a second copy would fight the first over the core's ports; bring the first forward instead
 		SingleInstance: &application.SingleInstanceOptions{
-			UniqueID: "com.ryanzhangtianran.clashone",
+			UniqueID: "com.ryanzhangtianran.connaio",
 			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
 				if window != nil {
 					window.Show()
@@ -50,7 +50,7 @@ func Run(assets fs.FS, trayIcon []byte) error {
 				}
 			},
 		},
-		Name:        "Clash One",
+		Name:        "Connaio",
 		Description: "Rule-based proxy with reverse tunnels",
 		Services:    []application.Service{application.NewService(svc), application.NewService(profiles), application.NewService(sysProxy), application.NewService(enhanced), application.NewService(devices), application.NewService(settingsSvc)},
 		Assets:      application.AssetOptions{Handler: application.AssetFileServerFS(assets)},
@@ -60,7 +60,7 @@ func Run(assets fs.FS, trayIcon []byte) error {
 	})
 
 	window = app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:          "Clash One",
+		Title:          "Connaio",
 		Width:          960,
 		Height:         700,
 		MinWidth:       960, // the activity and dashboard layouts fit completely from here

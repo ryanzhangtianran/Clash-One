@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-// Needs a built core: CLASH_ONE_CORE=/path/to/clash-one-core go test ./internal/core
+// Needs a built core: CONNAIO_CORE=/path/to/connaio-core go test ./internal/core
 func TestCore(t *testing.T) {
-	if os.Getenv("CLASH_ONE_CORE") == "" {
-		t.Skip("CLASH_ONE_CORE not set")
+	if os.Getenv("CONNAIO_CORE") == "" {
+		t.Skip("CONNAIO_CORE not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

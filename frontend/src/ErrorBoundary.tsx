@@ -1,5 +1,5 @@
 import { Component, type ReactNode } from "react";
-import { CoreService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 
 const report = (msg: string) => { CoreService.ReportError(msg).catch(() => {}); };
 

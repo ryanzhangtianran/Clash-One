@@ -21,7 +21,7 @@ func Set(port int) error {
 }
 
 // Clear switches the proxies off.
-// ponytail: turns them off instead of restoring settings the user had before Clash One.
+// ponytail: turns them off instead of restoring settings the user had before Connaio.
 func Clear() error {
 	services, err := services()
 	if err != nil {

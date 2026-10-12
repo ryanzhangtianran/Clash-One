@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { CoreService, EnhancedService, SettingsService, SystemProxyService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
-import type { Activity as ActivityData, Event as AppEvent, LogLine, Status, Traffic } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService, EnhancedService, SettingsService, SystemProxyService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { Activity as ActivityData, Event as AppEvent, LogLine, Status, Traffic } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import Activity from "./Activity";
 import Processes from "./Processes";
 import Proxies from "./Proxies";

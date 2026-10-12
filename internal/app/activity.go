@@ -179,11 +179,11 @@ type Split struct {
 }
 
 // clientOf names a connection's client, an app folded into its bundle, the LAN device's address,
-// or Clash One for the core's own connections (rule sets, health checks), with the file whose
+// or Connaio for the core's own connections (rule sets, health checks), with the file whose
 // Finder icon stands for it (none for a device).
 func clientOf(c Conn) (name, icon string) {
 	if c.Inbound == "Inner" {
-		return "Clash One", ownBundle
+		return "Connaio", ownBundle
 	}
 	name, icon = c.Process, c.Path
 	if i := strings.Index(c.Path, ".app/"); i >= 0 {
@@ -232,7 +232,7 @@ type ledger struct {
 }
 
 func openLedger(path string) *ledger {
-	l := &ledger{path: path, days: map[string]*Day{}, icons: map[string]string{"Clash One": ownBundle}}
+	l := &ledger{path: path, days: map[string]*Day{}, icons: map[string]string{"Connaio": ownBundle}}
 	if b, err := os.ReadFile(path); err == nil {
 		_ = json.Unmarshal(b, &l.days)
 	}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
-import type { Group, Proxy, Status } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { Group, Proxy, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import ProxyDialog, { protocols } from "./ProxyDialog";
 import ProxyDiagnose from "./ProxyDiagnose";
 import GroupDialog from "./GroupDialog";

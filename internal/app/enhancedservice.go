@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ryanzhangtianran/Clash-One/internal/core"
-	"github.com/ryanzhangtianran/Clash-One/internal/daemon"
+	"github.com/ryanzhangtianran/Connaio/internal/core"
+	"github.com/ryanzhangtianran/Connaio/internal/daemon"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 

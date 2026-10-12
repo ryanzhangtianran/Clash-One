@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { CoreService, EnhancedService, ProfileService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
-import type { About, DNSLeak, Resolver } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService, EnhancedService, ProfileService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { About, DNSLeak, Resolver } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
@@ -240,7 +240,7 @@ export function AboutPage() {
   if (!about) return null;
   return (
     <div className="card settings-card">
-      <Row title="Clash One">{about.version}</Row>
+      <Row title="Connaio">{about.version}</Row>
       <Row title="内核">{about.coreVersion || "—"}</Row>
       <Row title="内核运行方式">{about.attached ? "root" : "当前用户"}</Row>
       <Row title="数据目录" desc={about.dataDir}><button className="btn" onClick={() => SettingsService.OpenDataDir()}>在 Finder 中显示</button></Row>
