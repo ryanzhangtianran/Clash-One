@@ -134,9 +134,12 @@ func (s *CoreService) ServiceStartup(ctx context.Context, _ application.ServiceO
 			notify("error", "内核启动失败：%v", err)
 			return
 		}
-		version, _ := s.core.Version(ctx)
-		s.setStatus(Status{Running: true, Version: version})
-		notify("info", "内核已启动（%s）", version)
+		info, _ := s.core.Version(ctx)
+		s.setStatus(Status{Running: true, Version: info.Version})
+		notify("info", "内核已启动（%s）", info.Version)
+		if info.API < core.API {
+			notify("warning", "内核接口版本为 %d，App 需要 %d：部分功能不可用，请用新版 connaio-core 重新打包", info.API, core.API)
+		}
 		if w := s.portWarning(); w != "" {
 			notify("warning", "%s", w)
 		}

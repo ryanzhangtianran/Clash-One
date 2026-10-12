@@ -255,12 +255,20 @@ func (c *Core) Stop() error {
 	return nil
 }
 
-func (c *Core) Version(ctx context.Context) (string, error) {
-	var v struct {
-		Version string `json:"version"`
-	}
+// API is the connaio-core controller API level this GUI needs (its constant.ConnaioAPI).
+const API = 1
+
+// Info is the core's GET /version: the mihomo release it is based on, and its Connaio API level
+// (0 for a core that predates the field).
+type Info struct {
+	Version string `json:"version"`
+	API     int    `json:"connaio"`
+}
+
+func (c *Core) Version(ctx context.Context) (Info, error) {
+	var v Info
 	err := c.Do(ctx, http.MethodGet, "/version", nil, &v)
-	return v.Version, err
+	return v, err
 }
 
 // Do sends a JSON request; out may be nil. Non-2xx answers become errors carrying the core's message.

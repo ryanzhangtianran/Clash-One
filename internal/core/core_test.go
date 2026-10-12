@@ -27,8 +27,8 @@ func TestCore(t *testing.T) {
 	}
 	defer c.Stop()
 
-	if v, err := c.Version(ctx); err != nil || v == "" {
-		t.Fatalf("version %q, %v", v, err)
+	if v, err := c.Version(ctx); err != nil || v.Version == "" || v.API < API {
+		t.Fatalf("version %+v, %v: the core must report the API level this GUI needs", v, err)
 	}
 	if err := c.Do(ctx, http.MethodPatch, "/configs", map[string]string{"mode": "global"}, nil); err != nil {
 		t.Fatal(err)
