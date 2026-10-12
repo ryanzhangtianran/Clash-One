@@ -16,6 +16,7 @@ vars:
 includes:
   common: ./build/Taskfile.yml
   darwin: ./build/darwin/Taskfile.yml
+  linux: ./build/linux/Taskfile.yml
 
 tasks:
   build:

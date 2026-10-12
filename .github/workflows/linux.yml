@@ -1,0 +1,77 @@
+# Builds the Linux (Ubuntu 22.04+, x86-64) .deb on Ubuntu 22.04, so it links against the oldest
+# glibc and GTK it supports; checks it starts, and attaches it to the release of a pushed tag.
+name: linux
+
+on:
+  push:
+    branches: [main, linux]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write # attach the .deb to a tag's release
+
+jobs:
+  deb:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: Connaio
+          fetch-depth: 0 # the latest tag is the package version
+      - uses: actions/checkout@v4
+        with:
+          repository: ryanzhangtianran/connaio-core
+          ref: reverse-tunnels
+          path: connaio-core
+          fetch-depth: 0 # its latest tag is the mihomo version it reports
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: Connaio/go.mod
+          cache-dependency-path: |
+            Connaio/go.sum
+            connaio-core/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install GTK 3, WebKit2GTK 4.1 and wails3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev xvfb dbus-x11
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
+
+      - name: Build the .deb
+        working-directory: Connaio
+        run: wails3 task linux:package
+
+      - name: Test against the built core
+        working-directory: Connaio
+        run: CONNAIO_CORE=$PWD/bin/connaio-core go test -tags gtk3 ./internal/profile ./internal/core ./internal/sysproxy ./internal/daemon
+
+      - name: Smoke test, installed
+        working-directory: Connaio
+        run: |
+          sudo apt-get install -y ./bin/connaio_*.deb
+          dbus-run-session -- xvfb-run -a sh -c '
+            connaio > /tmp/connaio.log 2>&1 &
+            for i in $(seq 30); do curl -sf --unix-socket "$HOME/.config/Connaio/core.sock" http://x/version && break; sleep 1; done
+            echo; curl -s -o /dev/null -w "through mixed-port: %{http_code}\n" -x http://127.0.0.1:7899 http://www.gstatic.com/generate_204
+            kill %1'
+          cat /tmp/connaio.log
+          test -S "$HOME/.config/Connaio/core.sock"
+
+      - name: Name the .deb like the other releases
+        working-directory: Connaio
+        run: |
+          version=$(git describe --tags --abbrev=0 | sed 's/^v//')
+          mv bin/connaio_*.deb "bin/Connaio-$version-linux-amd64.deb"
+          echo "DEB=Connaio/bin/Connaio-$version-linux-amd64.deb" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: ${{ env.DEB }}
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" "$DEB" --clobber -R "$GITHUB_REPOSITORY"

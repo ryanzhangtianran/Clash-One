@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Connaio
+Comment=Rule-based proxy client with reverse tunnels
+Comment[zh_CN]=规则分流与反向隧道的代理客户端
+Exec=/usr/bin/connaio
+Icon=connaio
+Categories=Network;
+Terminal=false
+StartupWMClass=connaio

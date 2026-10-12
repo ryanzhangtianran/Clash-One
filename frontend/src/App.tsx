@@ -21,7 +21,8 @@ const LOG_LINES = 500;
 // NavIcon is a flat SF Symbol, grey or, for the page shown, the accent colour.
 function NavIcon({ symbol }: { symbol: string }) {
   const src = useCachedURL(symbol, SettingsService.Symbol);
-  return <span className="nav-icon" style={src ? { maskImage: `url(${src})` } : undefined} />;
+  // no symbol (Linux has no SF Symbols): keep the space, draw nothing
+  return <span className="nav-icon" style={src ? { maskImage: `url(${src})` } : { visibility: "hidden" }} />;
 }
 
 type Page = { key: string; title: string; symbol: string };

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -41,9 +42,13 @@ func (s *SettingsService) About() About {
 	}
 }
 
-// OpenDataDir shows the data folder (config, logs, profiles) in Finder.
+// OpenDataDir shows the data folder (config, logs, profiles) in Finder or the Linux file manager.
 func (s *SettingsService) OpenDataDir() error {
-	return exec.Command("open", s.core.core.Dir).Run()
+	opener := "open"
+	if runtime.GOOS == "linux" {
+		opener = "xdg-open"
+	}
+	return exec.Command(opener, s.core.core.Dir).Run()
 }
 
 func loginItemPath() (string, error) {

@@ -1,0 +1,50 @@
+package sysproxy
+
+import (
+	"fmt"
+	"os/exec"
+	"slices"
+	"strconv"
+	"strings"
+)
+
+// schema is GNOME's proxy settings, which Ubuntu's desktop and most apps (GTK, Chromium, Firefox
+// by default) follow.
+const schema = "org.gnome.system.proxy"
+
+// ignoreHosts keeps local and LAN traffic off the proxy, as a GVariant string array.
+const ignoreHosts = "['localhost', '127.0.0.0/8', '::1', '*.local', '169.254.0.0/16', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']"
+
+func Set(port int) error { return run(setCommands(port)) }
+
+func Clear() error { return run([][]string{{"set", schema, "mode", "'none'"}}) }
+
+// IsSet reports whether the system proxy is manual and its HTTP proxy is 127.0.0.1:port.
+func IsSet(port int) (bool, error) {
+	var got []string
+	for _, key := range [][]string{{schema, "mode"}, {schema + ".http", "host"}, {schema + ".http", "port"}} {
+		out, err := exec.Command("gsettings", append([]string{"get"}, key...)...).Output()
+		if err != nil {
+			return false, err
+		}
+		got = append(got, strings.TrimSpace(string(out)))
+	}
+	return slices.Equal(got, []string{"'manual'", "'127.0.0.1'", strconv.Itoa(port)}), nil
+}
+
+func setCommands(port int) [][]string {
+	cmds := [][]string{{"set", schema, "ignore-hosts", ignoreHosts}}
+	for _, kind := range []string{"http", "https", "socks"} {
+		cmds = append(cmds, []string{"set", schema + "." + kind, "host", "'127.0.0.1'"}, []string{"set", schema + "." + kind, "port", strconv.Itoa(port)})
+	}
+	return append(cmds, []string{"set", schema, "mode", "'manual'"}) // last, once the hosts are in place
+}
+
+func run(cmds [][]string) error {
+	for _, args := range cmds {
+		if out, err := exec.Command("gsettings", args...).CombinedOutput(); err != nil {
+			return fmt.Errorf("gsettings %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		}
+	}
+	return nil
+}
