@@ -253,8 +253,6 @@ func padRate(b int64) string {
 	return strings.Repeat("\u2007", max(0, 8-utf8.RuneCountInString(r))) + r
 }
 
-var modeBadges = map[string]string{"rule": "R", "global": "G", "direct": "D"}
-
 // showTray draws the menu bar item: the cat badged with the outbound mode, greyed while nothing is
 // captured (no system proxy, no enhanced mode), plus upload over download unless the speed is hidden.
 func showTray(tray *application.SystemTray, icon []byte, t Traffic, mode string, capturing, showSpeed bool) {

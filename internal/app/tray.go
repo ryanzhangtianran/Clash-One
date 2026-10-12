@@ -20,6 +20,9 @@ var modes = []struct{ key, label string }{
 
 const trayProcesses = 5
 
+// modeBadges are the letters for the outbound mode, on the menu bar icon and the mode item
+var modeBadges = map[string]string{"rule": "R", "global": "G", "direct": "D"}
+
 // trayMenu is the menu bar item and its menu, laid out after Surge's. The menu is rebuilt only when
 // its layout (selectable groups, profiles) changes; checks, details and process rows are updated in
 // place, so an open menu stays live.
