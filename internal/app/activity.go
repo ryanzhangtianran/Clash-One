@@ -229,20 +229,20 @@ type Day struct {
 	Procs  map[string]map[string]Split `json:"procs,omitempty"` // client -> its processes
 	Host   map[string]Split            `json:"host,omitempty"`
 	Policy map[string]Split            `json:"policy,omitempty"`
+	Icons  map[string]string           `json:"icons,omitempty"` // client -> file whose icon stands for it, kept across restarts
 }
 
 // ledger keeps per-day traffic in traffic.json.
 type ledger struct {
 	path  string
 	mu    sync.Mutex
-	days  map[string]*Day   // "2006-01-02" -> traffic
-	icons map[string]string // client -> icon file, as last seen
-	seen  map[string]int64  // bytes per live connection at the last count; nil before the first
+	days  map[string]*Day  // "2006-01-02" -> traffic
+	seen  map[string]int64 // bytes per live connection at the last count; nil before the first
 	dirty bool
 }
 
 func openLedger(path string) *ledger {
-	l := &ledger{path: path, days: map[string]*Day{}, icons: map[string]string{"Connaio": ownBundle}}
+	l := &ledger{path: path, days: map[string]*Day{}}
 	if b, err := os.ReadFile(path); err == nil {
 		_ = json.Unmarshal(b, &l.days)
 	}
@@ -293,7 +293,10 @@ func (l *ledger) add(conns []Conn, now time.Time) map[string]int64 {
 			d.Procs[name] = procs
 		}
 		if icon != "" {
-			l.icons[name] = icon
+			if d.Icons == nil {
+				d.Icons = map[string]string{}
+			}
+			d.Icons[name] = icon
 		}
 		l.dirty = true
 	}
@@ -335,7 +338,7 @@ func (l *ledger) today(now time.Time) (hours [24]Split, clients, hosts, policies
 	if d == nil {
 		return
 	}
-	clients = topUsage(d.Client, l.icons, 20)
+	clients = topUsage(d.Client, d.Icons, 20)
 	for i := range clients {
 		if procs := d.Procs[clients[i].Name]; len(procs) > 1 || (len(procs) == 1 && procs[clients[i].Name] == (Split{})) {
 			clients[i].Children = topUsage(procs, nil, 20)

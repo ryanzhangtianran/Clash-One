@@ -144,6 +144,12 @@ func TestLedgerChildren(t *testing.T) {
 	if len(clients) != 1 || clients[0].Name != "Google Chrome" || len(clients[0].Children) != 2 || clients[0].Children[0].Name != "Google Chrome Helper" {
 		t.Fatalf("%+v", clients)
 	}
+	if err := l.save(); err != nil {
+		t.Fatal(err)
+	}
+	if _, clients, _, _ := openLedger(l.path).today(now); clients[0].Icon != "/Applications/Google Chrome.app" {
+		t.Fatalf("the app's icon must survive a restart: %+v", clients[0])
+	}
 }
 
 func TestFrpsScript(t *testing.T) {
