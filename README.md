@@ -19,9 +19,24 @@ wails3 package    # 产出 bin/Connaio.app，内核打包在 Contents/MacOS/conn
 
 ## 结构
 
-- `main.go`：窗口（关闭即隐藏）与菜单栏（实时速度、出站模式、打开/退出）
-- `coreservice.go`：暴露给前端的内核 API，推送 `status` / `mode` / `traffic` 事件
-- `internal/core`：以子进程启动内核，经 Unix socket（`~/Library/Application Support/Connaio/core.sock`）访问 REST API
-- `frontend/src`：概览、代理页面
+- `internal/app`：暴露给前端的服务（内核控制、配置、增强模式、设置、设备）、菜单栏、流量账本、诊断与测速
+- `internal/core`：以子进程启动内核，或连接已安装的 root 内核，经 Unix socket 访问 REST API
+- `internal/daemon`：安装 / 卸载 root 内核（LaunchDaemon），增强模式（TUN）需要它
+- `internal/profile`：订阅与本地配置的存储（`profile.go`）、合并成内核配置（`merge.go`）、编辑覆写（`override.go`）
+- `internal/sysproxy`：macOS 系统代理
+- `frontend/src`：各页面，`frontend/bindings` 由 `wails3 generate bindings` 生成
 
-运行数据（`config.yaml`、`core.log`、`cache.db`）在 `~/Library/Application Support/Connaio/`；首次启动写入默认配置。
+运行数据（`config.yaml`、`core.log`、`cache.db`、`traffic.json`、`profiles/`）在 `~/Library/Application Support/Connaio/`；root 内核的数据在 `/Library/Application Support/Connaio Core/`。
+
+## 覆写
+
+`profiles/override.yaml` 叠加在当前配置之上，订阅更新不会覆盖它。按顺序合并：
+
+1. 普通键逐层合并：字典按键合并，其他值直接替换
+2. `prepend-` / `append-` 加 `rules`、`proxies`、`proxy-groups`：放到配置里对应列表的前 / 后
+3. `remove-rules`：删除配置里文本完全相同的规则
+4. `group-members`（策略组 → 节点列表）：把节点放到已有策略组的最前
+5. `patch-proxies`（节点 → 字段）：把字段合并到该节点上，值为 `null` 表示删除该字段
+6. `remove-proxies` / `remove-proxy-groups`：按名字删除，并清理所有引用（空了的策略组回落到 DIRECT，删掉指向它们的规则）
+
+`reverse-tunnels`（反向隧道）和 `capture`（流量接入方式）是内核直接读取的普通键。GUI 编辑覆写时保留用户的注释和格式。

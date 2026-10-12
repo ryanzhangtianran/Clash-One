@@ -1,0 +1,335 @@
+// The override (override.yaml) is the user's layer over the current profile, kept apart so a
+// subscription update never loses it. Merge applies it in this order:
+//
+//  1. ordinary keys merge deeply over the profile: maps key by key, any other value replaces;
+//  2. prepend-rules / append-rules, prepend-proxies / append-proxies and prepend-proxy-groups /
+//     append-proxy-groups put their items before / after the profile's list;
+//  3. remove-rules drops the profile's rules with exactly that text;
+//  4. group-members (group -> proxies) puts proxies at the front of an existing group;
+//  5. patch-proxies (proxy -> fields) merges fields over a proxy, a null removing one;
+//  6. remove-proxies / remove-proxy-groups drop those by name with every reference to them: their
+//     members in other groups (an emptied group falls back to DIRECT) and the rules that use them.
+//
+// reverse-tunnels and capture are ordinary keys the core reads. The GUI edits the override through
+// the functions below, on its YAML tree so the user's comments and layout survive.
+
+package profile
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+
+	"go.yaml.in/yaml/v3"
+)
+
+// PrependRule puts rule first in the override's prepend-rules, keeping the rest of the override,
+// comments included, as the user wrote it.
+func (s *Store) PrependRule(rule string) error {
+	return s.editOverride(func(root *yaml.Node) error {
+		seq := child(root, "prepend-rules", yaml.SequenceNode)
+		if seq.Kind != yaml.SequenceNode {
+			return errors.New("覆写中的 prepend-rules 不是列表")
+		}
+		seq.Content = append([]*yaml.Node{{Kind: yaml.ScalarNode, Value: rule}}, seq.Content...)
+		return nil
+	})
+}
+
+func (s *Store) writeOverride(doc *yaml.Node) error {
+	b, err := yaml.Marshal(doc)
+	if err != nil {
+		return err
+	}
+	return s.SetOverride(string(b))
+}
+
+// User items are what the GUI adds into the override: they survive subscription updates.
+
+// UserItems lists the GUI-editable parts of the override.
+type UserItems struct {
+	Proxies []map[string]any `json:"proxies"` // prepend-proxies
+	Groups  []map[string]any `json:"groups"`  // prepend-proxy-groups
+	Rules   []string         `json:"rules"`   // prepend-rules
+	Tunnels []map[string]any `json:"tunnels"` // reverse-tunnels
+	Members map[string][]any `json:"members"` // group-members: group -> user proxies prepended into it
+}
+
+func (s *Store) UserItems() (UserItems, error) {
+	text, err := s.Override()
+	if err != nil {
+		return UserItems{}, err
+	}
+	var raw struct {
+		Proxies []map[string]any `yaml:"prepend-proxies"`
+		Groups  []map[string]any `yaml:"prepend-proxy-groups"`
+		Rules   []string         `yaml:"prepend-rules"`
+		Tunnels []map[string]any `yaml:"reverse-tunnels"`
+		Members map[string][]any `yaml:"group-members"`
+	}
+	if err := yaml.Unmarshal([]byte(text), &raw); err != nil {
+		return UserItems{}, err
+	}
+	return UserItems(raw), nil
+}
+
+// EditProxy changes the named proxy by patch (only the edited fields; a null removes one). A
+// GUI-added proxy is patched in place; one from the profile gets the patch stored under
+// patch-proxies, which Merge lays over it, so the edit survives subscription updates while the
+// fields left alone keep following the subscription.
+func (s *Store) EditProxy(name string, patch map[string]any) error {
+	return s.editOverride(func(root *yaml.Node) error {
+		seq := listOf(root, "prepend-proxies")
+		if i := findNamed(seq, name); i >= 0 {
+			var proxy map[string]any
+			if err := seq.Content[i].Decode(&proxy); err != nil {
+				return err
+			}
+			applyPatch(proxy, patch)
+			return seq.Content[i].Encode(proxy)
+		}
+		patches := mapOf(root, "patch-proxies")
+		if patches.Kind != yaml.MappingNode {
+			return errors.New("覆写中的 patch-proxies 不是字典")
+		}
+		n := child(patches, name, yaml.MappingNode)
+		stored := map[string]any{}
+		if err := n.Decode(&stored); err != nil {
+			return err
+		}
+		return n.Encode(merge(stored, patch)) // nulls kept: they remove the profile's field at Merge
+	})
+}
+
+// AddProxy adds a node and puts it at the front of each of groups.
+func (s *Store) AddProxy(proxy map[string]any, groups []string) error {
+	name, _ := proxy["name"].(string)
+	if name == "" {
+		return errors.New("代理名称不能为空")
+	}
+	return s.editOverride(func(root *yaml.Node) error {
+		if findNamed(listOf(root, "prepend-proxies"), name) >= 0 {
+			return fmt.Errorf("已存在名为 %s 的代理", name)
+		}
+		if err := appendItem(root, "prepend-proxies", proxy); err != nil {
+			return err
+		}
+		members := mapOf(root, "group-members")
+		for _, g := range groups {
+			if err := appendItem(members, g, name); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// RemoveProxy deletes a user node and its group memberships; a profile's node is listed under
+// remove-proxies instead, which Merge applies.
+func (s *Store) RemoveProxy(name string) error {
+	return s.editOverride(func(root *yaml.Node) error {
+		if findNamed(listOf(root, "prepend-proxies"), name) < 0 {
+			return listName(root, "remove-proxies", name)
+		}
+		removeNamed(root, "prepend-proxies", name)
+		if members := valueOf(root, "group-members"); members != nil && members.Kind == yaml.MappingNode {
+			for i := 1; i < len(members.Content); i += 2 {
+				seq := members.Content[i]
+				seq.Content = slices.DeleteFunc(seq.Content, func(n *yaml.Node) bool { return n.Value == name })
+			}
+		}
+		return nil
+	})
+}
+
+func (s *Store) AddGroup(group map[string]any) error {
+	name, _ := group["name"].(string)
+	if name == "" {
+		return errors.New("策略组名称不能为空")
+	}
+	return s.editOverride(func(root *yaml.Node) error {
+		if findNamed(listOf(root, "prepend-proxy-groups"), name) >= 0 {
+			return fmt.Errorf("已存在名为 %s 的策略组", name)
+		}
+		return appendItem(root, "prepend-proxy-groups", group)
+	})
+}
+
+// RemoveGroup deletes a user group, or lists a profile's group under remove-proxy-groups.
+func (s *Store) RemoveGroup(name string) error {
+	return s.editOverride(func(root *yaml.Node) error {
+		if findNamed(listOf(root, "prepend-proxy-groups"), name) < 0 {
+			return listName(root, "remove-proxy-groups", name)
+		}
+		removeNamed(root, "prepend-proxy-groups", name)
+		return nil
+	})
+}
+
+// listName adds name to the override's string list key, once.
+func listName(root *yaml.Node, key, name string) error {
+	if seq := listOf(root, key); seq != nil && slices.ContainsFunc(seq.Content, func(n *yaml.Node) bool { return n.Value == name }) {
+		return nil
+	}
+	return appendItem(root, key, name)
+}
+
+func (s *Store) AddTunnel(tunnel map[string]any) error {
+	name, _ := tunnel["name"].(string)
+	if name == "" {
+		return errors.New("隧道名称不能为空")
+	}
+	return s.editOverride(func(root *yaml.Node) error {
+		if findNamed(listOf(root, "reverse-tunnels"), name) >= 0 {
+			return fmt.Errorf("已存在名为 %s 的隧道", name)
+		}
+		return appendItem(root, "reverse-tunnels", tunnel)
+	})
+}
+
+func (s *Store) RemoveTunnel(name string) error {
+	return s.editOverride(func(root *yaml.Node) error {
+		removeNamed(root, "reverse-tunnels", name)
+		return nil
+	})
+}
+
+// MoveRule swaps the GUI-added rule at index (in prepend-rules) with the one delta places away.
+// The profile's own rules keep their order, so subscription updates still reach them.
+func (s *Store) MoveRule(index, delta int) error {
+	return s.editOverride(func(root *yaml.Node) error {
+		seq, j := listOf(root, "prepend-rules"), index+delta
+		if seq == nil || min(index, j) < 0 || max(index, j) >= len(seq.Content) {
+			return errors.New("只能调整自己添加的规则的顺序")
+		}
+		seq.Content[index], seq.Content[j] = seq.Content[j], seq.Content[index]
+		return nil
+	})
+}
+
+// RemoveRule drops a GUI-added rule from the override.
+func (s *Store) RemoveRule(rule string) error {
+	return s.editOverride(func(root *yaml.Node) error {
+		if seq := listOf(root, "prepend-rules"); seq != nil {
+			seq.Content = slices.DeleteFunc(seq.Content, func(n *yaml.Node) bool { return n.Value == rule })
+		}
+		return nil
+	})
+}
+
+// HideRule drops one of the profile's rules by listing it under remove-rules, which Merge filters
+// out; the rest of the profile's rules still follow the subscription.
+func (s *Store) HideRule(rule string) error {
+	return s.editOverride(func(root *yaml.Node) error { return appendItem(root, "remove-rules", rule) })
+}
+
+// editOverride applies change to the override's YAML tree, keeping comments and layout.
+func (s *Store) editOverride(change func(root *yaml.Node) error) error {
+	text, err := s.Override()
+	if err != nil {
+		return err
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
+		return err
+	}
+	if doc.Kind == 0 {
+		doc = yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{{Kind: yaml.MappingNode}}}
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return errors.New("覆写不是 YAML 字典")
+	}
+	if err := change(root); err != nil {
+		return err
+	}
+	return s.writeOverride(&doc)
+}
+
+func valueOf(m *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			return m.Content[i+1]
+		}
+	}
+	return nil
+}
+
+// child returns m[key], creating it with kind when missing.
+func child(m *yaml.Node, key string, kind yaml.Kind) *yaml.Node {
+	if v := valueOf(m, key); v != nil {
+		return v
+	}
+	v := &yaml.Node{Kind: kind}
+	m.Content = append(m.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: key}, v)
+	return v
+}
+
+func listOf(m *yaml.Node, key string) *yaml.Node {
+	if v := valueOf(m, key); v != nil && v.Kind == yaml.SequenceNode {
+		return v
+	}
+	return nil
+}
+
+func mapOf(m *yaml.Node, key string) *yaml.Node { return child(m, key, yaml.MappingNode) }
+
+func appendItem(m *yaml.Node, key string, item any) error {
+	seq := child(m, key, yaml.SequenceNode)
+	if seq.Kind != yaml.SequenceNode {
+		return fmt.Errorf("覆写中的 %s 不是列表", key)
+	}
+	var n yaml.Node
+	if err := n.Encode(item); err != nil {
+		return err
+	}
+	seq.Content = append(seq.Content, &n)
+	return nil
+}
+
+// findNamed returns the index of the mapping with name in seq, or -1.
+func findNamed(seq *yaml.Node, name string) int {
+	if seq == nil {
+		return -1
+	}
+	return slices.IndexFunc(seq.Content, func(n *yaml.Node) bool {
+		v := valueOf(n, "name")
+		return n.Kind == yaml.MappingNode && v != nil && v.Value == name
+	})
+}
+
+func removeNamed(m *yaml.Node, key, name string) {
+	if seq := listOf(m, key); seq != nil {
+		if i := findNamed(seq, name); i >= 0 {
+			seq.Content = slices.Delete(seq.Content, i, i+1)
+		}
+	}
+}
+
+// SetPath sets a nested key such as dns.enhanced-mode in the override, creating the maps on the
+// way and leaving sibling keys and comments alone.
+func (s *Store) SetPath(path []string, value any) error {
+	if len(path) == 0 {
+		return errors.New("empty path")
+	}
+	return s.editOverride(func(root *yaml.Node) error {
+		m := root
+		for _, key := range path[:len(path)-1] {
+			m = mapOf(m, key)
+			if m.Kind != yaml.MappingNode {
+				return fmt.Errorf("覆写中的 %s 不是字典", key)
+			}
+		}
+		var n yaml.Node
+		if err := n.Encode(value); err != nil {
+			return err
+		}
+		last := path[len(path)-1]
+		if v := valueOf(m, last); v != nil {
+			*v = n
+			return nil
+		}
+		m.Content = append(m.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: last}, &n)
+		return nil
+	})
+}
