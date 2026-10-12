@@ -74,7 +74,8 @@ jobs:
           curl -s -o /dev/null -w "no proxy set, through TUN: %{http_code}\n" http://www.gstatic.com/generate_204
           sleep 1
           # the root core saw curl's connection, and named its process
-          sudo grep -E '\(curl\) --> www.gstatic.com' /var/lib/connaio/$uid/core.log
+          sudo tail -n 25 /var/lib/connaio/$uid/core.log
+          sudo grep -E '\(curl\).*gstatic' /var/lib/connaio/$uid/core.log
       - name: Turn the root core off
         if: always()
         run: sudo /usr/lib/connaio/connaio-root disable "$(id -u)" || true

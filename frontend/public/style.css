@@ -381,7 +381,7 @@ tr.muted td.rule-actions { text-decoration: none; }
 .client-icon { width: 24px; height: 24px; flex: none; }
 .client-icon.device { display: grid; place-items: center; border-radius: 6px; background: var(--track); color: var(--text-2); }
 .client-icon.device svg { width: 16px; height: 16px; }
-.hours { position: relative; height: 120px; margin: 18px 0 14px; }
+.hours { position: relative; height: 96px; margin: 12px 0 10px; } /* short enough that four ranking rows fit below at the smallest window */
 .hours-grid { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--line); }
 .hours-grid span { position: absolute; right: 0; bottom: 2px; font: 500 10px var(--rounded); color: var(--text-2); }
 .hours-bars { position: absolute; inset: 0 0 18px; display: flex; align-items: flex-end; gap: 4px; }
