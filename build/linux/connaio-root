@@ -1,0 +1,27 @@
+#!/bin/sh
+# connaio-root enable|disable UID turns user UID's root core (connaio-core@UID.service) on or off.
+# The GUI runs it through pkexec, whose polkit action (com.ryanzhangtianran.connaio.root) names
+# only this script; PKEXEC_UID keeps one user from starting a core whose socket another owns.
+set -eu
+op=${1:-} uid=${2:-}
+case $uid in '' | *[!0-9]*) echo "connaio-root: bad uid '$uid'" >&2; exit 2 ;; esac
+if [ -n "${PKEXEC_UID:-}" ] && [ "$PKEXEC_UID" != "$uid" ]; then
+	echo "connaio-root: uid $uid is not the caller's" >&2
+	exit 2
+fi
+dir=/var/lib/connaio/$uid
+case $op in
+enable)
+	install -d -m 755 /var/lib/connaio "$dir"
+	# what it runs until the GUI hands it the real config (daemon.BootConfig)
+	[ -f "$dir/config.yaml" ] || printf 'mixed-port: 7899\nmode: rule\nrules:\n  - MATCH,DIRECT\n' >"$dir/config.yaml"
+	systemctl enable --now "connaio-core@$uid.service"
+	;;
+disable)
+	systemctl disable --now "connaio-core@$uid.service"
+	;;
+*)
+	echo "usage: connaio-root enable|disable UID" >&2
+	exit 2
+	;;
+esac

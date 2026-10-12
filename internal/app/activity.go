@@ -102,9 +102,9 @@ func (s *CoreService) networkName(ctx context.Context) string {
 // defaultRoute is the IPv4 default route as key -> value, e.g. interface, gateway.
 func defaultRoute() map[string]string { return routeOf("-inet") }
 
-// pingMs is one ICMP round trip to host via /sbin/ping (setuid, no root needed), 0 if it fails.
+// pingMs is one ICMP round trip to host via ping (no root needed), 0 if it fails.
 func pingMs(ctx context.Context, host string) int {
-	out, err := exec.CommandContext(ctx, "ping", "-n", "-c", "1", "-t", "2", host).Output()
+	out, err := exec.CommandContext(ctx, "ping", append(pingArgs, host)...).Output()
 	if err != nil {
 		return 0
 	}

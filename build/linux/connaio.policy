@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Connaio</vendor>
+  <vendor_url>https://github.com/ryanzhangtianran/Connaio</vendor_url>
+  <icon_name>connaio</icon_name>
+  <action id="com.ryanzhangtianran.connaio.root">
+    <description>Grant Connaio root access for enhanced mode</description>
+    <description xml:lang="zh_CN">授予 Connaio 增强模式所需的 root 权限</description>
+    <message>Connaio needs root access to turn on enhanced mode (TUN).</message>
+    <message xml:lang="zh_CN">Connaio 需要 root 权限以开启增强模式（TUN）。</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/connaio/connaio-root</annotate>
+  </action>
+</policyconfig>

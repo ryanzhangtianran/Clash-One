@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CoreService, EnhancedService, SettingsService, SystemProxyService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import { CoreService, EnhancedService, SystemProxyService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Activity as ActivityData, Event as AppEvent, LogLine, Status, Traffic } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import Activity from "./Activity";
 import Processes from "./Processes";
@@ -12,34 +12,33 @@ import Devices from "./Devices";
 import { AboutPage, Dns, General } from "./Settings";
 import Profiles from "./Profiles";
 import ErrorBoundary from "./ErrorBoundary";
-import { on, usePoll, useCachedURL } from "./hooks";
+import { icons } from "./icons";
+import { on, usePoll } from "./hooks";
 
 const HISTORY = 60; // seconds of traffic kept for the sparklines
 
 const LOG_LINES = 500;
 
-// NavIcon is a flat SF Symbol, grey or, for the page shown, the accent colour.
-function NavIcon({ symbol }: { symbol: string }) {
-  const src = useCachedURL(symbol, SettingsService.Symbol);
-  // no symbol (Linux has no SF Symbols): keep the space, draw nothing
-  return <span className="nav-icon" style={src ? { maskImage: `url(${src})` } : { visibility: "hidden" }} />;
-}
+// NavIcon is the page's line icon, grey or, for the page shown, the accent colour.
+const NavIcon = ({ page }: { page: string }) => (
+  <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: icons[page] ?? "" }} />
+);
 
-type Page = { key: string; title: string; symbol: string };
+type Page = { key: string; title: string };
 // one list, from what you check most to what you touch least
 const pages: Page[] = [
-  { key: "activity", title: "活动", symbol: "waveform.path.ecg" },
-  { key: "proxies", title: "策略", symbol: "signpost.right" },
-  { key: "tunnels", title: "反向", symbol: "server.rack" },
-  { key: "devices", title: "设备", symbol: "wifi" },
-  { key: "rules", title: "规则", symbol: "line.3.horizontal.decrease.circle" },
-  { key: "processes", title: "增强", symbol: "bolt" },
-  { key: "profiles", title: "配置", symbol: "doc.text" },
-  { key: "dns", title: "DNS", symbol: "globe" },
-  { key: "dashboard", title: "连接", symbol: "link" },
-  { key: "logs", title: "日志", symbol: "text.alignleft" },
-  { key: "general", title: "通用", symbol: "gearshape" },
-  { key: "about", title: "关于", symbol: "info.circle" },
+  { key: "activity", title: "活动" },
+  { key: "proxies", title: "策略" },
+  { key: "tunnels", title: "反向" },
+  { key: "devices", title: "设备" },
+  { key: "rules", title: "规则" },
+  { key: "processes", title: "增强" },
+  { key: "profiles", title: "配置" },
+  { key: "dns", title: "DNS" },
+  { key: "dashboard", title: "连接" },
+  { key: "logs", title: "日志" },
+  { key: "general", title: "通用" },
+  { key: "about", title: "关于" },
 ];
 
 const levelNames: Record<string, string> = { info: "状态", warning: "警告", error: "错误" };
@@ -122,7 +121,7 @@ export default function App() {
     <div className="app">
       <nav className="sidebar">
         {pages.map((p) => (
-          <button key={p.key} className={`item ${p.key === current ? "active" : ""}`} onClick={() => setCurrent(p.key)}><NavIcon symbol={p.symbol} />{p.title}</button>
+          <button key={p.key} className={`item ${p.key === current ? "active" : ""}`} onClick={() => setCurrent(p.key)}><NavIcon page={p.key} />{p.title}</button>
         ))}
       </nav>
       <main className="main">

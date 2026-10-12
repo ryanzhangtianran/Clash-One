@@ -24,11 +24,23 @@ contents:
     dst: /usr/share/pixmaps/connaio.png
   - src: ./build/linux/connaio.desktop
     dst: /usr/share/applications/connaio.desktop
+  # enhanced mode: the root core's systemd template, the script that turns it on, and the polkit
+  # action that lets pkexec run that script after an administrator prompt naming Connaio
+  - src: ./build/linux/connaio-core@.service
+    dst: /usr/lib/systemd/system/connaio-core@.service
+  - src: ./build/linux/connaio-root
+    dst: /usr/lib/connaio/connaio-root
+    file_info:
+      mode: 0755
+  - src: ./build/linux/connaio.policy
+    dst: /usr/share/polkit-1/actions/com.ryanzhangtianran.connaio.policy
 
 # GTK 3 and WebKit2GTK 4.1: the newest web view Ubuntu 22.04 ships (24.04 provides them too)
 depends:
   - libgtk-3-0
   - libwebkit2gtk-4.1-0
+  - pkexec | policykit-1 # pkexec is its own package from 24.04
 
 scripts:
   postinstall: ./build/linux/nfpm/postinstall.sh
+  preremove: ./build/linux/nfpm/preremove.sh

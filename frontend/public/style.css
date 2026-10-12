@@ -69,9 +69,8 @@ button { font: inherit; color: inherit; }
 }
 .sidebar .item:hover { background: var(--hover); }
 .sidebar .item.active { background: var(--active); }
-/* a flat SF Symbol, the PNG used as a mask so the theme colours it */
-.nav-icon { width: 15px; height: 15px; flex: none; background: var(--text-2); mask-size: contain; mask-repeat: no-repeat; mask-position: center; }
-.sidebar .item.active .nav-icon { background: var(--accent); }
+.nav-icon { width: 17px; height: 17px; flex: none; color: var(--text-2); }
+.sidebar .item.active .nav-icon { color: var(--accent); }
 
 /* main */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -419,3 +418,8 @@ tr.muted td.rule-actions { text-decoration: none; }
 .diag-log { min-height: 220px; }
 .rank.with-icons .row:not(.child) .bar { grid-column: 2 / 4; }
 .deploy-log { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--card); max-height: 180px; overflow: auto; font-size: 12px; }
+
+/* Linux: no native blur shows through the window, and the system draws the title bar */
+.linux { --bg: #eef0f4; --panel: #ffffff; }
+@media (prefers-color-scheme: dark) { .linux { --bg: #1c1d21; --panel: #26272c; } }
+.linux .sidebar { padding-top: 10px; -webkit-backdrop-filter: none; backdrop-filter: none; }

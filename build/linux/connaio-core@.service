@@ -1,0 +1,17 @@
+# The root core for user %i (their uid), which enhanced mode (TUN) needs. Installed disabled;
+# /usr/lib/connaio/connaio-root enables it when the user grants root in 通用.
+[Unit]
+Description=Connaio root core for user %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/lib/connaio/connaio-core -d /var/lib/connaio/%i -ext-ctl-unix /var/lib/connaio/%i/core.sock
+# the core hands the socket to this user only
+Environment=CONNAIO_SOCKET_UID=%i
+StandardOutput=append:/var/lib/connaio/%i/core.log
+StandardError=inherit
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -158,18 +157,6 @@ func (s *ToolService) diagProxies(ctx context.Context) DiagSection {
 	return sec
 }
 
-// routeOf is `route -n get <family> default` as key -> value.
-func routeOf(family string) map[string]string {
-	out, _ := exec.Command("route", "-n", "get", family, "default").Output()
-	m := map[string]string{}
-	for _, line := range strings.Split(string(out), "\n") {
-		if k, v, ok := strings.Cut(strings.TrimSpace(line), ":"); ok {
-			m[k] = strings.TrimSpace(v)
-		}
-	}
-	return m
-}
-
 // ifaceAddr is the interface's first IPv4 (or global IPv6) address.
 func ifaceAddr(name string, v6 bool) string {
 	ifc, err := net.InterfaceByName(name)
@@ -184,20 +171,6 @@ func ifaceAddr(name string, v6 bool) string {
 		}
 	}
 	return ""
-}
-
-// dnsServers are the system resolver's nameservers, from `scutil --dns`.
-func dnsServers() []string {
-	out, _ := exec.Command("scutil", "--dns").Output()
-	var servers []string
-	seen := map[string]bool{}
-	for _, line := range strings.Split(string(out), "\n") {
-		if k, v, ok := strings.Cut(strings.TrimSpace(line), " : "); ok && strings.HasPrefix(k, "nameserver[") && !seen[v] {
-			seen[v] = true
-			servers = append(servers, v)
-		}
-	}
-	return servers
 }
 
 // Resolver is which DNS server looked a test domain up, as the test service saw it.

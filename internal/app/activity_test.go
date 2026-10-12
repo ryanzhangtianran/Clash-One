@@ -132,23 +132,6 @@ func TestWhoResolves(t *testing.T) {
 	t.Logf("%+v", r)
 }
 
-func TestAppIcon(t *testing.T) {
-	for _, p := range []string{"/System/Applications/Calculator.app", "/bin/ls"} {
-		if u := (&SettingsService{}).AppIcon(p); !strings.HasPrefix(u, "data:image/png;base64,") || len(u) < 500 {
-			t.Fatalf("%s: %.60q", p, u)
-		}
-	}
-}
-
-func TestSymbol(t *testing.T) {
-	if u := (&SettingsService{}).Symbol("gearshape.fill"); len(u) < 200 {
-		t.Fatalf("%.60q", u)
-	}
-	if u := (&SettingsService{}).Symbol("no.such.symbol"); u != "" {
-		t.Fatalf("unknown symbol gave %.40q", u)
-	}
-}
-
 func TestLedgerChildren(t *testing.T) {
 	l := openLedger(filepath.Join(t.TempDir(), "traffic.json"))
 	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.Local)

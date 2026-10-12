@@ -48,13 +48,36 @@ jobs:
 
       - name: Test against the built core
         working-directory: Connaio
-        run: CONNAIO_CORE=$PWD/bin/connaio-core go test -tags gtk3 ./internal/profile ./internal/core ./internal/sysproxy ./internal/daemon
+        run: |
+          CONNAIO_CORE=$PWD/bin/connaio-core go test -tags gtk3 ./internal/profile ./internal/core ./internal/sysproxy ./internal/daemon
+          go test -tags gtk3 -run Linux ./internal/app  # the Linux readers of /proc, resolvectl and .desktop files
+          go -C ../connaio-core test ./adapter/outboundgroup
 
       - name: Install and start it
         working-directory: Connaio
         run: |
           sudo apt-get install -y ./bin/connaio.deb
           build/linux/smoke.sh
+
+      - name: Root core and TUN, as granting root in 通用 does
+        working-directory: Connaio
+        run: |
+          uid=$(id -u) sock=/var/lib/connaio/$(id -u)/core.sock
+          sudo /usr/lib/connaio/connaio-root enable "$uid" # what pkexec runs
+          for i in $(seq 30); do curl -sf --unix-socket "$sock" http://x/version && break; sleep 1; done
+          echo
+          # the config the GUI pushes with enhanced mode on: TUN capture, fake-ip DNS
+          curl -sf --unix-socket "$sock" -X PUT 'http://x/configs?force=true' -H 'Content-Type: application/json' \
+            -d '{"payload":"mixed-port: 7899\nmode: rule\ncapture: {mode: tun}\ndns: {enable: true, enhanced-mode: fake-ip, nameserver: [8.8.8.8]}\nrules:\n  - MATCH,DIRECT\n"}'
+          sleep 3
+          ip -brief link
+          curl -s -o /dev/null -w "no proxy set, through TUN: %{http_code}\n" http://www.gstatic.com/generate_204
+          sleep 1
+          # the root core saw curl's connection, and named its process
+          sudo grep -E '\(curl\) --> www.gstatic.com' /var/lib/connaio/$uid/core.log
+      - name: Turn the root core off
+        if: always()
+        run: sudo /usr/lib/connaio/connaio-root disable "$(id -u)" || true
 
       - name: Name the .deb like the other releases
         working-directory: Connaio

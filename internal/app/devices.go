@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 	"net/http"
-	"os/exec"
 	"slices"
 	"strings"
 	"sync"
@@ -174,26 +173,6 @@ func (s *DeviceService) ClearPolicy(ip string) error {
 		return s.profiles.RemoveRule(d.Rule)
 	}
 	return nil
-}
-
-// arpTable maps IPv4 addresses to MAC addresses from `arp -an`.
-func arpTable() map[string]string {
-	out, _ := exec.Command("arp", "-an").Output()
-	return parseARP(string(out))
-}
-
-// parseARP reads lines like "? (192.168.1.23) at a4:83:e7:1:2:3 on en0 ifscope [ethernet]".
-func parseARP(out string) map[string]string {
-	m := map[string]string{}
-	for _, line := range strings.Split(out, "\n") {
-		_, rest, ok := strings.Cut(line, "(")
-		ip, rest, ok2 := strings.Cut(rest, ") at ")
-		mac, _, _ := strings.Cut(rest, " ")
-		if ok && ok2 && mac != "(incomplete)" {
-			m[ip] = mac
-		}
-	}
-	return m
 }
 
 // name is the device's reverse DNS name (often set by the router from DHCP), cached.

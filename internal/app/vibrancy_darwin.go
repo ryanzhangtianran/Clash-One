@@ -82,17 +82,6 @@ static void setDockVisible(bool visible) {
 	});
 }
 
-// symbolPNG renders SF Symbol name into a px×px PNG, its longer side filling it so every symbol
-// looks the same size, opaque where the symbol is: the window uses it as a mask, so its colour
-// doesn't matter.
-static void *symbolPNG(const char *name, int px, int *n) {
-	@autoreleasepool {
-		NSImage *sym = [NSImage imageWithSystemSymbolName:@(name) accessibilityDescription:nil];
-		NSImageSymbolConfiguration *cfg = [NSImageSymbolConfiguration configurationWithPointSize:px * 0.75 weight:NSFontWeightRegular];
-		return pngOf([sym imageWithSymbolConfiguration:cfg], px, n);
-	}
-}
-
 // iconPNG is the Finder icon of path as a 64 px PNG.
 static void *iconPNG(const char *path, int *n) {
 	@autoreleasepool {
@@ -127,15 +116,6 @@ func (s *SettingsService) AppIcon(path string) string {
 		cs := C.CString(path)
 		defer C.free(unsafe.Pointer(cs))
 		return C.iconPNG(cs, n)
-	})
-}
-
-// Symbol is SF Symbol name as a PNG data URL, for the sidebar to use as a mask (3× its 15 px).
-func (s *SettingsService) Symbol(name string) string {
-	return cachedPNG("symbol:"+name, func(n *C.int) unsafe.Pointer {
-		cs := C.CString(name)
-		defer C.free(unsafe.Pointer(cs))
-		return C.symbolPNG(cs, 45, n)
 	})
 }
 
