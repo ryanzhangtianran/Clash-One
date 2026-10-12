@@ -98,7 +98,7 @@ func (s *SettingsService) ProcessChoices() []ProcessChoice {
 	for _, c := range choices {
 		seen[strings.ToLower(c.Exec)] = true
 	}
-	if conns, err := s.core.Connections(); err == nil {
+	if conns, err := s.core.connections(true); err == nil { // processes outside the scope are the ones to add
 		var network []ProcessChoice
 		for _, c := range conns {
 			if c.Process != "" && !seen[strings.ToLower(c.Process)] {

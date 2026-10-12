@@ -37,8 +37,13 @@ type TempRule struct {
 	Hits    uint64 `json:"hits"`
 }
 
-// Connections lists live connections, newest first.
-func (s *CoreService) Connections() ([]Conn, error) {
+// Connections lists the live connections Connaio manages, newest first: not those partial
+// enhancement's capture filter passes straight through, which go through the core only because
+// TUN takes everything.
+func (s *CoreService) Connections() ([]Conn, error) { return s.connections(false) }
+
+// connections lists live connections, those outside partial enhancement's scope too when all is set.
+func (s *CoreService) connections(all bool) ([]Conn, error) {
 	var snap struct {
 		Connections []struct {
 			ID          string    `json:"id"`
@@ -65,6 +70,9 @@ func (s *CoreService) Connections() ([]Conn, error) {
 	}
 	conns := make([]Conn, 0, len(snap.Connections))
 	for _, c := range snap.Connections {
+		if c.Rule == "CaptureFilter" && !all { // constant.CaptureFilter's name in the core
+			continue
+		}
 		m := c.Metadata
 		host := m.Host
 		if host == "" {
