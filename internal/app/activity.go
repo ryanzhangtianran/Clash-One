@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -132,7 +131,7 @@ func (s *CoreService) Latency() Latency {
 	if _, err := net.DefaultResolver.LookupHost(ctx, "www.apple.com"); err == nil {
 		l.DNS = ms(start)
 	}
-	direct := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 5 * time.Second}
+	direct := oneShotClient(0, 5*time.Second)
 	start = time.Now()
 	if resp, err := direct.Head(testURL); err == nil {
 		resp.Body.Close()
@@ -172,9 +171,7 @@ func (s *CoreService) ExternalIP() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	proxy := &url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(port)}
-	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy)}, Timeout: 8 * time.Second}
-	resp, err := client.Get("https://api.ipify.org")
+	resp, err := oneShotClient(port, 8*time.Second).Get("https://api.ipify.org")
 	if err != nil {
 		return "", err
 	}

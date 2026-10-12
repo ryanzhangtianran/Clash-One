@@ -120,7 +120,7 @@ func diagDNS(ctx context.Context) DiagSection {
 }
 
 func diagDirect(ctx context.Context) DiagSection {
-	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 5 * time.Second}
+	client := oneShotClient(0, 5*time.Second)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, directTestURL, nil)
 	start := time.Now()
 	resp, err := client.Do(req)
@@ -229,7 +229,7 @@ func (s *ToolService) DNSLeakTest() (DNSLeak, error) {
 	defer done()
 	proxied.Timeout = 10 * time.Second
 	r := DNSLeak{Proxy: whoResolves(proxied, host)}
-	r.Direct = whoResolves(&http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 10 * time.Second}, freshHost())
+	r.Direct = whoResolves(oneShotClient(0, 10*time.Second), freshHost())
 	r.Leak = r.Proxy.IP != "" && r.Proxy.IP == r.Direct.IP
 	return r, nil
 }

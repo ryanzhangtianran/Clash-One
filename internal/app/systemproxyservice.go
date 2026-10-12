@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -75,6 +77,17 @@ func mixedPort(c *core.Core) (int, error) {
 		return 0, errors.New("配置中没有 mixed-port，代理端口没有在监听")
 	}
 	return cfg.MixedPort, nil
+}
+
+// oneShotClient is an HTTP client through the core's mixed-port (port > 0) or direct, its connection
+// closed after each request: a fresh Transport's idle connection is never reused, and would linger
+// (listed as this app's own live connection) until the server drops it.
+func oneShotClient(port int, timeout time.Duration) *http.Client {
+	t := &http.Transport{DisableKeepAlives: true}
+	if port > 0 {
+		t.Proxy = http.ProxyURL(&url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(port)})
+	}
+	return &http.Client{Transport: t, Timeout: timeout}
 }
 
 func (s *SystemProxyService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {

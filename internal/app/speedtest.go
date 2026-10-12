@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -52,9 +51,7 @@ func (s *ToolService) viaProxy(proxy, rawURL string) (*http.Client, func(), erro
 	if err != nil {
 		return nil, nil, err
 	}
-	via := &url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(port)}
-	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(via), DisableKeepAlives: true}}
-	return client, func() { _ = s.cs.RemoveTempRule(id) }, nil
+	return oneShotClient(port, 0), func() { _ = s.cs.RemoveTempRule(id) }, nil
 }
 
 // SpeedTest measures download bandwidth through proxy for up to 10s.

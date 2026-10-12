@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -85,15 +83,12 @@ func (s *ProfileService) Profiles() Profiles {
 
 // clients try the subscription directly first, then through the core's mixed-port (blocked hosts).
 func (s *ProfileService) clients() []*http.Client {
-	direct := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 30 * time.Second}
-	var cfg struct {
-		MixedPort int `json:"mixed-port"`
-	}
-	if s.core.Do(context.Background(), http.MethodGet, "/configs", nil, &cfg) != nil || cfg.MixedPort == 0 {
+	direct := oneShotClient(0, 30*time.Second)
+	port, err := mixedPort(s.core)
+	if err != nil {
 		return []*http.Client{direct}
 	}
-	proxy := &url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(cfg.MixedPort)}
-	return []*http.Client{direct, {Transport: &http.Transport{Proxy: http.ProxyURL(proxy)}, Timeout: 30 * time.Second}}
+	return []*http.Client{direct, oneShotClient(port, 30*time.Second)}
 }
 
 // Add downloads a subscription; it is applied right away when it is the first profile.
