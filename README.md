@@ -4,7 +4,7 @@ macOS 桌面客户端（Wails 3 + React），内核是 [connaio-core](https://gi
 
 ## 安装
 
-从 [Releases](https://github.com/ryanzhangtianran/Connaio/releases) 下载 `Connaio-<版本>-macos-arm64.zip`，解压后把 `Connaio.app` 拖进「应用程序」。需要 Apple 芯片、macOS 15 及以上。
+从 [Releases](https://github.com/ryanzhangtianran/Connaio/releases) 下载 `Connaio-<版本>-macos-arm64.dmg`，打开后把 Connaio 拖到 Applications。需要 Apple 芯片、macOS 15 及以上。
 
 App 没有经过 Apple 公证，首次打开前在终端执行一次：
 
@@ -27,6 +27,7 @@ go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
 ```bash
 wails3 dev        # 开发模式（前端热更新）
 wails3 package    # 产出 bin/Connaio.app，内核打包在 Contents/MacOS/connaio-core
+build/darwin/make-dmg.sh bin/Connaio.app bin/Connaio-1.0.0-macos-arm64.dmg   # 发布用的拖拽安装盘
 ```
 
 ## 结构
