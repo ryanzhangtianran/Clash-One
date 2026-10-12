@@ -25,19 +25,17 @@ export function RuleDialog({ conn, onClose }: { conn: Conn; onClose: () => void 
   const [policy, setPolicy] = useState("DIRECT");
   const [permanent, setPermanent] = useState(false);
   const [reconnect, setReconnect] = useState(true);
-  const [error, setError] = useState("");
   useEffect(() => { CoreService.Policies().then((p) => setPolicies(p ?? [])); }, []);
 
   const add = async () => {
-    setError("");
     const rule = `${type},${value},${policy}`;
     try {
       if (permanent) await ProfileService.AddRule(rule);
       else await CoreService.AddTempRule(rule);
       if (reconnect) await CoreService.CloseHost(type.startsWith("DOMAIN") ? value : conn.host);
       onClose();
-    } catch (e) {
-      setError(String(e));
+    } catch {
+      // listed in the events
     }
   };
 
@@ -64,7 +62,6 @@ export function RuleDialog({ conn, onClose }: { conn: Conn; onClose: () => void 
             <label className="radio"><input type="checkbox" checked={reconnect} onChange={(e) => setReconnect(e.target.checked)} /> 断开现有连接以立即生效</label>
           </div>
         </div>
-        {error && <div className="error">{error}</div>}
         <div className="actions" style={{ justifyContent: "flex-end", marginTop: 12 }}>
           <button className="btn" onClick={onClose}>取消</button>
           <button className="btn primary" disabled={!value} onClick={add}>增加</button>

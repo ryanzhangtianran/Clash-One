@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ryanzhangtianran/Clash-One/internal/daemon"
 )
 
 type Conn struct {
@@ -99,6 +101,33 @@ func (s *CoreService) Reload() error {
 		return nil
 	}
 	return s.onReady()
+}
+
+// Restart restarts the core process (the root daemon re-executes itself, a child is started anew)
+// and hands it the current config again.
+func (s *CoreService) Restart() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if s.core.Daemon() {
+		if err := s.core.Do(ctx, http.MethodPost, "/restart", nil, nil); err != nil {
+			return err
+		}
+		time.Sleep(time.Second) // the old process answers until it has re-executed
+		if err := s.core.Attach(ctx, daemon.Socket); err != nil {
+			return err
+		}
+	} else {
+		_ = s.core.Stop()
+		if err := s.core.Start(ctx); err != nil {
+			s.setStatus(Status{Error: err.Error()})
+			return err
+		}
+	}
+	if err := s.Reload(); err != nil {
+		return err
+	}
+	notify("info", "内核已重启")
+	return nil
 }
 
 func (s *CoreService) CloseConnection(id string) error {

@@ -60,7 +60,7 @@ func TestConnectionService(t *testing.T) {
 	}
 
 	policies, err := s.Policies()
-	if err != nil || !slices.Contains(policies, "代理") || !slices.Contains(policies, "DIRECT") || slices.Contains(policies, "GLOBAL") {
+	if err != nil || !slices.Contains(policies, "DIRECT") || slices.Contains(policies, "GLOBAL") {
 		t.Fatalf("policies %v %v", policies, err)
 	}
 	if _, err := s.AddTempRule("DOMAIN,a.com,NoSuchPolicy"); err == nil {

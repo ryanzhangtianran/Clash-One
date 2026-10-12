@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Events } from "@wailsio/runtime";
 import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { localRule } from "./Tunnels";
 
 type Row = Record<string, string>;
 
@@ -29,13 +31,78 @@ function Rows({ cols, rows, setRows }: { cols: [string, string][]; rows: Row[]; 
 const num = (s: string) => (s && !isNaN(Number(s)) ? Number(s) : undefined);
 const clean = (o: Record<string, any>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== ""));
 
+type Auth = "password" | "key";
+const AuthSeg = ({ auth, setAuth }: { auth: Auth; setAuth: (a: Auth) => void }) => (
+  <div className="seg">
+    <button className={auth === "password" ? "on" : ""} onClick={() => setAuth("password")}>密码</button>
+    <button className={auth === "key" ? "on" : ""} onClick={() => setAuth("key")}>私钥</button>
+  </div>
+);
+
+// DeployFrps logs in to a server over SSH and installs frps there, then hands back its address,
+// port and token for the tunnel form.
+function DeployFrps({ onDone, onClose }: { onDone: (host: string, port: number, token: string) => void; onClose: () => void }) {
+  const [d, setD] = useState<Record<string, string>>({ port: "22", user: "root", bindPort: "7000" });
+  const [auth, setAuth] = useState<Auth>("password");
+  const [log, setLog] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => Events.On("frps-deploy", (e) => setLog((l) => [...l, e.data])), []);
+  const f = (k: string, placeholder = "", type = "text") => <input type={type} placeholder={placeholder} value={d[k] ?? ""} onChange={(e) => setD({ ...d, [k]: e.target.value })} />;
+  const deploy = () => {
+    setBusy(true); setLog([]);
+    CoreService.DeployFRPS({ host: d.host, port: Number(d.port) || 22, user: d.user, password: auth === "password" ? d.password : "", key: auth === "key" ? d.key : "", bindPort: Number(d.bindPort) || 7000 })
+      .then((r) => onDone(d.host, r.bindPort, r.token)).catch(() => {}).finally(() => setBusy(false)); // a failure is listed in the events
+  };
+  return (
+    <div className="modal-bg" onClick={busy ? undefined : onClose}>
+      <div className="sheet diag-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head"><div className="sheet-title">通过 SSH 部署 frps</div><div className="muted small">在 Linux 服务器上安装最新版 frps 并设为开机启动，需要 root 或免密 sudo。</div></div>
+        <div className="sheet-body">
+          <div className="form-grid" style={{ marginTop: 12 }}>
+            <label>服务器</label><div className="inline">{f("host", "vps.example.com")} : <span style={{ width: 70 }}>{f("port", "22")}</span></div>
+            <label>用户名</label>{f("user", "root")}
+            <label>认证方式</label>
+            <AuthSeg auth={auth} setAuth={setAuth} />
+            {auth === "password"
+              ? <><label>密码</label>{f("password", "", "password")}</>
+              : <><label>私钥</label><textarea className="code" rows={3} placeholder="粘贴私钥内容" value={d.key ?? ""} onChange={(e) => setD({ ...d, key: e.target.value })} /></>}
+            <label>frps 端口</label>{f("bindPort", "7000")}
+          </div>
+          {log.length > 0 && (
+            <div className="diag deploy-log">
+              {log.map((l, i) => <div key={i}>{l}</div>)}
+            </div>
+          )}
+        </div>
+        <div className="sheet-foot">
+          {busy && <span className="spinner" />}
+          <span className="grow" />
+          <button className="btn" disabled={busy} onClick={onClose}>取消</button>
+          <button className="btn primary" disabled={busy || !d.host || !d.user} onClick={deploy}>{busy ? "部署中" : "部署"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TunnelDialog({ onClose }: { onClose: () => void }) {
   const [kind, setKind] = useState<"frp" | "ssh">("frp");
   const [v, setV] = useState<Record<string, string>>({ serverPort: "7000", port: "22", protocol: "tcp" });
   const [frpRows, setFrpRows] = useState<Row[]>([{ name: "web", type: "tcp", localIP: "127.0.0.1", localPort: "8080", remotePort: "18080" }]);
   const [sshRows, setSshRows] = useState<Row[]>([{ remote: "0.0.0.0:8080", local: "127.0.0.1:80" }]);
   const [names, setNames] = useState<string[]>([]);
-  const [error, setError] = useState("");
+  const [auth, setAuth] = useState<Auth>("password");
+  const [deploying, setDeploying] = useState(false);
+  const [mixedPort, setMixedPort] = useState(0);
+  useEffect(() => { ProfileService.Value("mixed-port").then((p) => setMixedPort(Number(p) || 0)); }, []);
+  // viaRules: a forward from the server to Clash One's proxy port, so devices using it as a proxy
+  // through the tunnel get their traffic routed by the rules
+  const proxyTarget = `127.0.0.1:${mixedPort}`;
+  const viaRules = kind === "frp" ? frpRows.some((r) => r.name === "clash-one") : sshRows.some((r) => r.local === proxyTarget);
+  const setViaRules = (on: boolean) => {
+    if (kind === "frp") setFrpRows(on ? [...frpRows, { name: "clash-one", type: "tcp", localIP: "127.0.0.1", localPort: String(mixedPort), remotePort: "17890" }] : frpRows.filter((r) => r.name !== "clash-one"));
+    else setSshRows(on ? [...sshRows, { remote: "0.0.0.0:17890", local: proxyTarget }] : sshRows.filter((r) => r.local !== proxyTarget));
+  };
   useEffect(() => { CoreService.ProxyNames().then((n) => setNames(n ?? [])); }, []);
   const field = (k: string, placeholder = "", type = "text") => <input type={type} placeholder={placeholder} value={v[k] ?? ""} onChange={(e) => setV({ ...v, [k]: e.target.value })} />;
 
@@ -56,12 +123,11 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
         }),
       };
     }
-    return { ...base, ...clean({ server: v.server, port: num(v.port), username: v.username, password: v.password, "private-key": v.key, "host-key": v.hostKey ? [v.hostKey] : undefined }), forwards: sshRows };
+    return { ...base, ...clean({ server: v.server, port: num(v.port), username: v.username, password: auth === "password" ? v.password : undefined, "private-key": auth === "key" ? v.key : undefined, "host-key": v.hostKey ? [v.hostKey] : undefined }), forwards: sshRows };
   };
 
   const add = () => {
-    setError("");
-    ProfileService.AddTunnel(build()).then(onClose).catch((e) => setError(String(e)));
+    ProfileService.AddTunnel(build()).then(() => (viaRules ? ProfileService.AddRule(localRule(v.name)) : undefined)).then(onClose).catch(() => {});
   };
 
   return (
@@ -70,13 +136,15 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
         <h2 className="modal-title">增加隧道</h2>
         <div className="seg" style={{ marginBottom: 8 }}>
           <button className={kind === "frp" ? "on" : ""} onClick={() => setKind("frp")}>FRP</button>
-          <button className={kind === "ssh" ? "on" : ""} onClick={() => setKind("ssh")}>SSH -R</button>
+          <button className={kind === "ssh" ? "on" : ""} onClick={() => setKind("ssh")}>SSH</button>
         </div>
         <div className="form-grid">
           <label>名称</label>{field("name", "必填")}
           {kind === "frp" ? (
             <>
-              <label>frps 地址</label><div className="inline">{field("serverAddr", "frps.example.com")} : <span style={{ width: 90 }}>{field("serverPort", "7000")}</span></div>
+              <label>frps 地址</label>
+              <div className="inline">{field("serverAddr", "frps.example.com")} : <span style={{ width: 90 }}>{field("serverPort", "7000")}</span>
+                <button className="btn small-btn" onClick={() => setDeploying(true)}>在服务器上部署</button></div>
               <label>Token</label>{field("token", "auth.token，可选", "password")}
               <label>传输协议</label>
               <select value={v.protocol} onChange={(e) => setV({ ...v, protocol: e.target.value })}>{["tcp", "websocket", "wss", "quic", "kcp"].map((p) => <option key={p}>{p}</option>)}</select>
@@ -85,9 +153,14 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
             <>
               <label>SSH 服务器</label><div className="inline">{field("server", "vps.example.com")} : <span style={{ width: 90 }}>{field("port", "22")}</span></div>
               <label>用户名</label>{field("username", "必填")}
-              <label>密码</label>{field("password", "密码或私钥二选一", "password")}
-              <label>私钥</label><textarea className="code" rows={3} placeholder="私钥内容（增强模式下内核无法读取用户目录中的文件）" value={v.key ?? ""} onChange={(e) => setV({ ...v, key: e.target.value })} />
-              <label>Host Key</label>{field("hostKey", "ssh-ed25519 AAAA…，建议填写")}
+              <label>认证方式</label>
+              <AuthSeg auth={auth} setAuth={setAuth} />
+              {auth === "password"
+                ? <><label>密码</label>{field("password", "", "password")}</>
+                : <><label>私钥</label><textarea className="code" rows={3} placeholder="粘贴私钥内容，如 -----BEGIN OPENSSH PRIVATE KEY-----…" value={v.key ?? ""} onChange={(e) => setV({ ...v, key: e.target.value })} /></>}
+              <label>服务器公钥</label>
+              <div className="inline">{field("hostKey", "建议填写")}
+                <button className="btn small-btn" disabled={!v.server} onClick={() => CoreService.HostKey(v.server, num(v.port) ?? 22).then((k) => setV({ ...v, hostKey: k }), () => {})}>获取</button></div>
             </>
           )}
           <label>跳板代理</label>
@@ -95,19 +168,26 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
             <option value="">直连</option>
             {names.map((n) => <option key={n}>{n}</option>)}
           </select>
+          <label>入站流量</label>
+          <label className="radio" style={{ textAlign: "left", color: "var(--text)" }}>
+            <input type="checkbox" checked={viaRules} disabled={!mixedPort} onChange={(e) => setViaRules(e.target.checked)} /> 按规则分流
+            <span className="muted small" style={{ marginLeft: 8 }}>服务器 17890 端口作为 HTTP / SOCKS5 代理，接入 Clash One</span>
+          </label>
         </div>
         <div className="section-title">{kind === "frp" ? "FRP 代理" : "转发（远端监听 → 本地目标）"}</div>
         {kind === "frp"
           ? <Rows cols={[["name", "名称"], ["type", "类型"], ["localIP", "本地 IP"], ["localPort", "本地端口"], ["remotePort", "远端端口"], ["customDomains", "域名（http/https）"]]} rows={frpRows} setRows={setFrpRows} />
           : <Rows cols={[["remote", "远端监听"], ["local", "本地目标"]]} rows={sshRows} setRows={setSshRows} />}
-        <button className="btn" style={{ marginTop: 8 }} onClick={() => (kind === "frp" ? setFrpRows([...frpRows, { type: "tcp", localIP: "127.0.0.1" }]) : setSshRows([...sshRows, {}]))}>增加一行</button>
-        <div className="muted small" style={{ marginTop: 8 }}>反代进来的流量按规则分流，本地服务通常需要一条 IN-NAME,{v.name || "隧道名"},DIRECT 规则。</div>
-        {error && <div className="error">{error}</div>}
+        <button className="btn" style={{ marginTop: 8 }} onClick={() => (kind === "frp" ? setFrpRows([...frpRows, { type: "tcp", localIP: "127.0.0.1" }]) : setSshRows([...sshRows, {}]))}>{kind === "frp" ? "添加代理" : "添加转发"}</button>
         <div className="actions" style={{ justifyContent: "flex-end", marginTop: 12 }}>
           <button className="btn" onClick={onClose}>取消</button>
           <button className="btn primary" disabled={!v.name} onClick={add}>完成</button>
         </div>
       </div>
+      {deploying && <div onClick={(e) => e.stopPropagation()}>{/* clicks in it must not close this dialog */}
+        <DeployFrps onClose={() => setDeploying(false)}
+          onDone={(host, port, token) => { setV((x) => ({ ...x, serverAddr: host, serverPort: String(port), token })); setDeploying(false); }} />
+      </div>}
     </div>
   );
 }

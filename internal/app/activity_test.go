@@ -3,6 +3,8 @@ package app
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -24,14 +26,14 @@ func TestActivity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Mode != "rule" || a.Network == "" || a.Profile == "" {
+	if a.Mode != "rule" || a.Network == "" {
 		t.Fatalf("activity header %+v", a)
 	}
 	t.Logf("activity: conns=%d procs=%d devices=%d byProcess=%v", a.Connections, a.Processes, a.Devices, a.ByProcess)
 
 	l := s.Latency()
 	t.Logf("latency %+v", l)
-	if l.Group != "代理" {
+	if l.Group != "DIRECT" { // the empty profile's catch-all
 		t.Fatalf("latency group %q", l.Group)
 	}
 }
@@ -74,6 +76,35 @@ func TestLedger(t *testing.T) {
 	if _, month := openLedger(l.path).totals(day2); month != (Split{Direct: 150, Proxy: 300}) {
 		t.Fatalf("reloaded month %+v", month)
 	}
+	hours, clients, _, policies := l.today(day1)
+	if hours[23] != (Split{Direct: 100, Proxy: 300}) {
+		t.Fatalf("hour 23 %+v", hours[23])
+	}
+	if len(clients) != 1 || clients[0].Name != "-" || len(policies) != 2 || policies[0].Name != "代理" {
+		t.Fatalf("clients %+v policies %+v", clients, policies)
+	}
+}
+
+func TestLedgerOldFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "traffic.json")
+	if err := os.WriteFile(path, []byte(`{"2026-10-09":{"direct":7,"proxy":9}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if today, _ := openLedger(path).totals(time.Date(2026, 10, 9, 12, 0, 0, 0, time.Local)); today != (Split{Direct: 7, Proxy: 9}) {
+		t.Fatalf("today %+v", today)
+	}
+}
+
+func TestClientOf(t *testing.T) {
+	if n, i := clientOf(Conn{Path: "/Applications/Google Chrome.app/Contents/Frameworks/x.app/Contents/MacOS/Helper"}); n != "Google Chrome" || i != "/Applications/Google Chrome.app" {
+		t.Fatalf("%q %q", n, i)
+	}
+	if n, i := clientOf(Conn{Source: "192.168.1.9"}); n != "192.168.1.9" || i != "" {
+		t.Fatalf("%q %q", n, i)
+	}
+	if n, _ := clientOf(Conn{Inbound: "Inner"}); n != "Clash One" {
+		t.Fatalf("the core's own connection is %q", n)
+	}
 }
 
 func TestPingMs(t *testing.T) {
@@ -82,5 +113,77 @@ func TestPingMs(t *testing.T) {
 	}
 	if ms := pingMs(t.Context(), "invalid.invalid"); ms != 0 {
 		t.Fatalf("ping of an unresolvable host = %d ms, want 0", ms)
+	}
+}
+
+func TestDiagnoseNetwork(t *testing.T) {
+	sec := diagNetwork(t.Context())
+	if len(sec.Lines) != 6 {
+		t.Fatalf("lines %v", sec.Lines)
+	}
+	t.Log(strings.Join(sec.Lines, "\n"), "\n", diagRouter(t.Context()).Lines, diagDNS(t.Context()).Lines, diagDirect(t.Context()).Lines)
+}
+
+func TestWhoResolves(t *testing.T) {
+	r := whoResolves(&http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 10 * time.Second}, freshHost())
+	if r.Err != "" || r.IP == "" {
+		t.Skipf("edns.ip-api.com unreachable here: %+v", r)
+	}
+	t.Logf("%+v", r)
+}
+
+func TestAppIcon(t *testing.T) {
+	for _, p := range []string{"/System/Applications/Calculator.app", "/bin/ls"} {
+		if u := (&SettingsService{}).AppIcon(p); !strings.HasPrefix(u, "data:image/png;base64,") || len(u) < 500 {
+			t.Fatalf("%s: %.60q", p, u)
+		}
+	}
+}
+
+func TestSymbol(t *testing.T) {
+	if u := (&SettingsService{}).Symbol("gearshape.fill"); len(u) < 200 {
+		t.Fatalf("%.60q", u)
+	}
+	if u := (&SettingsService{}).Symbol("no.such.symbol"); u != "" {
+		t.Fatalf("unknown symbol gave %.40q", u)
+	}
+}
+
+func TestLedgerChildren(t *testing.T) {
+	l := openLedger(filepath.Join(t.TempDir(), "traffic.json"))
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.Local)
+	app := "/Applications/Google Chrome.app/Contents/"
+	conns := []Conn{{ID: "a", Path: app + "MacOS/Google Chrome"}, {ID: "b", Path: app + "Frameworks/x.app/Contents/MacOS/Google Chrome Helper"}}
+	l.add(conns, now)
+	conns[0].Download, conns[1].Download = 100, 300
+	l.add(conns, now)
+	_, clients, _, _ := l.today(now)
+	if len(clients) != 1 || clients[0].Name != "Google Chrome" || len(clients[0].Children) != 2 || clients[0].Children[0].Name != "Google Chrome Helper" {
+		t.Fatalf("%+v", clients)
+	}
+}
+
+func TestFrpsScript(t *testing.T) {
+	script := fmt.Sprintf(frpsScript, 7000, "abc")
+	if strings.Contains(script, "%!") || !strings.Contains(script, `bindPort = 7000\nauth.method = "token"\nauth.token = "abc"`) {
+		t.Fatalf("script:\n%s", script)
+	}
+	if !strings.Contains(script, "is-active --quiet frps || {") {
+		t.Fatal("a frps that did not start must fail the deploy")
+	}
+	cmd := exec.Command("sh", "-n")
+	cmd.Stdin = strings.NewReader(script)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("sh -n: %v %s", err, out)
+	}
+}
+
+func TestNotifyCollapsesRepeats(t *testing.T) {
+	eventLog.list = nil
+	notify("error", "core down")
+	notify("error", "core down") // a poll failing again
+	notify("info", "core up")
+	if len(eventLog.list) != 2 {
+		t.Fatalf("events %+v", eventLog.list)
 	}
 }

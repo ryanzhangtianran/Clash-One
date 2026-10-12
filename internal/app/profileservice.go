@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/ryanzhangtianran/Clash-One/internal/core"
 	"github.com/ryanzhangtianran/Clash-One/internal/profile"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"go.yaml.in/yaml/v3"
 )
 
 type Profiles struct {
@@ -137,6 +139,28 @@ func (s *ProfileService) ImportFile() error {
 	return s.AddLocal(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)), string(b))
 }
 
+// Content is a profile's YAML, for editing it by hand.
+func (s *ProfileService) Content(id string) (string, error) { return s.store.Content(id) }
+
+// SetContent saves a hand-edited profile; for the profile in use it is applied, and restored if the
+// core rejects it.
+func (s *ProfileService) SetContent(id, content string) error {
+	old, err := s.store.Content(id)
+	if err != nil {
+		return err
+	}
+	if err := s.store.SetContent(id, content); err != nil {
+		return err
+	}
+	if current, _ := s.store.List(); current != id {
+		return nil
+	}
+	if err := s.apply(); err != nil {
+		return errors.Join(err, s.store.SetContent(id, old))
+	}
+	return nil
+}
+
 func (s *ProfileService) Update(id string) error {
 	if _, err := s.store.Update(id, s.clients()...); err != nil {
 		return err
@@ -232,6 +256,30 @@ func (s *ProfileService) AddProxy(proxy map[string]any, extra string, groups []s
 	return s.edit(func() error { return s.store.AddProxy(proxy, groups) })
 }
 
+// Proxy is a proxy's fields as the core gets them (profile, override and patches merged).
+func (s *ProfileService) Proxy(name string) (map[string]any, error) {
+	v, err := s.store.Value(false, []string{"proxies"})
+	if err != nil {
+		return nil, err
+	}
+	list, _ := v.([]any)
+	for _, p := range list {
+		if m, ok := p.(map[string]any); ok && m["name"] == name {
+			return m, nil
+		}
+	}
+	return nil, fmt.Errorf("没有名为 %s 的代理", name)
+}
+
+// EditProxy changes the named proxy by patch, only the fields edited (a null removes one), with
+// extra YAML merged over it as in AddProxy.
+func (s *ProfileService) EditProxy(name string, patch map[string]any, extra string) error {
+	if err := profile.MergeYAML(patch, extra); err != nil {
+		return err
+	}
+	return s.edit(func() error { return s.store.EditProxy(name, patch) })
+}
+
 func (s *ProfileService) RemoveProxy(name string) error {
 	return s.edit(func() error { return s.store.RemoveProxy(name) })
 }
@@ -252,6 +300,36 @@ func (s *ProfileService) RemoveTunnel(name string) error {
 	return s.edit(func() error { return s.store.RemoveTunnel(name) })
 }
 
+// MoveRule moves the GUI-added rule at index one place up (delta -1) or down (+1).
+func (s *ProfileService) MoveRule(index, delta int) error {
+	return s.edit(func() error { return s.store.MoveRule(index, delta) })
+}
+
+// DeleteRule removes the rule at index (the core's numbering): a GUI-added one from the override,
+// one of the profile's by hiding it, so the profile's other rules keep following the subscription.
+func (s *ProfileService) DeleteRule(index int) error {
+	items, err := s.store.UserItems()
+	if err != nil {
+		return err
+	}
+	v, err := s.store.Value(false, []string{"rules"})
+	if err != nil {
+		return err
+	}
+	list, _ := v.([]any)
+	if index < 0 || index >= len(list) {
+		return fmt.Errorf("没有第 %d 条规则", index)
+	}
+	rule, _ := list[index].(string)
+	if index < len(items.Rules) {
+		return s.edit(func() error { return s.store.RemoveRule(rule) })
+	}
+	if strings.HasPrefix(strings.ToUpper(rule), "MATCH,") {
+		return errors.New("MATCH 是兜底规则，不能删除")
+	}
+	return s.edit(func() error { return s.store.HideRule(rule) })
+}
+
 // Set writes a dotted setting such as "dns.enhanced-mode" into the override and applies it.
 func (s *ProfileService) Set(path string, value any) error {
 	if err := s.edit(func() error { return s.store.SetPath(strings.Split(path, "."), value) }); err != nil {
@@ -259,6 +337,23 @@ func (s *ProfileService) Set(path string, value any) error {
 	}
 	emit("setting", path)
 	return nil
+}
+
+// Format re-indents YAML (two spaces, comments kept); profiles are stored formatted anyway.
+func (s *ProfileService) Format(text string) (string, error) { return profile.Format(text) }
+
+// SetText is Set with the value typed as YAML, as in the override: "true", "7890", "[a, b]",
+// "{enable: true}"; anything else is a string.
+func (s *ProfileService) SetText(path, text string) error {
+	path = strings.TrimSpace(path)
+	if path == "" || strings.Contains(path, "..") || strings.HasPrefix(path, ".") || strings.HasSuffix(path, ".") {
+		return fmt.Errorf("字段格式不对：%q", path)
+	}
+	var value any
+	if err := yaml.Unmarshal([]byte(text), &value); err != nil {
+		return fmt.Errorf("值无法解析：%w", err)
+	}
+	return s.Set(path, value)
 }
 
 // Value reads a dotted setting from the effective config (defaults, profile and override merged).

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"io"
@@ -18,26 +19,28 @@ import (
 	"time"
 )
 
-// Usage is one row of the activity traffic ranking.
+// Usage is a client, host or policy's traffic today; Icon is a file whose Finder icon stands for it.
 type Usage struct {
-	Name  string `json:"name"`
-	Bytes int64  `json:"bytes"`
+	Name     string  `json:"name"`
+	Icon     string  `json:"icon,omitempty"`
+	Children []Usage `json:"children,omitempty"` // a client's own processes (an app's helpers), biggest first
+	Split
 }
 
 type Activity struct {
-	Today       Split   `json:"today"` // traffic counted by the ledger
-	Month       Split   `json:"month"`
-	Network     string  `json:"network"`
-	Profile     string  `json:"profile"`
-	Mode        string  `json:"mode"`
-	Tun         bool    `json:"tun"` // enhanced mode
-	Connections int     `json:"connections"`
-	Processes   int     `json:"processes"`
-	Devices     int     `json:"devices"`
-	Hosts       int     `json:"hosts"` // distinct domains (or IPs) with live connections
-	ByProcess   []Usage `json:"byProcess"`
-	ByHost      []Usage `json:"byHost"`
-	ByPolicy    []Usage `json:"byPolicy"`
+	Today       Split     `json:"today"` // traffic counted by the ledger
+	Month       Split     `json:"month"`
+	Network     string    `json:"network"`
+	Mode        string    `json:"mode"`
+	Tun         bool      `json:"tun"` // enhanced mode
+	Connections int       `json:"connections"`
+	Processes   int       `json:"processes"`
+	Devices     int       `json:"devices"`
+	Hosts       int       `json:"hosts"`     // distinct domains (or IPs) with live connections
+	Hours       [24]Split `json:"hours"`     // today, by hour of day
+	ByProcess   []Usage   `json:"byProcess"` // today's top clients, hosts and policies
+	ByHost      []Usage   `json:"byHost"`
+	ByPolicy    []Usage   `json:"byPolicy"`
 }
 
 type Latency struct {
@@ -62,100 +65,43 @@ func (s *CoreService) Activity() (Activity, error) {
 	if err := s.core.Do(ctx, http.MethodGet, "/configs", nil, &cfg); err != nil {
 		return Activity{}, err
 	}
-	var snap struct {
-		Connections []struct {
-			Upload   int64    `json:"upload"`
-			Download int64    `json:"download"`
-			Chains   []string `json:"chains"`
-			Metadata struct {
-				SourceIP    string `json:"sourceIP"`
-				Host        string `json:"host"`
-				DestIP      string `json:"destinationIP"`
-				Process     string `json:"process"`
-				ProcessPath string `json:"processPath"`
-			} `json:"metadata"`
-		} `json:"connections"`
-	}
-	if err := s.core.Do(ctx, http.MethodGet, "/connections", nil, &snap); err != nil {
+	conns, err := s.Connections()
+	if err != nil {
 		return Activity{}, err
 	}
-
-	a := Activity{
-		Network:     networkName(),
-		Profile:     "Default",
-		Mode:        cfg.Mode,
-		Tun:         cfg.Tun.Enable,
-		Connections: len(snap.Connections),
-	}
-	processes, hosts, policies := map[string]int64{}, map[string]int64{}, map[string]int64{}
-	devices := map[string]bool{}
-	for _, c := range snap.Connections {
-		bytes := c.Upload + c.Download
-		m := c.Metadata
-		name := m.Process
-		if name == "" && m.ProcessPath != "" {
-			name = filepath.Base(m.ProcessPath)
-		}
-		if name == "" { // no local process: a LAN device using us as a proxy or gateway
-			name = m.SourceIP
-			if ip := net.ParseIP(m.SourceIP); ip != nil && !ip.IsLoopback() {
-				devices[m.SourceIP] = true
+	a := Activity{Network: s.networkName(ctx), Mode: cfg.Mode, Tun: cfg.Tun.Enable, Connections: len(conns)}
+	processes, hosts, devices := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, c := range conns {
+		name, _ := clientOf(c)
+		processes[name], hosts[c.Host] = true, true
+		if c.Process == "" && c.Path == "" { // no local process: a LAN device using us as a proxy or gateway
+			if ip := net.ParseIP(c.Source); ip != nil && !ip.IsLoopback() {
+				devices[c.Source] = true
 			}
-		}
-		processes[name] += bytes
-		host := m.Host
-		if host == "" {
-			host = m.DestIP
-		}
-		hosts[host] += bytes
-		if len(c.Chains) > 0 {
-			policies[c.Chains[len(c.Chains)-1]] += bytes // outermost group the rule chose
 		}
 	}
 	a.Processes, a.Devices, a.Hosts = len(processes), len(devices), len(hosts)
 	if s.ledger != nil {
 		a.Today, a.Month = s.ledger.totals(time.Now())
+		a.Hours, a.ByProcess, a.ByHost, a.ByPolicy = s.ledger.today(time.Now())
 	}
-	a.ByProcess, a.ByHost, a.ByPolicy = top(processes), top(hosts), top(policies)
 	return a, nil
 }
 
-// top returns the 8 largest entries, biggest first.
-func top(m map[string]int64) []Usage {
-	out := make([]Usage, 0, len(m))
-	for name, bytes := range m {
-		out = append(out, Usage{name, bytes})
+// networkName is the Wi-Fi SSID, or the default route's interface when it is unknown. macOS redacts
+// the SSID from users, so only the core running as the root daemon can tell.
+func (s *CoreService) networkName(ctx context.Context) string {
+	var n struct {
+		SSID string `json:"ssid"`
 	}
-	slices.SortFunc(out, func(a, b Usage) int { return int(b.Bytes - a.Bytes) })
-	return out[:min(len(out), 8)]
+	if s.core.Do(ctx, http.MethodGet, "/network", nil, &n) == nil && n.SSID != "" {
+		return n.SSID
+	}
+	return cmp.Or(defaultRoute()["interface"], "未连接")
 }
 
-// networkName is the Wi-Fi SSID, or the default route's interface when it isn't Wi-Fi
-// (macOS hides the SSID from apps without location permission).
-func networkName() string {
-	iface := defaultRoute()["interface"]
-	if iface == "" {
-		return "未连接"
-	}
-	if out, err := exec.Command("networksetup", "-getairportnetwork", iface).Output(); err == nil {
-		if _, ssid, ok := strings.Cut(strings.TrimSpace(string(out)), "Current Wi-Fi Network: "); ok {
-			return ssid
-		}
-	}
-	return iface
-}
-
-// defaultRoute is `route -n get default` as key -> value, e.g. interface, gateway.
-func defaultRoute() map[string]string {
-	out, _ := exec.Command("route", "-n", "get", "default").Output()
-	m := map[string]string{}
-	for _, line := range strings.Split(string(out), "\n") {
-		if k, v, ok := strings.Cut(strings.TrimSpace(line), ":"); ok {
-			m[k] = strings.TrimSpace(v)
-		}
-	}
-	return m
-}
+// defaultRoute is the IPv4 default route as key -> value, e.g. interface, gateway.
+func defaultRoute() map[string]string { return routeOf("-inet") }
 
 // pingMs is one ICMP round trip to host via /sbin/ping (setuid, no root needed), 0 if it fails.
 func pingMs(ctx context.Context, host string) int {
@@ -172,9 +118,10 @@ func pingMs(ctx context.Context, host string) int {
 	return max(1, int(f+0.5))
 }
 
-// Latency measures the router, the direct internet path, the system DNS and the selected node of ProxyGroup.
+// Latency measures the router, the direct internet path, the system DNS and the policy of the
+// final MATCH rule (where unmatched traffic goes); a DIRECT one is the internet path already.
 func (s *CoreService) Latency() Latency {
-	l := Latency{Group: "代理"}
+	l := Latency{Group: cmp.Or(s.matchPolicy(), "代理")}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -191,30 +138,28 @@ func (s *CoreService) Latency() Latency {
 		resp.Body.Close()
 		l.Internet = ms(start)
 	}
-	var now struct {
-		Now string `json:"now"`
-	}
-	if s.core.Do(ctx, http.MethodGet, "/proxies/"+url.PathEscape(l.Group), nil, &now) == nil && now.Now != "" {
-		var d struct {
-			Delay int `json:"delay"`
-		}
-		q := url.Values{"url": {testURL}, "timeout": {"5000"}}
-		if s.core.Do(ctx, http.MethodGet, "/proxies/"+url.PathEscape(now.Now)+"/delay?"+q.Encode(), nil, &d) == nil {
-			l.Proxy = d.Delay
-		}
+	if node := s.exitOf(l.Group); node != "DIRECT" && node != "REJECT" {
+		l.Proxy, _ = s.TestProxy(node)
 	}
 	return l
 }
 
+// matchPolicy is the policy of the final MATCH rule, where unmatched traffic goes; "" without one.
+func (s *CoreService) matchPolicy() string {
+	rules, _ := s.Rules()
+	if n := len(rules); n > 0 && rules[n-1].Type == "Match" {
+		return rules[n-1].Proxy
+	}
+	return ""
+}
+
 // ExternalIP is the address the internet sees for traffic through the core's mixed-port.
 func (s *CoreService) ExternalIP() (string, error) {
-	var cfg struct {
-		MixedPort int `json:"mixed-port"`
-	}
-	if err := s.core.Do(context.Background(), http.MethodGet, "/configs", nil, &cfg); err != nil {
+	port, err := mixedPort(s.core)
+	if err != nil {
 		return "", err
 	}
-	proxy := &url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(cfg.MixedPort)}
+	proxy := &url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(port)}
 	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy)}, Timeout: 8 * time.Second}
 	resp, err := client.Get("https://api.ipify.org")
 	if err != nil {
@@ -233,17 +178,61 @@ type Split struct {
 	Proxy  int64 `json:"proxy"`
 }
 
-// ledger keeps per-day traffic totals in traffic.json.
+// clientOf names a connection's client, an app folded into its bundle, the LAN device's address,
+// or Clash One for the core's own connections (rule sets, health checks), with the file whose
+// Finder icon stands for it (none for a device).
+func clientOf(c Conn) (name, icon string) {
+	if c.Inbound == "Inner" {
+		return "Clash One", ownBundle
+	}
+	name, icon = c.Process, c.Path
+	if i := strings.Index(c.Path, ".app/"); i >= 0 {
+		icon = c.Path[:i+len(".app")]
+		name = strings.TrimSuffix(filepath.Base(icon), ".app")
+	}
+	return cmp.Or(name, c.Source, "-"), icon
+}
+
+// ownBundle is this app's bundle, for its icon; empty when not run from one.
+var ownBundle = func() string {
+	exe, _ := os.Executable()
+	if i := strings.Index(exe, ".app/"); i >= 0 {
+		return exe[:i+len(".app")]
+	}
+	return ""
+}()
+
+func (s *Split) add(direct bool, n int64) {
+	if direct {
+		s.Direct += n
+	} else {
+		s.Proxy += n
+	}
+}
+
+// Day is one day of traffic: its total (the old file held only that), by hour, and by client, host
+// and policy.
+type Day struct {
+	Split
+	Hours  [24]Split                   `json:"hours"`
+	Client map[string]Split            `json:"client,omitempty"`
+	Procs  map[string]map[string]Split `json:"procs,omitempty"` // client -> its processes
+	Host   map[string]Split            `json:"host,omitempty"`
+	Policy map[string]Split            `json:"policy,omitempty"`
+}
+
+// ledger keeps per-day traffic in traffic.json.
 type ledger struct {
 	path  string
 	mu    sync.Mutex
-	days  map[string]Split // "2006-01-02" -> bytes
-	seen  map[string]int64 // bytes per live connection at the last count; nil before the first
+	days  map[string]*Day   // "2006-01-02" -> traffic
+	icons map[string]string // client -> icon file, as last seen
+	seen  map[string]int64  // bytes per live connection at the last count; nil before the first
 	dirty bool
 }
 
 func openLedger(path string) *ledger {
-	l := &ledger{path: path, days: map[string]Split{}}
+	l := &ledger{path: path, days: map[string]*Day{}, icons: map[string]string{"Clash One": ownBundle}}
 	if b, err := os.ReadFile(path); err == nil {
 		_ = json.Unmarshal(b, &l.days)
 	}
@@ -258,8 +247,12 @@ func openLedger(path string) *ledger {
 func (l *ledger) add(conns []Conn, now time.Time) map[string]int64 {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	day := now.Format(time.DateOnly)
-	d := l.days[day]
+	key := now.Format(time.DateOnly)
+	d := l.days[key]
+	if d == nil {
+		d = &Day{}
+		l.days[key] = d
+	}
 	seen := make(map[string]int64, len(conns))
 	var deltas map[string]int64
 	if l.seen != nil {
@@ -273,28 +266,92 @@ func (l *ledger) add(conns []Conn, now time.Time) map[string]int64 {
 			continue
 		}
 		deltas[c.ID] = delta
-		if exit := c.Chain[strings.LastIndex(c.Chain, " ")+1:]; exit == "DIRECT" {
-			d.Direct += delta
-		} else {
-			d.Proxy += delta
+		direct := c.Chain[strings.LastIndex(c.Chain, " ")+1:] == "DIRECT"
+		name, icon := clientOf(c)
+		policy, _, _ := strings.Cut(c.Chain, " → ") // the outermost group the rule chose
+		d.Split.add(direct, delta)
+		d.Hours[now.Hour()].add(direct, delta)
+		bump(&d.Client, name, direct, delta)
+		bump(&d.Host, c.Host, direct, delta)
+		bump(&d.Policy, policy, direct, delta)
+		if proc := processName(c); proc != "" {
+			if d.Procs == nil {
+				d.Procs = map[string]map[string]Split{}
+			}
+			procs := d.Procs[name]
+			bump(&procs, proc, direct, delta)
+			d.Procs[name] = procs
+		}
+		if icon != "" {
+			l.icons[name] = icon
 		}
 		l.dirty = true
 	}
-	l.days[day], l.seen = d, seen
+	l.seen = seen
 	return deltas
+}
+
+// bump adds n to m[k], making m if it is nil.
+func bump(m *map[string]Split, k string, direct bool, n int64) {
+	if *m == nil {
+		*m = map[string]Split{}
+	}
+	v := (*m)[k]
+	v.add(direct, n)
+	(*m)[k] = v
 }
 
 func (l *ledger) totals(now time.Time) (today, month Split) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	prefix := now.Format("2006-01-")
-	for day, s := range l.days {
+	for day, d := range l.days {
 		if strings.HasPrefix(day, prefix) {
-			month.Direct += s.Direct
-			month.Proxy += s.Proxy
+			month.Direct += d.Direct
+			month.Proxy += d.Proxy
 		}
 	}
-	return l.days[now.Format(time.DateOnly)], month
+	if d := l.days[now.Format(time.DateOnly)]; d != nil {
+		today = d.Split
+	}
+	return today, month
+}
+
+// today is today's traffic by hour, and its top clients, hosts and policies.
+func (l *ledger) today(now time.Time) (hours [24]Split, clients, hosts, policies []Usage) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	d := l.days[now.Format(time.DateOnly)]
+	if d == nil {
+		return
+	}
+	clients = topUsage(d.Client, l.icons, 20)
+	for i := range clients {
+		if procs := d.Procs[clients[i].Name]; len(procs) > 1 || (len(procs) == 1 && procs[clients[i].Name] == (Split{})) {
+			clients[i].Children = topUsage(procs, nil, 20)
+		}
+	}
+	return d.Hours, clients, topUsage(d.Host, nil, 20), topUsage(d.Policy, nil, 20)
+}
+
+// processName is the executable behind a connection, as opposed to the app it belongs to.
+func processName(c Conn) string {
+	if c.Path != "" {
+		return filepath.Base(c.Path)
+	}
+	return c.Process
+}
+
+// topUsage is the n largest entries, biggest first (the page can rank by proxied traffic alone).
+func topUsage(m map[string]Split, icons map[string]string, n int) []Usage {
+	out := make([]Usage, 0, len(m))
+	for name, s := range m {
+		out = append(out, Usage{Name: name, Icon: icons[name], Split: s})
+	}
+	slices.SortFunc(out, func(a, b Usage) int {
+		return cmp.Or(cmp.Compare(b.Direct+b.Proxy, a.Direct+a.Proxy), strings.Compare(a.Name, b.Name))
+	})
+	return out[:min(len(out), n)]
 }
 
 func (l *ledger) save() error {
@@ -302,6 +359,15 @@ func (l *ledger) save() error {
 	defer l.mu.Unlock()
 	if !l.dirty {
 		return nil
+	}
+	for _, d := range l.days { // ponytail: hosts grow without bound in a day; keep the 500 busiest
+		if len(d.Host) > 500 {
+			top := topUsage(d.Host, nil, 500)
+			d.Host = make(map[string]Split, len(top))
+			for _, u := range top {
+				d.Host[u.Name] = u.Split
+			}
+		}
 	}
 	b, err := json.Marshal(l.days)
 	if err != nil {

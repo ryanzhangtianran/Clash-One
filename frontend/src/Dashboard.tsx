@@ -1,12 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { CoreService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
-import type { Conn, LogLine, Status, TempRule } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import type { Conn, Status, TempRule } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 import { RuleDialog, age } from "./RuleDialog";
-import Devices from "./Devices";
-import Logs from "./Logs";
 import { sizeText } from "./format";
-
-const tabs = ["活动连接", "设备", "日志"] as const;
 
 // method approximates Surge's column from what the core knows: transport and port.
 function method(c: Conn) {
@@ -38,8 +34,8 @@ function Detail({ c, onRule, onClose }: { c: Conn; onRule: () => void; onClose: 
   );
 }
 
-export default function Dashboard({ status, logs, onClearLogs }: { status: Status; logs: LogLine[]; onClearLogs: () => void }) {
-  const [tab, setTab] = useState<(typeof tabs)[number]>("活动连接");
+// Dashboard is the connections page: live connections grouped by client or host, with details.
+export default function Dashboard({ status }: { status: Status }) {
   const [conns, setConns] = useState<Conn[]>([]);
   const [temp, setTemp] = useState<TempRule[]>([]);
   const [groupBy, setGroupBy] = useState<"client" | "host">("client");
@@ -48,7 +44,6 @@ export default function Dashboard({ status, logs, onClearLogs }: { status: Statu
   const [detail, setDetail] = useState<string>(""); // connection id
   const [dialog, setDialog] = useState<Conn | null>(null);
   const [tempOpen, setTempOpen] = useState(false);
-  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!status.running) return;
@@ -70,81 +65,72 @@ export default function Dashboard({ status, logs, onClearLogs }: { status: Statu
   const q = query.toLowerCase();
   const shown = conns.filter((c) => (!selected || keyOf(c) === selected) && (!q || `${client(c)} ${c.host} ${c.rule} ${c.chain}`.toLowerCase().includes(q)));
   const current = conns.find((c) => c.id === detail);
-  const run = (p: Promise<unknown>) => { setError(""); p.catch((e) => setError(String(e))); };
+  const run = (p: Promise<unknown>) => { p.catch(() => {}); }; // a failure is listed in the events
 
   return (
     <div className="dash">
-      <div className="dash-top">
-        <div className="seg big-seg">
-          {tabs.map((t) => <button key={t} className={t === tab ? "on" : ""} onClick={() => setTab(t)}>{t}</button>)}
-        </div>
-        {tab === "活动连接" && <input className="dash-search" placeholder="搜索客户端、主机、规则、策略" value={query} onChange={(e) => setQuery(e.target.value)} />}
-        {tab === "活动连接" && (
-          <div className="dash-actions">
-            <button className="btn" disabled={!status.running} onClick={() => run(CoreService.CloseAll())}>断开全部</button>
-            <button className="btn" disabled={!status.running} onClick={() => run(CoreService.Reload())}>重新载入</button>
-            <span className="tile-wrap">
-              <button className="btn" onClick={(e) => { e.stopPropagation(); setTempOpen(!tempOpen); }}>临时规则（{temp.length}）</button>
-              {tempOpen && (
-                <div className="menu members detail drop" onClick={(e) => e.stopPropagation()}>
-                  {temp.length === 0 && <div className="detail-head">没有临时规则，重载配置后会清空</div>}
-                  {temp.map((r) => (
-                    <div key={r.id} className="detail-row">
-                      <span>{r.type},{r.payload} → <b>{r.proxy}</b></span>
-                      <span className="muted">命中 {r.hits}</span>
-                      <button className="btn small-btn" onClick={() => CoreService.RemoveTempRule(r.id)}>删除</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </span>
-          </div>
-        )}
-      </div>
-      {error && <div className="error">{error}</div>}
 
-      {tab === "设备" && <Devices status={status} />}
-      {tab === "日志" && <Logs lines={logs} onClear={onClearLogs} />}
-      {tab === "活动连接" && (
-        <>
-          <div className="dash-body">
-            <aside className="dash-side">
-              <div className="seg" style={{ display: "flex" }}>
-                <button className={groupBy === "client" ? "on" : ""} style={{ flex: 1 }} onClick={() => { setGroupBy("client"); setSelected(""); }}>按客户端</button>
-                <button className={groupBy === "host" ? "on" : ""} style={{ flex: 1 }} onClick={() => { setGroupBy("host"); setSelected(""); }}>按主机名</button>
-              </div>
-              <button className={`dash-item ${selected === "" ? "active" : ""}`} onClick={() => setSelected("")}>
-                <span>{groupBy === "client" ? "所有客户端" : "所有主机"}</span><span className="muted">{conns.length}</span>
-              </button>
-              {groups.map(([name, n]) => (
-                <button key={name} className={`dash-item ${selected === name ? "active" : ""}`} onClick={() => setSelected(name)} title={name}>
-                  <span className="name">{name}</span><span className="muted">{n}</span>
-                </button>
-              ))}
-            </aside>
-            <div className="dash-table">
-              <table className="table">
-                <colgroup><col style={{ width: "13%" }} /><col /><col style={{ width: "19%" }} /><col style={{ width: 74 }} /><col style={{ width: 74 }} /><col style={{ width: 52 }} /></colgroup>
-                <thead><tr><th>客户端</th><th className="addr">地址</th><th>策略</th><th className="num">上传</th><th className="num">下载</th><th className="num">时长</th></tr></thead>
-                <tbody>
-                  {shown.map((c) => (
-                    <tr key={c.id} className={c.id === detail ? "row-selected" : ""} onClick={() => setDetail(c.id === detail ? "" : c.id)}>
-                      <td title={c.path}>{client(c)}</td>
-                      <td className="addr" title={`${c.host}:${c.port}`}><span className={`method m-${method(c).toLowerCase()}`}>{method(c)}</span>{c.host}:{c.port}</td>
-                      <td title={`${c.rule} → ${c.chain}`}>{c.chain}</td>
-                      <td className="num">{sizeText(c.upload)}</td>
-                      <td className="num">{sizeText(c.download)}</td>
-                      <td className="num">{age(c.start)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {shown.length === 0 && <div className="muted" style={{ padding: 16 }}>没有连接</div>}
+      {/* one split-view card: grouping and list on the left, search, actions and table on the right */}
+      <div className="dash-body">
+        <aside className="dash-side">
+          <div className="seg">
+            <button className={groupBy === "client" ? "on" : ""} onClick={() => { setGroupBy("client"); setSelected(""); }}>按客户端</button>
+            <button className={groupBy === "host" ? "on" : ""} onClick={() => { setGroupBy("host"); setSelected(""); }}>按主机名</button>
+          </div>
+          <button className={`dash-item ${selected === "" ? "active" : ""}`} onClick={() => setSelected("")}>
+            <span>{groupBy === "client" ? "所有客户端" : "所有主机"}</span><span className="muted">{conns.length}</span>
+          </button>
+          {groups.map(([name, n]) => (
+            <button key={name} className={`dash-item ${selected === name ? "active" : ""}`} onClick={() => setSelected(name)} title={name}>
+              <span className="name">{name}</span><span className="muted">{n}</span>
+            </button>
+          ))}
+        </aside>
+        <div className="dash-main">
+          <div className="dash-top">
+            <input className="dash-search" placeholder="搜索" title="按客户端、主机、规则或策略搜索" value={query} onChange={(e) => setQuery(e.target.value)} />
+            <div className="dash-actions">
+              <button className="btn" disabled={!status.running} onClick={() => run(CoreService.CloseAll())}>断开全部</button>
+              <button className="btn" disabled={!status.running} onClick={() => run(CoreService.Reload())}>重新载入</button>
+              <span className="tile-wrap">
+                <button className="btn" onClick={(e) => { e.stopPropagation(); setTempOpen(!tempOpen); }}>临时规则（{temp.length}）</button>
+                {tempOpen && (
+                  <div className="menu members detail drop" onClick={(e) => e.stopPropagation()}>
+                    {temp.length === 0 && <div className="detail-head">没有临时规则，重载配置后会清空</div>}
+                    {temp.map((r) => (
+                      <div key={r.id} className="detail-row">
+                        <span>{r.type},{r.payload} → <b>{r.proxy}</b></span>
+                        <span className="muted">命中 {r.hits}</span>
+                        <button className="btn small-btn" onClick={() => CoreService.RemoveTempRule(r.id)}>删除</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </span>
             </div>
           </div>
-          {current && <Detail c={current} onRule={() => setDialog(current)} onClose={() => setDetail("")} />}
-        </>
-      )}
+          <div className="dash-table">
+            <table className="table">
+              <colgroup><col style={{ width: "13%" }} /><col /><col style={{ width: "19%" }} /><col style={{ width: 74 }} /><col style={{ width: 74 }} /><col style={{ width: 52 }} /></colgroup>
+              <thead><tr><th>客户端</th><th className="addr">地址</th><th>策略</th><th className="num">上传</th><th className="num">下载</th><th className="num">时长</th></tr></thead>
+              <tbody>
+                {shown.map((c) => (
+                  <tr key={c.id} className={c.id === detail ? "row-selected" : ""} onClick={() => setDetail(c.id === detail ? "" : c.id)}>
+                    <td title={c.path}>{client(c)}</td>
+                    <td className="addr" title={`${c.host}:${c.port}`}><span className={`method m-${method(c).toLowerCase()}`}>{method(c)}</span>{c.host}:{c.port}</td>
+                    <td title={`${c.rule} → ${c.chain}`}>{c.chain}</td>
+                    <td className="num">{sizeText(c.upload)}</td>
+                    <td className="num">{sizeText(c.download)}</td>
+                    <td className="num">{age(c.start)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {shown.length === 0 && <div className="dash-empty muted">没有连接</div>}
+          </div>
+        </div>
+      </div>
+      {current && <Detail c={current} onRule={() => setDialog(current)} onClose={() => setDetail("")} />}
       {dialog && <RuleDialog conn={dialog} onClose={() => setDialog(null)} />}
     </div>
   );

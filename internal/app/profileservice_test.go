@@ -66,7 +66,7 @@ func TestProfileService(t *testing.T) {
 
 // Needs a built core: CLASH_ONE_CORE=/path/to/clash-one-core go test -run TestUserItemsApplied .
 func TestUserItemsApplied(t *testing.T) {
-	cs, s, _ := startCore(t, "")
+	cs, s, _ := startCore(t, "prepend-proxy-groups:\n  - {name: 代理, type: select, proxies: [DIRECT]}\n")
 
 	bad := map[string]any{"name": "broken", "type": "ss", "server": "1.2.3.4", "port": 8388, "cipher": "no-such-cipher", "password": "x"}
 	if err := s.AddProxy(bad, "", nil); err == nil {
@@ -92,7 +92,11 @@ func TestUserItemsApplied(t *testing.T) {
 	}
 
 	groups, _ := cs.Groups()
-	if len(groups) < 2 || groups[0].Name != "自动" || groups[1].All[0].Name != "my-socks" {
+	byName := map[string]Group{}
+	for _, g := range groups {
+		byName[g.Name] = g
+	}
+	if _, ok := byName["自动"]; !ok || len(byName["代理"].All) == 0 || byName["代理"].All[0].Name != "my-socks" {
 		t.Fatalf("groups in the core: %+v", groups)
 	}
 	names, _ := cs.ProxyNames()
@@ -144,5 +148,40 @@ func TestFormShapes(t *testing.T) {
 	}
 	if err := s.AddTunnel(map[string]any{"name": "bad", "type": "ssh", "server": "h", "port": 22, "username": "u"}); err == nil {
 		t.Fatal("ssh tunnel without forwards must be rejected")
+	}
+}
+
+func TestSetText(t *testing.T) {
+	_, s, _ := startCore(t, "")
+	if err := s.SetText("dns.enable", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetText("dns.nameserver", "[223.5.5.5, 119.29.29.29]"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := s.Value("dns.enable"); v != true {
+		t.Fatalf("dns.enable = %v", v)
+	}
+	if v, _ := s.Value("dns.nameserver"); len(v.([]any)) != 2 {
+		t.Fatalf("dns.nameserver = %v", v)
+	}
+	if err := s.SetText("dns..x", "1"); err == nil {
+		t.Fatal("a malformed path must be refused")
+	}
+}
+
+func TestDeleteRule(t *testing.T) {
+	cs, s, _ := startCore(t, "prepend-rules:\n  - DOMAIN,mine.com,DIRECT\n") // then the empty profile's MATCH,DIRECT
+	if err := s.DeleteRule(1); err == nil {
+		t.Fatal("the catch-all MATCH must not be deletable")
+	}
+	if err := s.DeleteRule(0); err != nil {
+		t.Fatal(err)
+	}
+	if rules, _ := cs.Rules(); len(rules) != 1 || rules[0].Type != "Match" {
+		t.Fatalf("rules %+v", rules)
+	}
+	if _, err := cs.DNSLeakTest(); err == nil {
+		t.Fatal("with MATCH,DIRECT there is no proxy whose DNS could leak")
 	}
 }

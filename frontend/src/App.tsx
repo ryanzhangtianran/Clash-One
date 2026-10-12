@@ -1,52 +1,48 @@
 import { useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
-import { CoreService, EnhancedService, SystemProxyService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { CoreService, EnhancedService, SettingsService, SystemProxyService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 import type { Activity as ActivityData, Event as AppEvent, LogLine, Status, Traffic } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 import Activity from "./Activity";
-import Overview from "./Overview";
+import Processes from "./Processes";
 import Proxies from "./Proxies";
 import Dashboard from "./Dashboard";
+import Logs from "./Logs";
 import Rules from "./Rules";
 import Tunnels from "./Tunnels";
 import Devices from "./Devices";
-import Settings from "./Settings";
+import { AboutPage, Dns, General } from "./Settings";
+import Profiles from "./Profiles";
 import ErrorBoundary from "./ErrorBoundary";
+import { useCachedURL } from "./format";
 
 const HISTORY = 60; // seconds of traffic kept for the sparklines
 
 const LOG_LINES = 500;
 
-const icon = (d: string) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d={d} />
-  </svg>
-);
+// NavIcon is an SF Symbol in white on a coloured rounded square, as in System Settings.
+function NavIcon({ symbol, color }: { symbol: string; color: string }) {
+  const src = useCachedURL(symbol, SettingsService.Symbol);
+  return <span className="nav-icon" style={{ "--c": color } as React.CSSProperties}>{src && <img src={src} alt="" />}</span>;
+}
 
-type Page = { key: string; title: string; icon: JSX.Element; ready: boolean };
-const nav: { section?: string; pages: Page[] }[] = [
-  {
-    pages: [
-      { key: "activity", title: "活动", ready: true, icon: icon("M3 12h3.5l2.5-6.5 5 13 2.5-6.5H21") },
-      { key: "overview", title: "概览", ready: true, icon: icon("M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z") },
-      { key: "dashboard", title: "面板", ready: true, icon: icon("M4.79 17.5A8.5 8.5 0 1 1 19.21 17.5M12 13l4-4M10.8 13a1.2 1.2 0 1 0 2.4 0a1.2 1.2 0 1 0-2.4 0") },
-    ],
-  },
-  {
-    section: "客户端",
-    pages: [
-      { key: "devices", title: "设备", ready: true, icon: icon("M3 15V6.5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1V15M1.5 18.5h14M18.5 9h2.5a1 1 0 0 1 1 1v8.5a1 1 0 0 1-1 1h-2.5a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1z") },
-    ],
-  },
-  {
-    section: "代理",
-    pages: [
-      { key: "proxies", title: "策略", ready: true, icon: icon("M3 12h5.5c2 0 3-1.5 4-3s2-3 4-3H21M8.5 12c2 0 3 1.5 4 3s2 3 4 3H21M18 3l3 3-3 3M18 15l3 3-3 3") },
-      { key: "rules", title: "规则", ready: true, icon: icon("M4 5h16l-6 7.5V18l-4 2v-7.5z") },
-      { key: "tunnels", title: "反向", ready: true, icon: icon("M4 8.5h15M15.5 5l3.5 3.5-3.5 3.5M20 15.5H5M8.5 12 5 15.5 8.5 19") },
-    ],
-  },
+type Page = { key: string; title: string; symbol: string; color: string };
+// one list, from what you check most to what you touch least
+const pages: Page[] = [
+  { key: "activity", title: "活动", symbol: "waveform.path.ecg", color: "#ff3b30" },
+  { key: "proxies", title: "策略", symbol: "arrow.triangle.branch", color: "#007aff" },
+  { key: "tunnels", title: "反向", symbol: "arrow.left.arrow.right", color: "#5856d6" },
+  { key: "devices", title: "设备", symbol: "laptopcomputer.and.iphone", color: "#34c759" },
+  { key: "rules", title: "规则", symbol: "line.3.horizontal.decrease", color: "#ff9500" },
+  { key: "processes", title: "增强", symbol: "bolt.fill", color: "#af52de" },
+  { key: "profiles", title: "配置", symbol: "doc.text", color: "#a2845e" },
+  { key: "dns", title: "DNS", symbol: "globe", color: "#30b0c7" },
+  { key: "dashboard", title: "连接", symbol: "point.3.connected.trianglepath.dotted", color: "#5ac8fa" },
+  { key: "logs", title: "日志", symbol: "list.bullet", color: "#64748b" },
+  { key: "general", title: "通用", symbol: "gearshape.fill", color: "#8e8e93" },
+  { key: "about", title: "关于", symbol: "info", color: "#0a84ff" },
 ];
-const settingsPage: Page = { key: "settings", title: "设置", ready: true, icon: icon("M4 7h8M16 7h4M12 7a2 2 0 1 0 4 0a2 2 0 1 0-4 0M4 17h4M12 17h8M8 17a2 2 0 1 0 4 0a2 2 0 1 0-4 0") };
+
+const levelNames: Record<string, string> = { info: "状态", warning: "警告", error: "错误" };
 
 // EventsButton lists what the app has to tell (core started, proxy restored, failed actions…).
 function EventsButton() {
@@ -75,13 +71,14 @@ function EventsButton() {
       </button>
       {open && (
         <div className="menu events-menu" onClick={(e) => e.stopPropagation()}>
-          {list.length === 0 && <div className="detail-head">暂无事件</div>}
+          <div className="events-head"><span>事件</span>{list.length > 0 && <button className="link" onClick={clear}>清除</button>}</div>
+          {list.length === 0 && <div className="muted event-text">暂无事件</div>}
           {[...list].reverse().map((ev, i) => (
             <div key={i} className={`event-row ${ev.level}`}>
-              <span className="dot" /><span className="event-text">{ev.text}</span><span className="muted">{ev.time}</span>
+              <div className="event-meta"><span className="dot" />{levelNames[ev.level] ?? ev.level} · {ev.time}</div>
+              <div className="event-text">{ev.text}</div>
             </div>
           ))}
-          {list.length > 0 && <div className="event-foot"><button className="btn small-btn" onClick={clear}>清除</button></div>}
         </div>
       )}
     </div>
@@ -90,22 +87,24 @@ function EventsButton() {
 
 export default function App() {
   const [current, setCurrent] = useState("activity");
-  const [status, setStatus] = useState<Status>({ running: false, version: "", error: "", warning: "" });
+  const [status, setStatus] = useState<Status>({ running: false, version: "", error: "" });
   const [activity, setActivity] = useState<ActivityData | null>(null);
   const [history, setHistory] = useState<Traffic[]>([]);
   const [sysProxy, setSysProxy] = useState(false);
-  const [sysProxyError, setSysProxyError] = useState("");
-  const [enhanced, setEnhanced] = useState(false);
+  const [enhanced, setEnhanced] = useState(""); // EnhancedService.Mode: "", "tun" or "process-tun"
+  const [rooted, setRooted] = useState(false); // root granted: enhancing needs it
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [enhancedBusy, setEnhancedBusy] = useState(false);
-  const [enhancedError, setEnhancedError] = useState("");
 
   useEffect(() => {
     CoreService.Status().then(setStatus);
     SystemProxyService.Enabled().then(setSysProxy);
-    EnhancedService.Enabled().then(setEnhanced);
+    const mode = () => { EnhancedService.Mode().then(setEnhanced); EnhancedService.DaemonInstalled().then(setRooted); };
+    mode();
     const offs = [
-      Events.On("enhanced", (e) => setEnhanced(e.data)),
+      Events.On("enhanced", mode),
+      Events.On("navigate", (e) => setCurrent(e.data)),
+      Events.On("setting", (e) => e.data === "capture.mode" && mode()),
       Events.On("log", (e) => setLogs((l) => [...l.slice(1 - LOG_LINES), e.data])),
       Events.On("sysproxy", (e) => setSysProxy(e.data)),
       Events.On("status", (e) => setStatus(e.data)),
@@ -133,26 +132,9 @@ export default function App() {
   return (
     <div className="app">
       <nav className="sidebar">
-        {nav.map((group, i) => (
-          <div key={i}>
-            {group.section && <div className="section">{group.section}</div>}
-            {group.pages.map((p) => (
-              <button
-                key={p.key}
-                className={`item ${p.key === current ? "active" : ""}`}
-                disabled={!p.ready}
-                title={p.ready ? "" : "即将推出"}
-                onClick={() => setCurrent(p.key)}
-              >
-                {p.icon}
-                {p.title}
-              </button>
-            ))}
-          </div>
+        {pages.map((p) => (
+          <button key={p.key} className={`item ${p.key === current ? "active" : ""}`} onClick={() => setCurrent(p.key)}><NavIcon symbol={p.symbol} color={p.color} />{p.title}</button>
         ))}
-        <div className="bottom">
-          <button className={`item ${current === settingsPage.key ? "active" : ""}`} onClick={() => setCurrent(settingsPage.key)}>{settingsPage.icon}{settingsPage.title}</button>
-        </div>
       </nav>
       <main className="main">
         <div className="topbar">
@@ -160,38 +142,37 @@ export default function App() {
           <button
             className="pill"
             disabled={!status.running}
-            title={sysProxyError || "将 macOS 系统代理指向本机代理端口"}
-            onClick={() => {
-              setSysProxyError("");
-              SystemProxyService.SetEnabled(!sysProxy).catch((e) => setSysProxyError(String(e)));
-            }}
+            title="将 macOS 系统代理指向本机代理端口"
+            onClick={() => SystemProxyService.SetEnabled(!sysProxy).catch(() => {})}
           >
-            <span className={`dot ${sysProxy ? "on" : ""} ${sysProxyError ? "err" : ""}`} />系统代理
+            <span className={`dot ${sysProxy ? "on" : ""}`} />系统代理
           </button>
           <button
             className="pill"
-            disabled={!status.running || enhancedBusy}
-            title={enhancedError || "TUN 接管全部流量；首次开启需要管理员授权安装特权服务"}
+            disabled={!status.running || enhancedBusy || !rooted}
+            title={rooted ? "TUN 接管全部流量" : "需先在「通用」中授予 root 权限"}
             onClick={() => {
-              setEnhancedError("");
               setEnhancedBusy(true);
-              EnhancedService.SetEnabled(!enhanced).catch((e) => setEnhancedError(String(e))).finally(() => setEnhancedBusy(false));
+              EnhancedService.SetMode(enhanced === "tun" ? "" : "tun").catch(() => {}).finally(() => setEnhancedBusy(false));
             }}
           >
-            <span className={`dot ${enhanced && activity?.tun ? "on" : ""} ${enhancedError ? "err" : ""}`} />
+            <span className={`dot ${enhanced === "tun" && activity?.tun ? "on" : ""}`} />
             {enhancedBusy ? "切换中…" : "增强模式"}
           </button>
         </div>
         <div className="page">
-          {status.warning && <div className="card error" style={{ marginBottom: 16 }}>⚠︎ {status.warning}</div>}
           <ErrorBoundary key={current} onReset={() => setCurrent("activity")}>
           {current === "activity" && <Activity status={status} activity={activity} history={history} />}
-          {current === "overview" && <Overview status={status} onOpen={setCurrent} />}
+          {current === "processes" && <Processes status={status} mode={enhanced} rooted={rooted} />}
           {current === "proxies" && <Proxies status={status} />}
-          {current === "dashboard" && <Dashboard status={status} logs={logs} onClearLogs={() => setLogs([])} />}
+          {current === "dashboard" && <Dashboard status={status} />}
+          {current === "logs" && <Logs lines={logs} onClear={() => setLogs([])} />}
           {current === "rules" && <Rules status={status} />}
           {current === "tunnels" && <Tunnels status={status} />}
-          {current === "settings" && <Settings key={current} status={status} />}
+          {current === "general" && <div className="grouped"><General /></div>}
+          {current === "dns" && <div className="grouped"><Dns /></div>}
+          {current === "profiles" && <div className="grouped profiles-page"><Profiles /></div>}
+          {current === "about" && <div className="grouped"><AboutPage /></div>}
           </ErrorBoundary>
           {current === "devices" && <Devices status={status} />}
         </div>

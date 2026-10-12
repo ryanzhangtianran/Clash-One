@@ -38,6 +38,8 @@ func Run(assets fs.FS, trayIcon []byte) error {
 
 	var window *application.WebviewWindow
 	app := application.New(application.Options{
+		// the window shows no errors: whatever a call from it fails with is listed under the events button
+		MarshalError: func(err error) []byte { notify("error", "%v", err); return nil },
 		// a second copy would fight the first over the core's ports; bring the first forward instead
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "com.ryanzhangtianran.clashone",
@@ -71,6 +73,7 @@ func Run(assets fs.FS, trayIcon []byte) error {
 		},
 		URL: "/",
 	})
+	window.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) { makeVibrant(window) })
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		window.Hide()
 		e.Cancel()

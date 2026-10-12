@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Events } from "@wailsio/runtime";
 import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 import type { Group, Proxy, Status } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
-import ProxyDialog from "./ProxyDialog";
+import ProxyDialog, { protocols } from "./ProxyDialog";
+import ProxyDiagnose from "./ProxyDiagnose";
 import GroupDialog from "./GroupDialog";
 
 const modes = [
@@ -11,7 +12,7 @@ const modes = [
   { key: "rule", label: "规则判定", hint: "根据规则系统判定处理方式。" },
 ];
 const builtin = new Set(["Direct", "Reject", "RejectDrop", "Compatible", "Pass", "Dns"]);
-const groupTypes: Record<string, string> = { Selector: "手动选择", URLTest: "自动测速", Fallback: "故障转移", LoadBalance: "负载均衡", Relay: "链式" };
+const groupTypes: Record<string, string> = { Selector: "手动选择", URLTest: "自动测速", Fallback: "故障转移", LoadBalance: "负载均衡", Relay: "链式", Subnet: "Subnet 策略组" };
 
 function delayClass(ms: number) {
   if (ms <= 0) return "";
@@ -24,21 +25,24 @@ type Menu = { x: number; y: number; name: string; kind: "proxy" | "group"; targe
 export default function Proxies({ status }: { status: Status }) {
   const [mode, setMode] = useState("");
   const [groups, setGroups] = useState<Group[]>([]);
-  const [error, setError] = useState("");
   const [testing, setTesting] = useState(false);
   const [bandwidth, setBandwidth] = useState<Record<string, string>>({});
   const [measuring, setMeasuring] = useState("");
   const [dialog, setDialog] = useState<"proxy" | "group" | "">("");
+  const [editing, setEditing] = useState<Record<string, any> | null>(null);
+  const [diagnose, setDiagnose] = useState("");
+  const [pending, setPending] = useState<Set<string>>(new Set()); // nodes being tested
   const [open, setOpen] = useState(""); // group whose members are shown
   const [menu, setMenu] = useState<Menu | null>(null);
 
   const load = useCallback(() => {
-    CoreService.Groups().then((g) => { setGroups(g ?? []); setError(""); }).catch((e) => setError(String(e)));
+    CoreService.Groups().then((g) => setGroups(g ?? [])).catch(() => {}); // polling: a lost core shows up in the events, not here
   }, []);
 
   useEffect(() => {
     if (!status.running) return;
     load();
+    CoreService.TestGroup("GLOBAL").catch(() => {}).finally(load); // latencies on open, as Surge shows them
     CoreService.Mode().then(setMode).catch(() => {});
     return Events.On("mode", (e) => setMode(e.data));
   }, [status.running, load]);
@@ -58,20 +62,24 @@ export default function Proxies({ status }: { status: Status }) {
   const shownGroups = groups.filter((g) => g.name !== "GLOBAL");
   const global = groups.find((g) => g.name === "GLOBAL");
 
-  const choose = (m: string) => CoreService.SetMode(m).catch((e) => setError(String(e)));
-  const select = (group: string, name: string) => CoreService.Select(group, name).then(load).catch((e) => setError(String(e)));
+  const choose = (m: string) => CoreService.SetMode(m).catch(() => {});
+  const select = (group: string, name: string) => CoreService.Select(group, name).then(load).catch(() => {});
   const testAll = () => {
     setTesting(true);
-    CoreService.TestGroup("GLOBAL").catch((e) => setError(String(e))).finally(() => { setTesting(false); load(); });
+    setPending(new Set(nodes.map((n) => n.name)));
+    CoreService.TestGroup("GLOBAL").catch(() => {}).finally(() => { setTesting(false); setPending(new Set()); load(); }); // a lost core shows in the events
   };
-  const testOne = (name: string) => CoreService.TestProxy(name).catch(() => 0).then(load);
+  const testOne = (name: string) => {
+    setPending((p) => new Set(p).add(name));
+    CoreService.TestProxy(name).catch(() => 0).then(load).finally(() => setPending((p) => { const n = new Set(p); n.delete(name); return n; }));
+  };
   const speed = (name: string) => {
     if (measuring) return;
     setMeasuring(name);
     setBandwidth((b) => ({ ...b, [name]: "测带宽中…" }));
     CoreService.SpeedTest(name)
       .then((r) => setBandwidth((b) => ({ ...b, [name]: `${r.mbps.toFixed(1)} Mbps` })))
-      .catch((e) => { setBandwidth((b) => ({ ...b, [name]: "失败" })); setError(String(e)); })
+      .catch(() => setBandwidth((b) => ({ ...b, [name]: "失败" })))
       .finally(() => setMeasuring(""));
   };
   const contextMenu = (e: React.MouseEvent, menu: Omit<Menu, "x" | "y">) => {
@@ -89,7 +97,6 @@ export default function Proxies({ status }: { status: Status }) {
         ))}
       </div>
       {hint && <div className="hint">{hint}</div>}
-      {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
 
       <div className="tile-head">
         <span className="tile-title proxies">代理</span>
@@ -99,12 +106,12 @@ export default function Proxies({ status }: { status: Status }) {
         {nodes.map((p) => {
           const selected = mode === "global" && global?.now === p.name;
           return (
-            <button key={p.name} className={`tile ${selected ? "selected" : ""}`} title={mode === "global" ? "点击设为全局代理；右键更多操作" : "右键更多操作"}
-              onClick={() => mode === "global" && select("GLOBAL", p.name)}
+            <button key={p.name} className={`tile ${selected ? "selected" : ""}`} title={mode === "global" ? "点击测速并设为全局代理；右键更多操作" : "点击测速；右键更多操作"}
+              onClick={() => { testOne(p.name); if (mode === "global") select("GLOBAL", p.name); }}
               onContextMenu={(e) => contextMenu(e, { name: p.name, kind: "proxy", target: p.name })}>
               <span className="kind">{p.type}</span>
               <span className="name">{p.name}</span>
-              <span className={`foot ${delayClass(p.delay)}`}>{bandwidth[p.name] ?? (p.delay > 0 ? `${p.delay} ms` : "")}</span>
+              <span className={`foot ${pending.has(p.name) ? "" : delayClass(p.delay)}`}>{pending.has(p.name) ? "测试中" : bandwidth[p.name] ?? (p.delay > 0 ? `${p.delay} ms` : "")}</span>
             </button>
           );
         })}
@@ -126,6 +133,13 @@ export default function Proxies({ status }: { status: Status }) {
             </button>
             {open === g.name && (
               <div className="menu members" onClick={(e) => e.stopPropagation()}>
+                {g.type === "Subnet" && (
+                  <div className="detail-head">
+                    按当前网络自动选择
+                    {Object.entries(g.rules ?? {}).map(([cond, target]) => <div key={cond}>{cond} → {target}</div>)}
+                    <div>其他网络 → {g.default}</div>
+                  </div>
+                )}
                 {(g.all ?? []).map((p) => (
                   <button key={p.name} disabled={g.type !== "Selector"} className={p.name === g.now ? "current" : ""}
                     onClick={() => { select(g.name, p.name); setOpen(""); }}>
@@ -133,7 +147,7 @@ export default function Proxies({ status }: { status: Status }) {
                     <span className={delayClass(p.delay)}>{p.delay > 0 ? `${p.delay} ms` : ""}</span>
                   </button>
                 ))}
-                <button className="danger" onClick={() => ProfileService.RemoveGroup(g.name).then(load).catch((e) => setError(String(e)))}>删除此策略组</button>
+                <button className="danger" onClick={() => ProfileService.RemoveGroup(g.name).then(load).catch(() => {})}>删除此策略组</button>
               </div>
             )}
           </div>
@@ -143,12 +157,17 @@ export default function Proxies({ status }: { status: Status }) {
 
       {menu && (
         <div className="menu" style={{ position: "fixed", left: menu.x, top: menu.y }}>
+          {menu.kind === "proxy" && <button onClick={() => ProfileService.Proxy(menu.target)
+            .then((p) => (protocols[p?.type] ? setEditing(p) : CoreService.Notify("warning", `${p?.type} 类型的代理暂不支持表单编辑，可在「配置」中直接编辑 YAML`))).catch(() => {})}>编辑</button>}
           <button onClick={() => testOne(menu.name)}>测试延迟</button>
           <button disabled={!!measuring} onClick={() => speed(menu.name)}>测试带宽</button>
-          <button className="danger" onClick={() => (menu.kind === "proxy" ? ProfileService.RemoveProxy(menu.target) : ProfileService.RemoveGroup(menu.target)).then(load).catch((e) => setError(String(e)))}>删除</button>
+          <button onClick={() => setDiagnose(menu.target)}>诊断</button>
+          <button className="danger" onClick={() => (menu.kind === "proxy" ? ProfileService.RemoveProxy(menu.target) : ProfileService.RemoveGroup(menu.target)).then(load).catch(() => {})}>删除</button>
         </div>
       )}
       {dialog === "proxy" && <ProxyDialog groups={shownGroups.filter((g) => g.type === "Selector").map((g) => g.name)} onClose={() => { setDialog(""); load(); }} />}
+      {diagnose && <ProxyDiagnose nodes={nodes.map((n) => n.name)} groups={shownGroups.map((g) => g.name)} initial={diagnose} onClose={() => setDiagnose("")} />}
+      {editing && <ProxyDialog groups={[]} editing={editing} onClose={() => { setEditing(null); load(); }} />}
       {dialog === "group" && <GroupDialog onClose={() => { setDialog(""); load(); }} />}
     </>
   );

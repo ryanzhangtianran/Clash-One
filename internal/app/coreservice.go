@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -28,7 +29,6 @@ type Status struct {
 	Running bool   `json:"running"`
 	Version string `json:"version"`
 	Error   string `json:"error"`
-	Warning string `json:"warning"` // running, but e.g. the proxy port could not be opened
 }
 
 type Proxy struct {
@@ -38,10 +38,12 @@ type Proxy struct {
 }
 
 type Group struct {
-	Name string  `json:"name"`
-	Type string  `json:"type"`
-	Now  string  `json:"now"`
-	All  []Proxy `json:"all"`
+	Name    string            `json:"name"`
+	Type    string            `json:"type"`
+	Now     string            `json:"now"`
+	All     []Proxy           `json:"all"`
+	Default string            `json:"default,omitempty"` // Subnet: the member when no rule matches
+	Rules   map[string]string `json:"rules,omitempty"`   // Subnet: "SSID:…", "ROUTER:…", CIDR, "TYPE:…" -> member
 }
 
 func init() {
@@ -53,11 +55,12 @@ func init() {
 // emit sends an event to the frontend; a no-op without a running app (tests).
 func init() {
 	application.RegisterEvent[Event]("event")
+	application.RegisterEvent[string]("navigate") // page key the window should show, e.g. from the menu bar
 }
 
 // Event is something worth telling the user, listed under the topbar's events button.
 type Event struct {
-	Time  string `json:"time"`  // 15:04:05
+	Time  string `json:"time"`  // 2026/10/8 19:27:19
 	Level string `json:"level"` // info, warning or error
 	Text  string `json:"text"`
 }
@@ -69,13 +72,20 @@ var eventLog struct {
 
 // notify logs an event and adds it to the window's event list.
 func notify(level, format string, args ...any) {
-	e := Event{Time: time.Now().Format(time.TimeOnly), Level: level, Text: fmt.Sprintf(format, args...)}
-	log.Printf("%s: %s", level, e.Text)
+	e := Event{Time: time.Now().Format("2006/1/2 15:04:05"), Level: level, Text: fmt.Sprintf(format, args...)}
 	eventLog.Lock()
+	if n := len(eventLog.list); n > 0 && eventLog.list[n-1].Level == level && eventLog.list[n-1].Text == e.Text {
+		eventLog.Unlock()
+		return // the same thing again, e.g. a poll failing every few seconds while the core is down
+	}
+	log.Printf("%s: %s", level, e.Text)
 	eventLog.list = append(eventLog.list[max(0, len(eventLog.list)-49):], e)
 	eventLog.Unlock()
 	emit("event", e)
 }
+
+// Notify lists something the window has to tell under the events button.
+func (s *CoreService) Notify(level, text string) { notify(level, "%s", text) }
 
 func (s *CoreService) Events() []Event {
 	eventLog.Lock()
@@ -104,8 +114,9 @@ type CoreService struct {
 	onMode    func(string)                                // menu bar mode radio
 	onConns   func(conns []Conn, deltas map[string]int64) // menu bar process rows, from the ledger's count
 
-	mu     sync.Mutex
-	status Status
+	mu       sync.Mutex
+	status   Status
+	stopDiag context.CancelFunc // cancels a running Diagnose
 }
 
 func (s *CoreService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
@@ -125,11 +136,10 @@ func (s *CoreService) ServiceStartup(ctx context.Context, _ application.ServiceO
 			return
 		}
 		version, _ := s.core.Version(ctx)
-		st := Status{Running: true, Version: version, Warning: s.portWarning()}
-		s.setStatus(st)
+		s.setStatus(Status{Running: true, Version: version})
 		notify("info", "内核已启动（%s）", version)
-		if st.Warning != "" {
-			notify("warning", "%s", st.Warning)
+		if w := s.portWarning(); w != "" {
+			notify("warning", "%s", w)
 		}
 		if mode, err := s.Mode(); err == nil {
 			s.modeChanged(mode)
@@ -138,6 +148,7 @@ func (s *CoreService) ServiceStartup(ctx context.Context, _ application.ServiceO
 		if s.ledger != nil {
 			go s.countTraffic(ctx)
 		}
+		go s.updateDaemon()
 		s.streamTraffic(ctx)
 	}()
 	return nil
@@ -152,8 +163,19 @@ func (s *CoreService) portWarning() string {
 	if len(errs) == 0 {
 		return ""
 	}
-	return "端口被占用，相关代理端口未能打开（可用 lsof -nP -iTCP -sTCP:LISTEN 查看占用者）：" + strings.Join(errs, "；")
+	var ports []string
+	for _, e := range errs {
+		if m := bindPort.FindStringSubmatch(e); m != nil {
+			ports = append(ports, m[1])
+		}
+	}
+	if len(ports) == 0 {
+		return "代理端口已被其他程序占用"
+	}
+	return "端口 " + strings.Join(ports, "、") + " 已被其他程序占用，未能监听"
 }
+
+var bindPort = regexp.MustCompile(`:(\d+): bind`)
 
 func (s *CoreService) ServiceShutdown() error {
 	if s.ledger != nil {
@@ -208,9 +230,11 @@ func (s *CoreService) modeChanged(mode string) {
 func (s *CoreService) Groups() ([]Group, error) {
 	var resp struct {
 		Proxies map[string]struct {
-			Type    string   `json:"type"`
-			Now     string   `json:"now"`
-			All     []string `json:"all"`
+			Type    string            `json:"type"`
+			Now     string            `json:"now"`
+			All     []string          `json:"all"`
+			Default string            `json:"default"`
+			Rules   map[string]string `json:"rules"`
 			History []struct {
 				Delay int `json:"delay"`
 			} `json:"history"`
@@ -224,7 +248,7 @@ func (s *CoreService) Groups() ([]Group, error) {
 		if !ok || len(p.All) == 0 {
 			return Group{}, false
 		}
-		g := Group{Name: name, Type: p.Type, Now: p.Now}
+		g := Group{Name: name, Type: p.Type, Now: p.Now, Default: p.Default, Rules: p.Rules}
 		for _, member := range p.All {
 			m := resp.Proxies[member]
 			delay := 0
@@ -293,9 +317,38 @@ func (s *CoreService) TestGroup(group string) (map[string]int, error) {
 }
 
 // streamTraffic forwards the core's per-second traffic to the frontend and menu bar, reconnecting on errors.
+// updateDaemon reinstalls the root daemon when an app update brought a new core: it keeps running
+// the old copy until then. It runs once the window is up and the old core attached, since the
+// administrator prompt holds the main thread; the heartbeat below re-pushes the config to the new one.
+func (s *CoreService) updateDaemon() {
+	bin, err := core.Binary()
+	if err != nil || !s.core.Daemon() || !daemon.Stale(bin) {
+		return
+	}
+	if err := daemon.Install(bin); err != nil {
+		notify("warning", "root 内核未更新，仍在运行旧版：%v", err)
+	}
+}
+
+// The stream doubles as the core's heartbeat: when it breaks the core went away (a crash, launchd
+// restarting the root daemon, an update), and a core that comes back runs its boot config, so the
+// GUI's config is pushed again once the stream is back.
 func (s *CoreService) streamTraffic(ctx context.Context) {
+	broken := false
 	for ctx.Err() == nil {
 		err := s.core.Stream(ctx, "/traffic", func(line []byte) {
+			if broken {
+				broken = false
+				go func() {
+					if s.onReady != nil {
+						if err := s.onReady(); err != nil {
+							notify("error", "内核已重新连接，但载入配置失败：%v", err)
+							return
+						}
+					}
+					notify("info", "内核已重新连接")
+				}()
+			}
 			var t Traffic
 			if json.Unmarshal(line, &t) != nil {
 				return
@@ -306,6 +359,10 @@ func (s *CoreService) streamTraffic(ctx context.Context) {
 			emit("traffic", t)
 		})
 		if ctx.Err() == nil {
+			if !broken {
+				broken = true
+				notify("warning", "与内核的连接中断，正在重连")
+			}
 			log.Printf("traffic stream: %v, retrying", err)
 			time.Sleep(time.Second)
 		}

@@ -126,7 +126,7 @@ func TestBuildWithoutProfile(t *testing.T) {
 	}
 	var cfg map[string]any
 	_ = yaml.Unmarshal(b, &cfg)
-	if cfg["mixed-port"] != 7899 || cfg["rules"].([]any)[0] != "MATCH,代理" {
+	if cfg["mixed-port"] != 7899 || cfg["rules"].([]any)[0] != "MATCH,DIRECT" || cfg["proxy-groups"] != nil {
 		t.Fatalf("empty build: %v", cfg)
 	}
 }
@@ -279,6 +279,7 @@ func TestMergeRemoved(t *testing.T) {
 			map[string]any{"name": "G", "proxies": []any{"A", "B"}},
 			map[string]any{"name": "H", "proxies": []any{"B"}},
 			map[string]any{"name": "K", "proxies": []any{"A"}},
+			map[string]any{"name": "S", "type": "subnet", "default": "A", "rules": map[string]any{"SSID:x": "A", "SSID:y": "B"}},
 		},
 		"rules": []any{"DOMAIN,x.com,A", "IP-CIDR,1.1.1.1/32,H,no-resolve", "DOMAIN,y.com,K", "MATCH,G"},
 	}
@@ -293,7 +294,7 @@ func TestMergeRemoved(t *testing.T) {
 	if got := names("proxies"); !slices.Equal(got, []string{"B"}) {
 		t.Fatalf("proxies %v", got)
 	}
-	if got := names("proxy-groups"); !slices.Equal(got, []string{"G", "K"}) {
+	if got := names("proxy-groups"); !slices.Equal(got, []string{"G", "K", "S"}) {
 		t.Fatalf("groups %v", got)
 	}
 	groups := cfg["proxy-groups"].([]any)
@@ -302,6 +303,9 @@ func TestMergeRemoved(t *testing.T) {
 	}
 	if k := groups[1].(map[string]any)["proxies"]; !slices.Equal(k.([]any), []any{"DIRECT"}) {
 		t.Fatalf("emptied K should fall back to DIRECT, got %v", k)
+	}
+	if s := groups[2].(map[string]any); s["default"] != "DIRECT" || len(s["rules"].(map[string]any)) != 1 {
+		t.Fatalf("subnet group should drop rules to A and fall back to DIRECT, got %v", s)
 	}
 	if r := cfg["rules"].([]any); !slices.Equal(r, []any{"DOMAIN,y.com,K", "MATCH,G"}) {
 		t.Fatalf("rules %v", r)
@@ -325,5 +329,111 @@ func TestBuildProcessTunWithoutProcesses(t *testing.T) {
 	}
 	if v, _ := s.Value(true, []string{"capture", "mode"}); v != "process-tun" {
 		t.Fatalf("Value should still read the user's choice, got %v", v)
+	}
+}
+
+func TestProfileContent(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.AddLocal("mine", []byte("proxies:\n  - {name: a, type: socks5, server: 127.0.0.1, port: 1}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := "proxies:\n  - {name: b, type: socks5, server: 127.0.0.1, port: 2}\n"
+	if err := s.SetContent(p.ID, edited); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Content(p.ID); got != edited {
+		t.Fatalf("content %q", got)
+	}
+	if err := s.SetContent(p.ID, "proxies: [unclosed"); err == nil {
+		t.Fatal("invalid YAML must be refused")
+	}
+	if got, _ := s.Content(p.ID); got != edited {
+		t.Fatalf("a refused edit must not change the file, got %q", got)
+	}
+}
+
+func TestRuleEdits(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetOverride("prepend-rules:\n  - DOMAIN,a.com,DIRECT\n  - DOMAIN,b.com,DIRECT\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MoveRule(1, -1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MoveRule(1, 1); err == nil {
+		t.Fatal("moving a GUI rule past its own list (into the profile's) must be refused")
+	}
+	if err := s.HideRule("MATCH,DIRECT"); err != nil { // the empty profile's only rule
+		t.Fatal(err)
+	}
+	if v, _ := s.Value(false, []string{"rules"}); !slices.Equal(v.([]any), []any{"DOMAIN,b.com,DIRECT", "DOMAIN,a.com,DIRECT"}) {
+		t.Fatalf("rules %v", v)
+	}
+}
+
+func TestEditProxy(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddLocal("p", []byte("proxies:\n  - {name: A, type: ss, server: 1.1.1.1, port: 1, udp: true, plugin: obfs}\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddProxy(map[string]any{"name": "B", "type": "ss", "server": "3.3.3.3", "port": 3, "plugin": "obfs", "plugin-opts": map[string]any{"mode": "tls"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"A", "B"} {
+		if err := s.EditProxy(name, map[string]any{"server": "2.2.2.2", "udp": nil, "plugin-opts": map[string]any{"mode": nil}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v, _ := s.Value(false, []string{"proxies"})
+	for _, p := range v.([]any) {
+		m := p.(map[string]any)
+		_, udp := m["udp"]
+		_, opts := m["plugin-opts"]
+		if m["server"] != "2.2.2.2" || udp || opts || m["plugin"] != "obfs" {
+			t.Fatalf("edited %v: fields not in the patch must stay, nulls must remove", m)
+		}
+	}
+}
+
+func TestFormat(t *testing.T) {
+	got, err := Format("dns:\n        enable: true # on\n        nameserver: [1.1.1.1]\nrules:\n- MATCH,DIRECT\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "dns:\n  enable: true # on\n  nameserver: [1.1.1.1]\nrules:\n  - MATCH,DIRECT\n"
+	if got != want {
+		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+	if _, err := Format("a: [unclosed"); err == nil {
+		t.Fatal("invalid YAML must be refused")
+	}
+	if got, _ := Format("  \n"); got != "" {
+		t.Fatalf("blank formats to %q", got)
+	}
+}
+
+func TestMergeRemoveRules(t *testing.T) {
+	cfg := Merge(map[string]any{"rules": []any{"DOMAIN,x.com,DIRECT", "MATCH,DIRECT"}}, map[string]any{"remove-rules": []any{"DOMAIN,x.com,DIRECT"}})
+	if r := cfg["rules"].([]any); !slices.Equal(r, []any{"MATCH,DIRECT"}) || cfg["remove-rules"] != nil {
+		t.Fatalf("%v", cfg)
+	}
+}
+
+func TestMergePatchProxies(t *testing.T) {
+	profile := map[string]any{"proxies": []any{map[string]any{"name": "A", "server": "1.1.1.1", "port": 1, "udp": true}}}
+	cfg := Merge(profile, map[string]any{"patch-proxies": map[string]any{"A": map[string]any{"server": "2.2.2.2"}}})
+	a := cfg["proxies"].([]any)[0].(map[string]any)
+	if a["server"] != "2.2.2.2" || a["udp"] != true || cfg["patch-proxies"] != nil {
+		t.Fatalf("%v / %v", a, cfg["patch-proxies"])
 	}
 }

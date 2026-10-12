@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -39,6 +38,7 @@ func plist(uid int) string {
 <plist version="1.0">
 <dict>
 	<key>Label</key><string>` + Label + `</string>
+	<key>AssociatedBundleIdentifiers</key><array><string>com.ryanzhangtianran.clashone</string></array>
 	<key>ProgramArguments</key>
 	<array>
 		<string>` + Helper + `</string>
@@ -104,26 +104,38 @@ func Install(core string) error {
 	if err != nil {
 		return err
 	}
-	return asAdmin(installScript(core, coreSum, stage, sum(p)), "Clash One 需要安装特权服务以开启增强模式（TUN）。")
+	prompt := "Clash One 需要 root 权限以开启增强（TUN）。"
+	if Installed() {
+		prompt = "Clash One 已更新内核，需要重新授予 root 权限。"
+	}
+	return asAdmin(installScript(core, coreSum, stage, sum(p)), prompt)
+}
+
+// Stale reports whether the installed daemon differs from what this app would install: another
+// core binary (an app update) or another plist; Install again to replace it.
+func Stale(bin string) bool {
+	installed, err1 := fileSum(Helper)
+	bundled, err2 := fileSum(bin)
+	plistNow, err3 := fileSum(Plist)
+	return err1 == nil && err2 == nil && err3 == nil && (installed != bundled || plistNow != sum([]byte(plist(os.Getuid()))))
 }
 
 // Uninstall stops and removes the LaunchDaemon; its data dir is kept.
 func Uninstall() error {
-	return asAdmin(uninstallScript(), "Clash One 需要移除特权服务。")
+	return asAdmin(uninstallScript(), "Clash One 需要移除 root 权限。")
 }
 
 // asAdmin runs a shell script as root through the standard macOS administrator prompt.
 func asAdmin(script, prompt string) error {
-	apple := fmt.Sprintf("do shell script %s with prompt %s with administrator privileges", appleQuote(script), appleQuote(prompt))
-	out, err := exec.Command("osascript", "-e", apple).CombinedOutput()
-	if err != nil {
-		msg := strings.TrimSpace(string(out))
-		if strings.Contains(msg, "-128") { // the user pressed Cancel
-			return fmt.Errorf("已取消授权")
-		}
-		return fmt.Errorf("%w: %s", err, msg)
+	msg := runAppleScript(fmt.Sprintf("do shell script %s with prompt %s with administrator privileges", appleQuote(script), appleQuote(prompt)))
+	switch {
+	case msg == "":
+		return nil
+	case strings.HasPrefix(msg, "-128 "): // the user pressed Cancel
+		return fmt.Errorf("已取消授权")
+	default:
+		return fmt.Errorf("授权失败：%s", msg)
 	}
-	return nil
 }
 
 func sum(b []byte) string {

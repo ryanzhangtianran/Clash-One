@@ -66,36 +66,107 @@ static void setTray(void *item, const void *icon, int iconLen, const char *badge
 	});
 }
 
-// setMenuDecor gives a menu item a capsule badge (macOS 14+), plain grey text right-aligned after
-// its label, and the Finder icon of path; NULL or "" clears each. Runs on the main thread.
-static void setMenuDecor(void *p, const char *label, const char *badge, const char *detail, const char *path) {
+// DetailItemView draws a menu item that carries something on its right, as Surge's menu does: an
+// optional app icon, the title, then grey text (a group's node, a process's speed) or a coloured
+// pill (outbound mode, network quality) right-aligned up to a small gap before the submenu arrow.
+// NSMenu can't lay that out itself (a title's text stops short of the arrow by the key-equivalent
+// column), so these items are drawn whole; the rest of the menu stays native.
+@interface DetailItemView : NSView
+@property (copy) NSString *label, *detail; // detail: "text", or "\x01color|text" for a pill
+@property (retain) NSImage *icon;
+@end
+
+static const CGFloat kInset = 5;      // the highlight's inset from the menu edge
+static const CGFloat kTitleX = 16;    // where native titles start in this menu (no state column)
+static const CGFloat kArrowW = 24;    // room for the submenu arrow at the right
+static const CGFloat kItemH = 22;
+
+static NSFont *menuFont(void) { return [NSFont menuFontOfSize:0]; }
+static NSFont *monoFont(void) { return [NSFont monospacedDigitSystemFontOfSize:menuFont().pointSize - 1 weight:NSFontWeightRegular]; } // a node, a speed: a step below titles
+static NSFont *pillFont(void) { return [NSFont monospacedDigitSystemFontOfSize:10 weight:NSFontWeightMedium]; }
+
+@implementation DetailItemView
+- (BOOL)isFlipped { return YES; }
+- (BOOL)acceptsFirstMouse:(NSEvent *)e { return YES; }
+
+- (BOOL)pill { return [self.detail hasPrefix:@"\x01"]; }
+- (NSString *)pillText { return [[self.detail componentsSeparatedByString:@"|"] lastObject]; }
+- (NSColor *)pillColor {
+	NSString *c = [[self.detail substringFromIndex:1] componentsSeparatedByString:@"|"].firstObject;
+	NSDictionary *colors = @{@"accent": NSColor.systemBlueColor, @"good": NSColor.systemGreenColor,
+		@"warn": NSColor.systemOrangeColor, @"bad": NSColor.systemRedColor};
+	return colors[c] ?: NSColor.systemGrayColor;
+}
+- (CGFloat)detailWidth {
+	if (!self.detail.length) return 0;
+	if (self.pill) return MAX(ceil([self.pillText sizeWithAttributes:@{NSFontAttributeName: pillFont()}].width) + 10, 18);
+	return ceil([self.detail sizeWithAttributes:@{NSFontAttributeName: monoFont()}].width);
+}
+- (CGFloat)fittingWidth {
+	CGFloat x = kTitleX + (self.icon ? 22 : 0);
+	return x + ceil([self.label sizeWithAttributes:@{NSFontAttributeName: menuFont()}].width) + 24 + self.detailWidth + kArrowW + kInset;
+}
+
+- (void)drawRect:(NSRect)dirty {
+	NSMenuItem *item = self.enclosingMenuItem;
+	BOOL hi = item.isHighlighted && item.isEnabled;
+	NSRect b = self.bounds;
+	if (hi) {
+		[NSColor.selectedContentBackgroundColor setFill];
+		[[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(b, kInset, 0) xRadius:5 yRadius:5] fill];
+	}
+	NSColor *fg = !item.isEnabled ? NSColor.disabledControlTextColor : hi ? NSColor.selectedMenuItemTextColor : NSColor.labelColor;
+	NSColor *dim = hi ? NSColor.selectedMenuItemTextColor : NSColor.secondaryLabelColor;
+	CGFloat x = kTitleX;
+	if (self.icon) {
+		[self.icon drawInRect:NSMakeRect(x, (kItemH - 16) / 2, 16, 16) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:YES hints:nil];
+		x += 22;
+	}
+	NSDictionary *ta = @{NSFontAttributeName: menuFont(), NSForegroundColorAttributeName: fg};
+	NSSize ts = [self.label sizeWithAttributes:ta];
+	[self.label drawAtPoint:NSMakePoint(x, (kItemH - ts.height) / 2) withAttributes:ta];
+
+	CGFloat right = NSMaxX(b) - kInset - (item.hasSubmenu ? kArrowW : 10); // without an arrow, near the edge like the arrows
+	if (self.detail.length && self.pill) {
+		CGFloat w = self.detailWidth, h = 16;
+		NSRect r = NSMakeRect(right - w, (kItemH - h) / 2, w, h);
+		[self.pillColor setFill];
+		[[NSBezierPath bezierPathWithRoundedRect:r xRadius:4 yRadius:4] fill];
+		NSDictionary *pa = @{NSFontAttributeName: pillFont(), NSForegroundColorAttributeName: NSColor.whiteColor};
+		NSSize ps = [self.pillText sizeWithAttributes:pa];
+		[self.pillText drawAtPoint:NSMakePoint(NSMidX(r) - ps.width / 2, NSMidY(r) - ps.height / 2) withAttributes:pa];
+	} else if (self.detail.length) {
+		NSDictionary *da = @{NSFontAttributeName: monoFont(), NSForegroundColorAttributeName: dim};
+		NSSize ds = [self.detail sizeWithAttributes:da];
+		[self.detail drawAtPoint:NSMakePoint(right - ds.width, (kItemH - ds.height) / 2) withAttributes:da];
+	}
+	if (item.hasSubmenu) {
+		NSImage *chev = [NSImage imageWithSystemSymbolName:@"chevron.right" accessibilityDescription:nil];
+		NSImageSymbolConfiguration *cfg = [NSImageSymbolConfiguration configurationWithPointSize:11 weight:NSFontWeightSemibold];
+		chev = [chev imageWithSymbolConfiguration:[cfg configurationByApplyingConfiguration:[NSImageSymbolConfiguration configurationWithHierarchicalColor:fg]]];
+		NSSize cs = chev.size;
+		[chev drawInRect:NSMakeRect(NSMaxX(b) - kInset - 10 - cs.width, (kItemH - cs.height) / 2, cs.width, cs.height)
+			fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:YES hints:nil];
+	}
+}
+
+// a click on a drawn item does what a native one would: close the menu and send its action
+- (void)mouseUp:(NSEvent *)e {
+	NSMenuItem *item = self.enclosingMenuItem;
+	if (item.hasSubmenu || !item.isEnabled) return;
+	NSMenu *m = item.menu;
+	[m cancelTracking];
+	[m performActionForItemAtIndex:[m indexOfItem:item]];
+}
+@end
+
+// setMenuDecor draws an item with a right-side detail (grey text, or a "\x01color|text" pill)
+// and the Finder icon of path, through DetailItemView; with neither it stays a native item.
+// Runs on the main thread.
+static void setMenuDecor(void *p, const char *label, const char *detail, const char *path) {
 	static NSMutableDictionary *icons;
 	NSMenuItem *item = p;
 	NSString *d = detail && *detail ? @(detail) : nil;
-	if (!d) {
-		if (item.attributedTitle) item.attributedTitle = nil;
-	} else {
-		NSString *l = @(label), *want = [NSString stringWithFormat:@"%@\t%@", l, d];
-		if (![item.attributedTitle.string isEqualToString:want]) {
-			NSMutableParagraphStyle *para = [[NSMutableParagraphStyle new] autorelease];
-			para.tabStops = @[[[[NSTextTab alloc] initWithTextAlignment:NSTextAlignmentRight location:240 options:@{}] autorelease]];
-			NSFont *f = [NSFont menuFontOfSize:0];
-			NSMutableAttributedString *s = [[[NSMutableAttributedString alloc] initWithString:[l stringByAppendingString:@"\t"]
-				attributes:@{NSFontAttributeName: f, NSParagraphStyleAttributeName: para}] autorelease];
-			[s appendAttributedString:[[[NSAttributedString alloc] initWithString:d attributes:@{
-				NSFontAttributeName: [NSFont monospacedDigitSystemFontOfSize:f.pointSize weight:NSFontWeightRegular],
-				NSForegroundColorAttributeName: NSColor.secondaryLabelColor, NSParagraphStyleAttributeName: para}] autorelease]];
-			item.attributedTitle = s;
-		}
-	}
-	if (@available(macOS 14, *)) {
-		NSString *b = badge && *badge ? @(badge) : nil;
-		if (!b) {
-			item.badge = nil;
-		} else if (![item.badge.stringValue isEqualToString:b]) {
-			item.badge = [[[NSMenuItemBadge alloc] initWithString:b] autorelease];
-		}
-	}
 	NSImage *img = nil;
 	if (path && *path) {
 		if (!icons) icons = [NSMutableDictionary new];
@@ -108,7 +179,22 @@ static void setMenuDecor(void *p, const char *label, const char *badge, const ch
 			[img release];
 		}
 	}
-	if (item.image != img) item.image = img;
+	if (!d && !img) {
+		if (item.view) item.view = nil;
+		return;
+	}
+	DetailItemView *v = [item.view isKindOfClass:DetailItemView.class] ? (DetailItemView *)item.view : nil;
+	if (!v) {
+		v = [[[DetailItemView alloc] initWithFrame:NSMakeRect(0, 0, 100, kItemH)] autorelease];
+		v.autoresizingMask = NSViewWidthSizable;
+		item.view = v;
+	}
+	NSString *l = @(label);
+	if (![v.label isEqualToString:l] || ![v.detail ?: @"" isEqualToString:d ?: @""] || v.icon != img) {
+		v.label = l; v.detail = d; v.icon = img;
+		[v setFrameSize:NSMakeSize(MAX(v.frame.size.width, v.fittingWidth), kItemH)];
+		v.needsDisplay = YES;
+	}
 }
 */
 import "C"
@@ -142,16 +228,16 @@ func native(v any, field string) unsafe.Pointer {
 
 // decorate draws the badges and icons Wails menus can't. On the main thread, which is also where
 // Menu.Update swaps the NSMenuItems, so none is freed mid-call.
-func decorate(badges, details, icons map[*application.MenuItem]string) {
+func decorate(details, icons map[*application.MenuItem]string) {
 	application.InvokeSync(func() {
-		for _, items := range []map[*application.MenuItem]string{badges, details, icons} {
+		for _, items := range []map[*application.MenuItem]string{details, icons} {
 			for item := range items {
 				p := native(item, "nsMenuItem")
 				if p == nil {
 					continue
 				}
-				strs := []*C.char{C.CString(item.Label()), C.CString(badges[item]), C.CString(details[item]), C.CString(icons[item])}
-				C.setMenuDecor(p, strs[0], strs[1], strs[2], strs[3])
+				strs := []*C.char{C.CString(item.Label()), C.CString(details[item]), C.CString(icons[item])}
+				C.setMenuDecor(p, strs[0], strs[1], strs[2])
 				for _, s := range strs {
 					C.free(unsafe.Pointer(s))
 				}

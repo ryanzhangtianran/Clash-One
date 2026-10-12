@@ -3,7 +3,6 @@ package app
 import (
 	"cmp"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -19,12 +18,10 @@ var modes = []struct{ key, label string }{
 	{"direct", "直接连接"},
 }
 
-var scopes = []struct{ key, label string }{{"tun", "全部流量"}, {"process-tun", "仅指定进程"}}
-
 const trayProcesses = 5
 
 // trayMenu is the menu bar item and its menu, laid out after Surge's. The menu is rebuilt only when
-// its layout (selectable groups, profiles) changes; checks, badges and process rows are updated in
+// its layout (selectable groups, profiles) changes; checks, details and process rows are updated in
 // place, so an open menu stays live.
 type trayMenu struct {
 	app      *application.App
@@ -43,7 +40,6 @@ type trayMenu struct {
 	traffic      Traffic
 	mode         string
 	proxy, enhOn bool
-	quality      string
 	layout       string // groups and profiles the menu was built for
 	rows         []procRow
 	modeItem     *application.MenuItem
@@ -51,10 +47,9 @@ type trayMenu struct {
 	proxyItem    *application.MenuItem
 	enhancedItem *application.MenuItem
 	modeItems    map[string]*application.MenuItem
-	scopeItems   map[string]*application.MenuItem
+	partialItem  *application.MenuItem
 	procItems    []*application.MenuItem
-	badges       map[*application.MenuItem]string // capsule on the right (mode, network quality), drawn natively
-	details      map[*application.MenuItem]string // plain grey text on the right (selected node, speed)
+	details      map[*application.MenuItem]string // right of the label: grey text, or a pill (see pill)
 	icons        map[*application.MenuItem]string // file whose Finder icon the item shows
 	groupItems   map[string]*application.MenuItem
 	memberItems  map[string]map[string]*application.MenuItem
@@ -77,10 +72,10 @@ func newTrayMenu(t *trayMenu) {
 	}
 	t.svc.onTraffic = func(tr Traffic) { t.locked(func() { t.traffic = tr }) }
 	t.sysProxy.onChange = func(on bool) { t.locked(func() { t.proxy = on; t.proxyItem.SetChecked(on) }) }
-	t.enhanced.onChange = func(on bool) { t.locked(func() { t.enhOn = on; t.enhancedItem.SetChecked(on) }) }
+	t.enhanced.onChange = func(on bool) { t.locked(func() { t.enhOn = on; t.checkEnhanced() }) }
 	t.app.Event.On("setting", func(e *application.CustomEvent) {
 		if e.Data == "capture.mode" {
-			t.locked(t.checkScope)
+			t.locked(t.checkEnhanced)
 		}
 	})
 	t.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
@@ -96,10 +91,13 @@ func (t *trayMenu) locked(change func()) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	change()
-	t.badges[t.modeItem] = modeBadges[t.mode]
+	t.details[t.modeItem] = ""
+	if letter := modeBadges[t.mode]; letter != "" {
+		t.details[t.modeItem] = pill("accent", letter)
+	}
 	showTray(t.tray, t.icon, t.traffic, t.mode, t.proxy || t.enhOn, !t.settings.Get().HideTraySpeed)
 	if t.started {
-		decorate(t.badges, t.details, t.icons)
+		decorate(t.details, t.icons)
 	}
 }
 
@@ -112,12 +110,22 @@ func (t *trayMenu) setMode(mode string) {
 	})
 }
 
-// checkScope shows the enhanced-mode scope; capture.* reads as if enhanced, so it shows while off too.
-func (t *trayMenu) checkScope() {
-	v, _ := t.profiles.Value("capture.mode")
-	for key, item := range t.scopeItems {
-		item.SetChecked(key == v)
+// checkEnhanced ticks enhanced mode or partial enhancement, whichever is on; both need root.
+func (t *trayMenu) checkEnhanced() {
+	mode, granted := t.enhanced.Mode(), t.enhanced.DaemonInstalled()
+	t.enhancedItem.SetChecked(mode == "tun").SetEnabled(granted)
+	t.partialItem.SetChecked(mode == "process-tun").SetEnabled(granted)
+}
+
+// toggleEnhanced turns mode on or, when it is the current one, TUN off.
+func (t *trayMenu) toggleEnhanced(mode string) {
+	if t.enhanced.Mode() == mode {
+		mode = ""
 	}
+	if err := t.enhanced.SetMode(mode); err != nil {
+		notify("error", "切换增强模式失败：%v", err)
+	}
+	t.locked(t.checkEnhanced) // also puts the checkbox back after a failure
 }
 
 // loop refreshes the menu every second, and the network quality every minute.
@@ -133,20 +141,32 @@ func (t *trayMenu) loop() {
 }
 
 func (t *trayMenu) measure() {
-	t.locked(func() { t.quality = "…"; t.badges[t.qualityItem] = t.quality })
-	l := t.svc.Latency()
-	q := "超时"
-	if l.Internet > 0 {
-		q = fmt.Sprintf("%d ms", l.Internet)
+	t.locked(func() { t.details[t.qualityItem] = pill("gray", "…") })
+	q := qualityBadge(t.svc.Latency().Internet)
+	t.locked(func() { t.details[t.qualityItem] = q })
+}
+
+// pill is a coloured pill for the right of a menu item: color is accent, good, warn, bad or gray.
+func pill(color, text string) string { return "\x01" + color + "|" + text }
+
+// qualityBadge colours a latency like the proxies page does: green, orange, then red.
+func qualityBadge(ms int) string {
+	switch {
+	case ms <= 0:
+		return pill("bad", "超时")
+	case ms < 300:
+		return pill("good", fmt.Sprintf("%d ms", ms))
+	case ms < 800:
+		return pill("warn", fmt.Sprintf("%d ms", ms))
 	}
-	t.locked(func() { t.quality = q; t.badges[t.qualityItem] = q })
+	return pill("bad", fmt.Sprintf("%d ms", ms))
 }
 
 func (t *trayMenu) tick() {
 	all, _ := t.svc.Groups()
 	var groups []Group
 	for _, g := range all {
-		if g.Type == "Selector" && g.Name != "GLOBAL" {
+		if (g.Type == "Selector" || g.Type == "Subnet") && g.Name != "GLOBAL" {
 			groups = append(groups, g)
 		}
 	}
@@ -188,14 +208,7 @@ func menuLayout(groups []Group, list Profiles) string {
 func processRows(conns []Conn, deltas map[string]int64) []procRow {
 	byName := map[string]*procRow{}
 	for _, c := range conns {
-		name, icon := c.Process, c.Path
-		if i := strings.Index(c.Path, ".app/"); i >= 0 {
-			icon = c.Path[:i+len(".app")]
-			name = strings.TrimSuffix(filepath.Base(icon), ".app")
-		}
-		if name == "" {
-			name = cmp.Or(c.Source, "-")
-		}
+		name, icon := clientOf(c)
 		r := byName[name]
 		if r == nil {
 			r = &procRow{name: name, icon: icon}
@@ -230,7 +243,8 @@ func (t *trayMenu) showRows() {
 func (t *trayMenu) build(groups []Group, list Profiles) {
 	m := t.menu
 	m.Clear()
-	t.badges, t.details, t.icons = map[*application.MenuItem]string{}, map[*application.MenuItem]string{}, map[*application.MenuItem]string{}
+	quality := t.details[t.qualityItem] // kept across the rebuild
+	t.details, t.icons = map[*application.MenuItem]string{}, map[*application.MenuItem]string{}
 	submenu := func(label string) (*application.Menu, *application.MenuItem) {
 		sub := application.NewMenu()
 		item := application.NewSubmenu(label, sub)
@@ -266,13 +280,13 @@ func (t *trayMenu) build(groups []Group, list Profiles) {
 					notify("error", "选择 %s / %s 失败：%v", group, name, err)
 				}
 				t.tick()
-			})
+			}).SetEnabled(g.Type == "Selector") // a subnet group follows the network on its own
 		}
 	}
 
 	m.AddSeparator()
 	t.qualityItem = m.Add("网络质量").OnClick(func(*application.Context) { t.measure() })
-	t.badges[t.qualityItem] = t.quality
+	t.details[t.qualityItem] = quality
 	m.AddSeparator()
 	m.Add("进程与客户端").SetEnabled(false)
 	t.procItems = nil
@@ -287,26 +301,16 @@ func (t *trayMenu) build(groups []Group, list Profiles) {
 			t.sysProxy.onChange(t.sysProxy.Enabled()) // put the checkbox back
 		}
 	})
-	t.enhancedItem = m.AddCheckbox("增强模式", t.enhOn).SetAccelerator("CmdOrCtrl+E").OnClick(func(ctx *application.Context) {
-		if err := t.enhanced.SetEnabled(ctx.ClickedMenuItem().Checked()); err != nil {
-			notify("error", "切换增强模式失败：%v", err)
-			t.enhanced.changed(t.enhanced.Enabled()) // put the checkbox back
-		}
+	sub, _ = submenu("部分增强")
+	t.partialItem = sub.AddCheckbox("开启", false).OnClick(func(*application.Context) { go t.toggleEnhanced("process-tun") })
+	sub.Add("配置…").OnClick(func(*application.Context) {
+		t.show()
+		emit("navigate", "processes") // the window opens the 增强 page, where the apps are picked
 	})
-	sub, _ = submenu("增强模式范围")
-	t.scopeItems = map[string]*application.MenuItem{}
-	for _, s := range scopes {
-		key := s.key
-		t.scopeItems[key] = sub.AddRadio(s.label, false).OnClick(func(*application.Context) {
-			if err := t.profiles.Set("capture.mode", key); err != nil {
-				notify("error", "切换增强模式范围失败：%v", err)
-				t.locked(t.checkScope) // put the radio back
-			}
-		})
-	}
-	t.checkScope()
+	t.enhancedItem = m.AddCheckbox("增强模式", false).SetAccelerator("CmdOrCtrl+E").OnClick(func(*application.Context) { go t.toggleEnhanced("tun") })
+	t.checkEnhanced()
 	m.Add("复制终端代理命令").SetAccelerator("CmdOrCtrl+C").OnClick(func(*application.Context) {
-		port, err := t.sysProxy.mixedPort()
+		port, err := mixedPort(t.sysProxy.core)
 		if err != nil {
 			notify("error", "复制终端代理命令失败：%v", err)
 			return

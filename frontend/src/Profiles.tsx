@@ -6,6 +6,31 @@ import { sizeText } from "./format";
 
 const host = (url: string) => { try { return new URL(url).host; } catch { return url; } };
 
+// overrideFields are suggestions for the field box; any dotted path works.
+const overrideFields = [
+  // general
+  "mixed-port", "port", "socks-port", "redir-port", "tproxy-port", "allow-lan", "bind-address", "lan-allowed-ips", "lan-disallowed-ips",
+  "authentication", "skip-auth-prefixes", "mode", "log-level", "ipv6", "unified-delay", "tcp-concurrent", "find-process-mode",
+  "global-client-fingerprint", "keep-alive-interval", "keep-alive-idle", "disable-keep-alive", "interface-name", "routing-mark",
+  "geodata-mode", "geodata-loader", "geo-auto-update", "geo-update-interval", "geox-url.geoip", "geox-url.geosite", "geox-url.mmdb",
+  "profile.store-selected", "profile.store-fake-ip", "global-ua", "etag-support",
+  // dns
+  "dns.enable", "dns.listen", "dns.ipv6", "dns.enhanced-mode", "dns.fake-ip-range", "dns.fake-ip-filter", "dns.fake-ip-filter-mode",
+  "dns.default-nameserver", "dns.nameserver", "dns.fallback", "dns.fallback-filter.geoip", "dns.fallback-filter.ipcidr",
+  "dns.proxy-server-nameserver", "dns.direct-nameserver", "dns.nameserver-policy", "dns.use-hosts", "dns.use-system-hosts",
+  "dns.use-system-resolvers", "dns.respect-rules", "dns.prefer-h3", "dns.cache-algorithm", "hosts",
+  // tun
+  "tun.stack", "tun.mtu", "tun.dns-hijack", "tun.auto-route", "tun.auto-detect-interface", "tun.strict-route",
+  "tun.route-address", "tun.route-exclude-address", "tun.inet4-address", "tun.inet6-address", "tun.endpoint-independent-nat",
+  // sniffer
+  "sniffer.enable", "sniffer.force-dns-mapping", "sniffer.parse-pure-ip", "sniffer.override-destination",
+  "sniffer.sniff.HTTP.ports", "sniffer.sniff.TLS.ports", "sniffer.sniff.QUIC.ports", "sniffer.force-domain", "sniffer.skip-domain",
+  // ntp, experimental
+  "ntp.enable", "ntp.server", "ntp.port", "ntp.interval", "ntp.write-to-system", "experimental.quic-go-disable-gso",
+  // lists the override extends or trims
+  "prepend-rules", "append-rules", "prepend-proxies", "prepend-proxy-groups", "remove-proxies", "remove-proxy-groups", "rules",
+];
+
 // ago is a short relative time, e.g. 刚刚, 5 分钟前, 3 天前.
 function ago(iso: string) {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -22,13 +47,15 @@ export default function Profiles() {
   const [data, setData] = useState<ProfilesData>({ current: "", profiles: [] });
   const [sel, setSel] = useState("");
   const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [link, setLink] = useState("");
   const [override, setOverride] = useState("");
   const [savedOverride, setSavedOverride] = useState("");
   const [dataDir, setDataDir] = useState("");
+  const [field, setField] = useState("");
+  const [value, setValue] = useState("");
+  const [editing, setEditing] = useState<{ id: string; name: string; text: string } | null>(null);
 
   const load = useCallback(() => ProfileService.Profiles().then(setData), []);
   useEffect(() => {
@@ -40,9 +67,12 @@ export default function Profiles() {
 
   const run = (key: string, action: () => Promise<unknown>) => {
     setBusy(key);
-    setError("");
-    action().catch((e) => setError(String(e))).finally(() => setBusy(""));
+    action().catch(() => {}).finally(() => setBusy(""));
   };
+  // a field goes straight into the saved override, so it waits until the editor holds no unsaved edits
+  const canAdd = !!field.trim() && override === savedOverride && !busy;
+  const addField = () => run("field", () => ProfileService.SetText(field, value)
+    .then(() => ProfileService.Override()).then((o) => { setOverride(o); setSavedOverride(o); setField(""); setValue(""); }));
   const list = data.profiles ?? [];
   const selected = list.find((p) => p.id === sel);
   const use = (id: string) => id !== data.current && run("use", () => ProfileService.Select(id));
@@ -50,7 +80,6 @@ export default function Profiles() {
 
   return (
     <>
-      {error && <div className="card error" style={{ marginTop: 16 }}>{error}</div>}
 
       <div className="group-title">配置列表</div>
       <div className="plist">
@@ -89,6 +118,7 @@ export default function Profiles() {
           <button className="btn" title="从 URL 添加订阅" onClick={() => setAdding(true)}>＋</button>
           <button className="btn" title="删除所选配置" disabled={!selected || !!busy} onClick={() => selected && run("remove", () => ProfileService.Remove(selected.id).then(() => setSel("")))}>－</button>
           <button className="btn" disabled={!selected?.url || !!busy} onClick={() => selected && run("update", () => ProfileService.Update(selected.id))}>{busy === "update" ? "更新中…" : "更新"}</button>
+          <button className="btn" disabled={!selected || !!busy} onClick={() => selected && ProfileService.Content(selected.id).then((text) => setEditing({ id: selected.id, name: selected.name, text })).catch(() => {})}>编辑</button>
           <button className="btn" disabled={!!busy} onClick={() => run("import", () => ProfileService.ImportFile())}>导入…</button>
           <span className="grow" />
           <button className="btn" disabled={!selected || selected.id === data.current || !!busy} onClick={() => selected && use(selected.id)}>{busy === "use" ? "切换中…" : "使用"}</button>
@@ -96,18 +126,45 @@ export default function Profiles() {
       </div>
 
       <div className="group-title">覆写</div>
-      <div className="plist">
-        <textarea className="code override" rows={10} spellCheck={false} value={override} onChange={(e) => setOverride(e.target.value)}
-          placeholder={"合并到当前配置之上，例如：\nprepend-rules:\n  - DOMAIN-SUFFIX,corp.example.com,DIRECT\nremove-proxy-groups:\n  - 不需要的策略组"} />
+      <div className="plist override-card">
+        <div className="plist-add">
+          <input className="field-input" list="override-fields" placeholder="字段，如 dns.enable" value={field} onChange={(e) => setField(e.target.value)} />
+          <datalist id="override-fields">{overrideFields.map((f) => <option key={f} value={f} />)}</datalist>
+          <input placeholder="值，如 true、7890、[a, b]" value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && canAdd && addField()} style={{ flex: 1 }} />
+          <button className="btn" disabled={!canAdd} title={override !== savedOverride ? "先保存或还原编辑框里的改动" : ""} onClick={addField}>{busy === "field" ? "添加中…" : "添加"}</button>
+        </div>
+        <textarea className="code override" rows={10} spellCheck={false} value={override} onChange={(e) => setOverride(e.target.value)} />
         <div className="plist-tools">
-          <span className="muted small">内核校验不通过时不会生效</span>
+          <button className="btn" disabled={!override || !!busy} onClick={() => setOverride("")}>清除</button>
           <span className="grow" />
           <button className="btn" disabled={override === savedOverride || !!busy} onClick={() => setOverride(savedOverride)}>还原</button>
-          <button className="btn primary" disabled={override === savedOverride || !!busy} onClick={() => run("override", () => ProfileService.SetOverride(override).then(() => setSavedOverride(override)))}>
+          <button className="btn primary" disabled={override === savedOverride || !!busy} onClick={() => run("override", () => ProfileService.SetOverride(override).then(() => ProfileService.Override()).then((o) => { setOverride(o); setSavedOverride(o); }))}>
             {busy === "override" ? "应用中…" : "保存并应用"}
           </button>
         </div>
       </div>
+
+      {editing && (
+        <div className="modal-bg" onClick={() => setEditing(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-head">
+              <div className="sheet-title">编辑 {editing.name}</div>
+              {list.find((p) => p.id === editing.id)?.url && <div className="muted small">这是订阅，下次更新时会被覆盖。</div>}
+            </div>
+            <div className="sheet-body">
+              <textarea className="code" rows={24} spellCheck={false} value={editing.text} onChange={(e) => setEditing({ ...editing, text: e.target.value })} style={{ marginTop: 16 }} />
+            </div>
+            <div className="sheet-foot">
+              <button className="btn" disabled={!!busy} onClick={() => run("format", () => ProfileService.Format(editing.text).then((text) => setEditing({ ...editing, text })))}>格式化</button>
+              <span className="grow" />
+              <button className="btn" onClick={() => setEditing(null)}>取消</button>
+              <button className="btn primary" disabled={!!busy} onClick={() => run("content", () => ProfileService.SetContent(editing.id, editing.text).then(() => setEditing(null)))}>
+                {busy === "content" ? "应用中…" : "保存"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="group-title">配置存储</div>
       <div className="plist">

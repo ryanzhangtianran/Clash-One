@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -46,15 +47,13 @@ var appDefaults = map[string]any{
 	"log-level":         "info",
 	"find-process-mode": "always", // the activity page ranks traffic by process
 	"capture":           map[string]any{"mode": "system-proxy"},
+	"unified-delay":     true, // latency tests time a request on an open connection, like Surge, not the handshakes
 }
 
 // emptyProfile is used until the first profile is added. A fresh copy each time: Merge writes into
 // the profile's maps.
 func emptyProfile() map[string]any {
-	return map[string]any{
-		"proxy-groups": []any{map[string]any{"name": "代理", "type": "select", "proxies": []any{"DIRECT"}}},
-		"rules":        []any{"MATCH,代理"},
-	}
+	return map[string]any{"rules": []any{"MATCH,DIRECT"}}
 }
 
 // controlKeys are dropped from profiles: the GUI reaches the core over its own Unix socket.
@@ -128,7 +127,7 @@ func (s *Store) add(p Profile, content []byte) (Profile, error) {
 	p.ID, p.UpdatedAt = hex.EncodeToString(id), time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := os.WriteFile(s.path(p.ID+".yaml"), content, 0o600); err != nil {
+	if err := os.WriteFile(s.path(p.ID+".yaml"), formatted(content), 0o600); err != nil {
 		return Profile{}, err
 	}
 	s.index.Profiles = append(s.index.Profiles, p)
@@ -158,7 +157,7 @@ func (s *Store) Update(id string, clients ...*http.Client) (Profile, error) {
 	if i = slices.IndexFunc(s.index.Profiles, func(p Profile) bool { return p.ID == id }); i < 0 {
 		return Profile{}, fmt.Errorf("profile %s was removed", id)
 	}
-	if err := os.WriteFile(s.path(id+".yaml"), content, 0o600); err != nil {
+	if err := os.WriteFile(s.path(id+".yaml"), formatted(content), 0o600); err != nil {
 		return Profile{}, err
 	}
 	p := &s.index.Profiles[i]
@@ -181,6 +180,36 @@ func (s *Store) Remove(id string) error {
 	}
 	_ = os.Remove(s.path(id + ".yaml"))
 	return s.save()
+}
+
+// Content is a profile's YAML as stored.
+func (s *Store) Content(id string) (string, error) {
+	if !s.has(id) {
+		return "", fmt.Errorf("profile %s not found", id)
+	}
+	b, err := os.ReadFile(s.path(id + ".yaml"))
+	return string(b), err
+}
+
+// SetContent replaces a profile's YAML after the same check a new local profile gets.
+func (s *Store) SetContent(id, content string) error {
+	if !s.has(id) {
+		return fmt.Errorf("profile %s not found", id)
+	}
+	if err := validate([]byte(content)); err != nil {
+		return err
+	}
+	formatted, err := Format(content)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.path(id+".yaml"), []byte(formatted), 0o600)
+}
+
+func (s *Store) has(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.ContainsFunc(s.index.Profiles, func(p Profile) bool { return p.ID == id })
 }
 
 func (s *Store) Select(id string) error {
@@ -220,6 +249,32 @@ func (s *Store) SetOverride(content string) error {
 		return fmt.Errorf("覆写不是有效的 YAML 字典: %w", err)
 	}
 	return os.WriteFile(s.path("override.yaml"), []byte(content), 0o644)
+}
+
+// formatted is a profile as stored: Format'd, or as given if it can't be (validate already passed).
+func formatted(content []byte) []byte {
+	if f, err := Format(string(content)); err == nil {
+		return []byte(f)
+	}
+	return content
+}
+
+// Format re-indents YAML to two spaces per level, keeping comments, order and quoting.
+func Format(text string) (string, error) {
+	if strings.TrimSpace(text) == "" {
+		return "", nil
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
+		return "", fmt.Errorf("不是有效的 YAML: %w", err)
+	}
+	var b strings.Builder
+	enc := yaml.NewEncoder(&b)
+	enc.SetIndent(2)
+	if err := enc.Encode(&doc); err != nil {
+		return "", err
+	}
+	return b.String(), enc.Close()
 }
 
 // Build returns the config for the core: app defaults, then the current profile, then the override.
@@ -320,6 +375,10 @@ func Merge(profile, override map[string]any) map[string]any {
 	}
 	members, _ := override["group-members"].(map[string]any)
 	delete(override, "group-members")
+	patches, _ := override["patch-proxies"].(map[string]any) // name -> fields merged over that proxy
+	delete(override, "patch-proxies")
+	hidden, _ := override["remove-rules"].([]any) // profile rules deleted from the GUI
+	delete(override, "remove-rules")
 	removed := map[string]bool{}
 	for _, key := range []string{"remove-proxies", "remove-proxy-groups"} {
 		names, _ := override[key].([]any)
@@ -343,6 +402,10 @@ func Merge(profile, override map[string]any) map[string]any {
 			cfg[key] = list
 		}
 	}
+	if len(hidden) > 0 {
+		rules, _ := cfg["rules"].([]any)
+		cfg["rules"] = slices.DeleteFunc(slices.Clone(rules), func(r any) bool { return slices.Contains(hidden, r) })
+	}
 	// group-members: the GUI's own key, prepends user proxies into existing groups
 	groups, _ := cfg["proxy-groups"].([]any)
 	for _, g := range groups {
@@ -354,6 +417,14 @@ func Merge(profile, override map[string]any) map[string]any {
 		}
 		current, _ := group["proxies"].([]any)
 		group["proxies"] = append(slices.Clone(extra), slices.DeleteFunc(slices.Clone(current), func(p any) bool { return slices.Contains(extra, p) })...)
+	}
+	proxies, _ := cfg["proxies"].([]any)
+	for _, p := range proxies {
+		proxy, _ := p.(map[string]any)
+		name, _ := proxy["name"].(string)
+		if patch, ok := patches[name].(map[string]any); ok {
+			applyPatch(proxy, patch)
+		}
 	}
 	if len(removed) > 0 {
 		dropRemoved(cfg, removed)
@@ -377,6 +448,12 @@ func dropRemoved(cfg map[string]any, removed map[string]bool) {
 	groups, _ := cfg["proxy-groups"].([]any)
 	for _, g := range groups {
 		group, _ := g.(map[string]any)
+		if rules, ok := group["rules"].(map[string]any); ok { // subnet group
+			maps.DeleteFunc(rules, func(_ string, v any) bool { s, _ := v.(string); return removed[s] })
+		}
+		if def, _ := group["default"].(string); removed[def] {
+			group["default"] = "DIRECT"
+		}
 		list, ok := group["proxies"].([]any)
 		if !ok {
 			continue
@@ -580,6 +657,58 @@ func (s *Store) UserItems() (UserItems, error) {
 	return UserItems(raw), nil
 }
 
+// EditProxy changes the named proxy by patch (only the edited fields; a null removes one). A
+// GUI-added proxy is patched in place; one from the profile gets the patch stored under
+// patch-proxies, which Merge lays over it, so the edit survives subscription updates while the
+// fields left alone keep following the subscription.
+func (s *Store) EditProxy(name string, patch map[string]any) error {
+	return s.editOverride(func(root *yaml.Node) error {
+		seq := listOf(root, "prepend-proxies")
+		if i := findNamed(seq, name); i >= 0 {
+			var proxy map[string]any
+			if err := seq.Content[i].Decode(&proxy); err != nil {
+				return err
+			}
+			applyPatch(proxy, patch)
+			return seq.Content[i].Encode(proxy)
+		}
+		patches := mapOf(root, "patch-proxies")
+		if patches.Kind != yaml.MappingNode {
+			return errors.New("覆写中的 patch-proxies 不是字典")
+		}
+		n := child(patches, name, yaml.MappingNode)
+		stored := map[string]any{}
+		if err := n.Decode(&stored); err != nil {
+			return err
+		}
+		return n.Encode(merge(stored, patch)) // nulls kept: they remove the profile's field at Merge
+	})
+}
+
+// applyPatch merges patch into dst like merge, except that a null removes the key (and a map
+// left empty by that goes too).
+func applyPatch(dst, patch map[string]any) {
+	for k, v := range patch {
+		sub, ok := v.(map[string]any)
+		switch {
+		case v == nil:
+			delete(dst, k)
+		case ok:
+			cur, isMap := dst[k].(map[string]any)
+			if !isMap {
+				cur = map[string]any{}
+			}
+			if applyPatch(cur, sub); len(cur) > 0 {
+				dst[k] = cur
+			} else {
+				delete(dst, k)
+			}
+		default:
+			dst[k] = v
+		}
+	}
+}
+
 // AddProxy adds a node and puts it at the front of each of groups.
 func (s *Store) AddProxy(proxy map[string]any, groups []string) error {
 	name, _ := proxy["name"].(string)
@@ -673,6 +802,20 @@ func (s *Store) RemoveTunnel(name string) error {
 	})
 }
 
+// MoveRule swaps the GUI-added rule at index (in prepend-rules) with the one delta places away.
+// The profile's own rules keep their order, so subscription updates still reach them.
+func (s *Store) MoveRule(index, delta int) error {
+	return s.editOverride(func(root *yaml.Node) error {
+		seq, j := listOf(root, "prepend-rules"), index+delta
+		if seq == nil || min(index, j) < 0 || max(index, j) >= len(seq.Content) {
+			return errors.New("只能调整自己添加的规则的顺序")
+		}
+		seq.Content[index], seq.Content[j] = seq.Content[j], seq.Content[index]
+		return nil
+	})
+}
+
+// RemoveRule drops a GUI-added rule from the override.
 func (s *Store) RemoveRule(rule string) error {
 	return s.editOverride(func(root *yaml.Node) error {
 		if seq := listOf(root, "prepend-rules"); seq != nil {
@@ -680,6 +823,12 @@ func (s *Store) RemoveRule(rule string) error {
 		}
 		return nil
 	})
+}
+
+// HideRule drops one of the profile's rules by listing it under remove-rules, which Merge filters
+// out; the rest of the profile's rules still follow the subscription.
+func (s *Store) HideRule(rule string) error {
+	return s.editOverride(func(root *yaml.Node) error { return appendItem(root, "remove-rules", rule) })
 }
 
 // editOverride applies change to the override's YAML tree, keeping comments and layout.

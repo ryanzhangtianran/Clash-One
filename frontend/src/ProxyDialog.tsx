@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
+import { Switch } from "./Settings";
 
 type Field = {
   key: string; // mihomo key; dots nest: "ws-opts.path"
@@ -23,7 +24,7 @@ const transport: Field[] = [
 ];
 const ssCiphers = ["aes-128-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm", "2022-blake3-chacha20-poly1305", "none"];
 
-const protocols: Record<string, { label: string; fields: Field[] }> = {
+export const protocols: Record<string, { label: string; fields: Field[] }> = {
   http: { label: "HTTP", fields: [{ key: "username", label: "用户名" }, { key: "password", label: "密码", kind: "password" }, { key: "tls", label: "TLS", kind: "bool" }, ...tlsFields] },
   socks5: { label: "SOCKS5", fields: [{ key: "username", label: "用户名" }, { key: "password", label: "密码", kind: "password" }, { key: "tls", label: "TLS", kind: "bool" }, { key: "skip-cert-verify", label: "跳过证书验证", kind: "bool" }] },
   ss: { label: "Shadowsocks", fields: [{ key: "cipher", label: "加密方式", kind: "select", options: ssCiphers, def: "aes-128-gcm" }, { key: "password", label: "密码", kind: "password" }] },
@@ -45,14 +46,30 @@ function set(obj: Record<string, any>, key: string, value: unknown) {
   cur[parts[parts.length - 1]] = value;
 }
 
-export default function ProxyDialog({ groups, onClose }: { groups: string[]; onClose: () => void }) {
-  const [type, setType] = useState("ss");
-  const [v, setV] = useState<Record<string, any>>({});
+// get reads a dotted key, as set writes it.
+const get = (obj: Record<string, any>, key: string) => key.split(".").reduce<any>((o, k) => o?.[k], obj);
+
+// formOf fills the form from a proxy's fields, for editing (its type must be one of protocols).
+function formOf(p: Record<string, any>): Record<string, any> {
+  const v: Record<string, any> = { name: p.name, server: p.server, port: String(p.port ?? "") };
+  for (const k of ["udp", "tfo", "ip-version", "interface-name", "dialer-proxy"]) if (p[k] !== undefined) v[k] = p[k];
+  for (const f of protocols[p.type]?.fields ?? []) {
+    const x = get(p, f.key);
+    if (x !== undefined) v[f.key] = f.kind === "number" ? String(x) : x;
+  }
+  return v;
+}
+
+// ProxyDialog adds a proxy, or with editing set edits that one: its name and type stay, and only the
+// fields changed in the form are sent (a cleared one as null), so the rest are kept and, for a
+// subscription's proxy, keep following the subscription.
+export default function ProxyDialog({ groups, editing, onClose }: { groups: string[]; editing?: Record<string, any>; onClose: () => void }) {
+  const [type, setType] = useState(editing?.type ?? "ss");
+  const [v, setV] = useState<Record<string, any>>(editing ? formOf(editing) : {});
   const [names, setNames] = useState<string[]>([]);
   const [join, setJoin] = useState<string[]>(groups.slice(0, 1));
   const [extra, setExtra] = useState("");
-  const [error, setError] = useState("");
-  const [result, setResult] = useState("");
+  const [more, setMore] = useState(false);
   useEffect(() => { CoreService.ProxyNames().then((n) => setNames(n ?? [])); }, []);
 
   const fields = protocols[type].fields;
@@ -72,86 +89,102 @@ export default function ProxyDialog({ groups, onClose }: { groups: string[]; onC
     return proxy;
   };
 
-  const add = async (test: boolean) => {
-    setError(""); setResult("");
-    try {
-      await ProfileService.AddProxy(build(), extra, join);
-      if (!test) return onClose();
-      const ms = await CoreService.TestProxy(v.name);
-      setResult(`已添加，延迟 ${ms} ms`);
-    } catch (e) {
-      setError(String(e));
+  // patch is what the form changed in editing: each field it manages, new value or null if cleared
+  const patch = () => {
+    const built = build(), p: Record<string, any> = {};
+    for (const k of ["server", "port", "udp", "tfo", "ip-version", "interface-name", "dialer-proxy", ...fields.map((f) => f.key)]) {
+      const a = get(editing!, k), b = get(built, k);
+      if ((a || b) && String(a) !== String(b)) set(p, k, b ?? null);
     }
+    return p;
+  };
+  const save = () => {
+    (editing ? ProfileService.EditProxy(editing.name, patch(), extra) : ProfileService.AddProxy(build(), extra, join)).then(onClose).catch(() => {});
   };
 
   const input = (f: Field) => {
     const x = val(f);
     const on = (value: unknown) => setV({ ...v, [f.key]: value });
-    if (f.kind === "bool") return <input type="checkbox" checked={!!x} onChange={(e) => on(e.target.checked)} />;
+    if (f.kind === "bool") return <Switch on={!!x} onChange={on} />;
     if (f.kind === "select") return <select value={x} onChange={(e) => on(e.target.value)}>{f.options!.map((o) => <option key={o} value={o}>{o || "无"}</option>)}</select>;
     return <input type={f.kind === "password" ? "password" : "text"} placeholder={f.placeholder ?? "可选"} value={x} onChange={(e) => on(e.target.value)} />;
   };
+  const row = (label: string, control: React.ReactNode, key?: string) => (
+    <div key={key ?? label} className="form-row"><span>{label}</span>{control}</div>
+  );
+  const ready = !!(v.name && v.server && v.port);
 
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal card wide" onClick={(e) => e.stopPropagation()}>
-        <h2 className="modal-title">增加代理</h2>
-        <div className="two-col">
+      <div className="sheet wide" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head"><div className="sheet-title">{editing ? `编辑 ${editing.name}` : "增加代理"}</div></div>
+        <div className="sheet-body two-col">
           <div>
-            <div className="section-title">基本信息</div>
-            <div className="form-grid">
-              <label>名称</label><input autoFocus placeholder="必填" value={v.name ?? ""} onChange={(e) => setV({ ...v, name: e.target.value })} />
-              <label>协议</label>
-              <select value={type} onChange={(e) => setType(e.target.value)}>
-                {Object.entries(protocols).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
-              </select>
+            <div className="group-title">基本信息</div>
+            <div className="plist">
+              {row("名称", <input autoFocus placeholder="必填" disabled={!!editing} value={v.name ?? ""} onChange={(e) => setV({ ...v, name: e.target.value })} />)}
+              {row("协议", <select value={type} disabled={!!editing} onChange={(e) => setType(e.target.value)}>{Object.entries(protocols).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}</select>)}
             </div>
-            <div className="section-title">服务器信息</div>
-            <div className="form-grid">
-              <label>地址</label>
-              <div className="inline"><input placeholder="地址" value={v.server ?? ""} onChange={(e) => setV({ ...v, server: e.target.value })} style={{ flex: 1 }} /> : <input placeholder="端口" value={v.port ?? ""} onChange={(e) => setV({ ...v, port: e.target.value })} style={{ width: 80 }} /></div>
-            </div>
-            <div className="section-title">{protocols[type].label}</div>
-            <div className="form-grid">
-              {fields.filter(shown).map((f) => [<label key={f.key + "l"}>{f.label}</label>, <span key={f.key}>{input(f)}</span>])}
-            </div>
-            <div className="section-title">代理链</div>
-            <div className="form-grid">
-              <label>跳板代理</label>
-              <select value={v["dialer-proxy"] ?? ""} onChange={(e) => setV({ ...v, "dialer-proxy": e.target.value })}>
-                <option value="">不使用</option>
-                {names.map((n) => <option key={n}>{n}</option>)}
-              </select>
-            </div>
-          </div>
-          <div>
-            <div className="section-title">加入策略组</div>
-            <div className="checks">
-              {groups.map((g) => (
-                <label key={g} className="radio"><input type="checkbox" checked={join.includes(g)} onChange={(e) => setJoin(e.target.checked ? [...join, g] : join.filter((x) => x !== g))} /> {g}</label>
+            <div className="group-title">服务器信息</div>
+            <div className="plist">
+              {row("服务器地址", (
+                <div className="inline">
+                  <input placeholder="地址" value={v.server ?? ""} onChange={(e) => setV({ ...v, server: e.target.value })} style={{ flex: 1, minWidth: 0 }} />
+                  <span className="muted">:</span>
+                  <input placeholder="端口" value={v.port ?? ""} onChange={(e) => setV({ ...v, port: e.target.value })} style={{ width: 72 }} />
+                </div>
               ))}
             </div>
-            <div className="section-title">出站设置</div>
-            <div className="form-grid">
-              <label>网络接口</label><input placeholder="默认" value={v["interface-name"] ?? ""} onChange={(e) => setV({ ...v, "interface-name": e.target.value })} />
-              <label>IP 版本</label>
-              <select value={v["ip-version"] ?? ""} onChange={(e) => setV({ ...v, "ip-version": e.target.value })}>
-                {["", "ipv4", "ipv6", "ipv4-prefer", "ipv6-prefer"].map((o) => <option key={o} value={o}>{o || "双栈"}</option>)}
-              </select>
+            <div className="group-title">{protocols[type].label}</div>
+            <div className="plist">{fields.filter(shown).map((f) => row(f.label, input(f), f.key))}</div>
+            <div className="group-title">代理链</div>
+            <div className="plist">
+              {row("跳板代理", (
+                <select value={v["dialer-proxy"] ?? ""} onChange={(e) => setV({ ...v, "dialer-proxy": e.target.value })}>
+                  <option value="">不使用</option>
+                  {names.map((n) => <option key={n}>{n}</option>)}
+                </select>
+              ))}
             </div>
-            <div className="section-title">选项</div>
-            <label className="radio"><input type="checkbox" checked={!!v.udp} onChange={(e) => setV({ ...v, udp: e.target.checked })} /> 允许 UDP</label>
-            <label className="radio"><input type="checkbox" checked={!!v.tfo} onChange={(e) => setV({ ...v, tfo: e.target.checked })} /> TCP Fast Open（实验性）</label>
-            <div className="section-title">更多设置（YAML，合并到上面的字段）</div>
-            <textarea className="code" rows={6} spellCheck={false} placeholder={"plugin: obfs\nplugin-opts:\n  mode: tls"} value={extra} onChange={(e) => setExtra(e.target.value)} />
+          </div>
+          <div>
+            {groups.length > 0 && !editing && (
+              <>
+                <div className="group-title">加入策略组</div>
+                <div className="plist">
+                  {groups.map((g) => row(g, <Switch on={join.includes(g)} onChange={(on) => setJoin(on ? [...join, g] : join.filter((x) => x !== g))} />, g))}
+                </div>
+              </>
+            )}
+            <div className="group-title">出站设置</div>
+            <div className="plist">
+              {row("网络接口", <input placeholder="默认" value={v["interface-name"] ?? ""} onChange={(e) => setV({ ...v, "interface-name": e.target.value })} />)}
+              {row("IP 版本", (
+                <select value={v["ip-version"] ?? ""} onChange={(e) => setV({ ...v, "ip-version": e.target.value })}>
+                  {["", "ipv4", "ipv6", "ipv4-prefer", "ipv6-prefer"].map((o) => <option key={o} value={o}>{o || "双栈"}</option>)}
+                </select>
+              ))}
+            </div>
+            <div className="group-title">选项</div>
+            <div className="plist">
+              {row("允许 UDP", <Switch on={!!v.udp} onChange={(on) => setV({ ...v, udp: on })} />)}
+              {row("TCP Fast Open", <Switch on={!!v.tfo} onChange={(on) => setV({ ...v, tfo: on })} />)}
+            </div>
+            {more && (
+              <>
+                <div className="group-title">更多设置（YAML，合并到上面的字段）</div>
+                <div className="plist">
+                  <textarea className="code override" rows={6} spellCheck={false} placeholder={"plugin: obfs\nplugin-opts:\n  mode: tls"} value={extra} onChange={(e) => setExtra(e.target.value)} />
+                </div>
+              </>
+            )}
           </div>
         </div>
-        {error && <div className="error">{error}</div>}
-        {result && <div className="muted">{result}</div>}
-        <div className="actions" style={{ justifyContent: "flex-end", marginTop: 12 }}>
-          <button className="btn" onClick={onClose}>{result ? "关闭" : "取消"}</button>
-          {!result && <button className="btn" disabled={!v.name || !v.server || !v.port} onClick={() => add(true)}>完成并测试</button>}
-          {!result && <button className="btn primary" disabled={!v.name || !v.server || !v.port} onClick={() => add(false)}>完成</button>}
+        <div className="sheet-foot">
+          <button className="btn" onClick={() => setMore(!more)}>{more ? "收起更多设置" : "更多设置…"}</button>
+          <span className="grow" />
+          <button className="btn" onClick={onClose}>取消</button>
+          <button className="btn primary" disabled={!ready} onClick={save}>完成</button>
         </div>
       </div>
     </div>

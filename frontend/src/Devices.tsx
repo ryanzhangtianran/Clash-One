@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { CoreService, DeviceService } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 import type { Device, LanInfo, Status } from "../bindings/github.com/ryanzhangtianran/Clash-One/internal/app";
 import { sizeText } from "./format";
+import { Switch } from "./Settings";
 
-function PolicyMenu({ device, policies, onDone }: { device: Device; policies: string[]; onDone: (err?: unknown) => void }) {
+function PolicyMenu({ device, policies, onDone }: { device: Device; policies: string[]; onDone: () => void }) {
   const [policy, setPolicy] = useState(device.policy || "DIRECT");
   const [permanent, setPermanent] = useState(!device.temporary && !!device.policy);
   return (
@@ -18,8 +19,8 @@ function PolicyMenu({ device, policies, onDone }: { device: Device; policies: st
         <label className="radio"><input type="radio" checked={!permanent} onChange={() => setPermanent(false)} /> 临时</label>
         <label className="radio"><input type="radio" checked={permanent} onChange={() => setPermanent(true)} /> 永久（写入覆写）</label>
       </div>
-      <button onClick={() => DeviceService.SetPolicy(device.ip, policy, permanent).then(() => onDone(), onDone)}>应用：此设备全部走 {policy}</button>
-      {device.policy && <button className="danger" onClick={() => DeviceService.ClearPolicy(device.ip).then(() => onDone(), onDone)}>恢复按规则分流</button>}
+      <button onClick={() => DeviceService.SetPolicy(device.ip, policy, permanent).catch(() => {}).finally(onDone)}>应用：此设备全部走 {policy}</button>
+      {device.policy && <button className="danger" onClick={() => DeviceService.ClearPolicy(device.ip).catch(() => {}).finally(onDone)}>恢复按规则分流</button>}
     </div>
   );
 }
@@ -29,11 +30,10 @@ export default function Devices({ status }: { status: Status }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [policies, setPolicies] = useState<string[]>([]);
   const [open, setOpen] = useState("");
-  const [error, setError] = useState("");
 
   const load = useCallback(() => {
-    DeviceService.Lan().then(setLan).catch((e) => setError(String(e)));
-    DeviceService.Devices().then((d) => setDevices(d ?? [])).catch((e) => setError(String(e)));
+    DeviceService.Lan().then(setLan).catch(() => {}); // polling: a lost core shows up in the events, not here
+    DeviceService.Devices().then((d) => setDevices(d ?? [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -44,26 +44,35 @@ export default function Devices({ status }: { status: Status }) {
     return () => clearInterval(t);
   }, [status.running, load]);
 
-  const toggleLan = () => {
-    setError("");
-    DeviceService.SetAllowLan(!lan?.allowLan).then(load).catch((e) => setError(String(e)));
+  const allowLan = (on: boolean) => {
+    DeviceService.SetAllowLan(on).then(load).catch(() => {});
   };
 
   return (
     <>
-      <div className="seg big-seg" style={{ maxWidth: 400 }}>
-        <button className={!lan?.allowLan ? "on accent" : ""} disabled={!status.running} onClick={() => lan?.allowLan && toggleLan()}>仅本机</button>
-        <button className={lan?.allowLan ? "on accent" : ""} disabled={!status.running} onClick={() => !lan?.allowLan && toggleLan()}>允许局域网设备</button>
+      <div className="group-title">局域网访问</div>
+      <div className="plist">
+        <div className="plist-row static">
+          <div className="plist-main">
+            <div className="plist-name">允许局域网设备连接</div>
+            <div className="muted small">
+              {lan?.allowLan
+                ? <>在其他设备的 Wi-Fi 设置中把 HTTP 或 SOCKS5 代理设为 {(lan.addresses ?? []).join(" 或 ")} 端口 {lan.port}</>
+                : "局域网内的手机、电脑等可以通过本机代理上网"}
+            </div>
+          </div>
+          <Switch on={!!lan?.allowLan} disabled={!status.running} onChange={allowLan} />
+        </div>
       </div>
-      <div className="hint">
-        {lan?.allowLan
-          ? <>在其他设备的 Wi-Fi 设置中把 HTTP 或 SOCKS5 代理设为 <b>{(lan.addresses ?? []).join(" 或 ")}</b> 端口 <b>{lan.port}</b>。</>
-          : "开启后，局域网内的手机、电脑等可以通过本机代理上网。"}
-      </div>
-      {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
 
-      <div className="tile-head"><span className="tile-title groups">局域网设备</span></div>
-      {devices.length === 0 && <div className="muted">{lan?.allowLan ? "还没有设备连接。" : "未开启局域网访问。"}</div>}
+      <div className="group-title">局域网设备</div>
+      {devices.length === 0 && (
+        <div className="plist">
+          <div className="plist-row static">
+            <div className="plist-main muted">{lan?.allowLan ? "还没有设备连接" : "未开启局域网访问"}</div>
+          </div>
+        </div>
+      )}
       <div className="tiles">
         {devices.map((d) => (
           <div key={d.ip} className="tile-wrap">
@@ -73,7 +82,7 @@ export default function Devices({ status }: { status: Status }) {
               <span className="foot">{d.policy ? `全部走 ${d.policy}${d.temporary ? "（临时）" : ""}` : sizeText(d.upload + d.download)}</span>
             </button>
             {open === d.ip && (
-              <PolicyMenu device={d} policies={policies} onDone={(err) => { if (err) setError(String(err)); setOpen(""); load(); }} />
+              <PolicyMenu device={d} policies={policies} onDone={() => { setOpen(""); load(); }} />
             )}
           </div>
         ))}

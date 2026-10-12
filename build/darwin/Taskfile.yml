@@ -60,7 +60,11 @@ tasks:
     summary: Builds clash-one-core from CORE_DIR into BIN_DIR
     internal: true
     cmds:
-      - CGO_ENABLED=0 go -C "{{.CORE_DIR}}" build -tags with_gvisor -trimpath -ldflags="-w -s" -o "{{.ROOT_DIR}}/{{.BIN_DIR}}/clash-one-core" .
+      # the core reports constant.Version, a 1.10.0 placeholder unless set here, as mihomo's Makefile does
+      - CGO_ENABLED=0 go -C "{{.CORE_DIR}}" build -tags with_gvisor -trimpath -ldflags="-w -s -X github.com/metacubex/mihomo/constant.Version={{.CORE_VERSION}}" -o "{{.ROOT_DIR}}/{{.BIN_DIR}}/clash-one-core" .
+    vars:
+      CORE_VERSION:
+        sh: git -C "{{.CORE_DIR}}" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo unknown # the mihomo release it is based on, e.g. 1.19.32
     env:
       GOOS: darwin
       GOARCH: '{{.ARCH | default ARCH}}'

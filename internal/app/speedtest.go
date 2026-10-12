@@ -26,40 +26,47 @@ type Speed struct {
 
 var speedMu sync.Mutex // one test at a time: they share the temporary rule's host
 
-// SpeedTest measures download bandwidth through proxy (a node or group): a temporary rule sends
-// the test host to it, the file is fetched through the mixed-port for up to 10s, then the rule
-// is removed. Needs rule mode, since global/direct mode skip rules.
-func (s *CoreService) SpeedTest(proxy string) (Speed, error) {
-	speedMu.Lock()
-	defer speedMu.Unlock()
-	ctx := context.Background()
-	var cfg struct {
-		Mode      string `json:"mode"`
-		MixedPort int    `json:"mixed-port"`
-	}
-	if err := s.core.Do(ctx, http.MethodGet, "/configs", nil, &cfg); err != nil {
-		return Speed{}, err
-	}
-	if cfg.Mode != "rule" {
-		return Speed{}, errors.New("带宽测速需要「规则判定」模式")
-	}
-	u, err := url.Parse(speedURL)
+// viaProxy is an HTTP client whose requests to rawURL's host go through proxy (a node or group): a
+// temporary rule sends the host to it through the mixed-port; done removes the rule. Needs rule
+// mode, since global/direct mode skip rules.
+func (s *CoreService) viaProxy(proxy, rawURL string) (*http.Client, func(), error) {
+	u, err := url.Parse(rawURL)
 	if err != nil {
-		return Speed{}, err
+		return nil, nil, err
 	}
-	rule := "DOMAIN," + u.Hostname() + "," + proxy
-	if ip := net.ParseIP(u.Hostname()); ip != nil {
-		rule = "IP-CIDR," + u.Hostname() + "/32," + proxy + ",no-resolve"
+	host := u.Hostname()
+	if mode, err := s.Mode(); err != nil {
+		return nil, nil, err
+	} else if mode != "rule" {
+		return nil, nil, errors.New("需要「规则判定」模式，全局和直连模式不经过规则")
+	}
+	port, err := mixedPort(s.core)
+	if err != nil {
+		return nil, nil, err
+	}
+	rule := "DOMAIN," + host + "," + proxy
+	if ip := net.ParseIP(host); ip != nil {
+		rule = "IP-CIDR," + host + "/32," + proxy + ",no-resolve"
 	}
 	id, err := s.AddTempRule(rule)
 	if err != nil {
+		return nil, nil, err
+	}
+	via := &url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(port)}
+	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(via), DisableKeepAlives: true}}
+	return client, func() { _ = s.RemoveTempRule(id) }, nil
+}
+
+// SpeedTest measures download bandwidth through proxy for up to 10s.
+func (s *CoreService) SpeedTest(proxy string) (Speed, error) {
+	speedMu.Lock()
+	defer speedMu.Unlock()
+	client, done, err := s.viaProxy(proxy, speedURL)
+	if err != nil {
 		return Speed{}, err
 	}
-	defer s.RemoveTempRule(id)
-
-	via := &url.URL{Scheme: "http", Host: "127.0.0.1:" + strconv.Itoa(cfg.MixedPort)}
-	client := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(via), DisableKeepAlives: true}}
-	reqCtx, cancel := context.WithTimeout(ctx, speedDuration+5*time.Second)
+	defer done()
+	reqCtx, cancel := context.WithTimeout(context.Background(), speedDuration+5*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(reqCtx, http.MethodGet, speedURL, nil)
 	resp, err := client.Do(req)
@@ -89,4 +96,88 @@ func (s *CoreService) SpeedTest(proxy string) (Speed, error) {
 	}
 	secs := time.Since(start).Seconds()
 	return Speed{Bytes: total, Seconds: secs, Mbps: float64(total) * 8 / secs / 1e6}, nil
+}
+
+// uploadURL receives the upload test's body (a var so tests can point it at a local server).
+var uploadURL = "https://speed.cloudflare.com/__up"
+
+// UploadTest measures upload bandwidth through proxy: zeros are posted for up to 10s.
+func (s *CoreService) UploadTest(proxy string) (Speed, error) {
+	speedMu.Lock()
+	defer speedMu.Unlock()
+	client, done, err := s.viaProxy(proxy, uploadURL)
+	if err != nil {
+		return Speed{}, err
+	}
+	defer done()
+	body := &timedZeros{until: time.Now().Add(speedDuration)}
+	ctx, cancel := context.WithTimeout(context.Background(), speedDuration+10*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, body)
+	start := time.Now()
+	resp, err := client.Do(req)
+	if err != nil && body.n == 0 {
+		return Speed{}, err
+	}
+	if resp != nil {
+		resp.Body.Close()
+	}
+	secs := time.Since(start).Seconds()
+	return Speed{Bytes: body.n, Seconds: secs, Mbps: float64(body.n) * 8 / secs / 1e6}, nil
+}
+
+// timedZeros reads zeros until a deadline, counting them.
+type timedZeros struct {
+	until time.Time
+	n     int64
+}
+
+func (z *timedZeros) Read(p []byte) (int, error) {
+	if time.Now().After(z.until) {
+		return 0, io.EOF
+	}
+	clear(p)
+	z.n += int64(len(p))
+	return len(p), nil
+}
+
+// UDPRelay times a DNS query sent over UDP through proxy.
+func (s *CoreService) UDPRelay(proxy string) (string, error) {
+	var r struct {
+		Server string `json:"server"`
+		Delay  int    `json:"delay"`
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := s.core.Do(ctx, http.MethodGet, "/proxies/"+url.PathEscape(proxy)+"/udp", nil, &r); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("通过 %s 向 %s 发送 DNS 查询：%d ms", proxy, r.Server, r.Delay), nil
+}
+
+// NATType reports how the proxy's UDP maps, from two STUN servers.
+func (s *CoreService) NATType(proxy string) ([]string, error) {
+	var r struct {
+		Mapped []string `json:"mapped"`
+		NAT    string   `json:"nat"`
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := s.core.Do(ctx, http.MethodGet, "/proxies/"+url.PathEscape(proxy)+"/nat", nil, &r); err != nil {
+		return nil, err
+	}
+	lines := []string{"NAT 类型：" + r.NAT}
+	for _, m := range r.Mapped {
+		lines = append(lines, "外部地址："+m)
+	}
+	return lines, nil
+}
+
+// TCPRelay times an HTTP request through proxy on an established connection (as the latency test).
+func (s *CoreService) TCPRelay(proxy string) (string, error) {
+	ms, err := s.TestProxy(proxy)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("通过 %s 请求 %s：%d ms", proxy, testURL, ms), nil
 }

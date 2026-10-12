@@ -38,7 +38,7 @@ func (s *SystemProxyService) SetEnabled(on bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if on {
-		port, err := s.mixedPort()
+		port, err := mixedPort(s.core)
 		if err != nil {
 			return err
 		}
@@ -63,15 +63,16 @@ func (s *SystemProxyService) SetEnabled(on bool) error {
 	return nil
 }
 
-func (s *SystemProxyService) mixedPort() (int, error) {
+// mixedPort is the core's HTTP/SOCKS5 port, an error when it has none.
+func mixedPort(c *core.Core) (int, error) {
 	var cfg struct {
 		MixedPort int `json:"mixed-port"`
 	}
-	if err := s.core.Do(context.Background(), http.MethodGet, "/configs", nil, &cfg); err != nil {
+	if err := c.Do(context.Background(), http.MethodGet, "/configs", nil, &cfg); err != nil {
 		return 0, err
 	}
 	if cfg.MixedPort == 0 {
-		return 0, errors.New("配置中没有 mixed-port，无法设置系统代理")
+		return 0, errors.New("配置中没有 mixed-port，代理端口没有在监听")
 	}
 	return cfg.MixedPort, nil
 }
@@ -101,7 +102,7 @@ func (s *SystemProxyService) guard() {
 	if !s.enabled {
 		return
 	}
-	port, err := s.mixedPort()
+	port, err := mixedPort(s.core)
 	if err != nil {
 		return // core not up yet
 	}

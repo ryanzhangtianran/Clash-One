@@ -6,17 +6,20 @@ import { nonNull } from "./format";
 
 const stateLabel: Record<string, string> = { running: "运行中", connecting: "连接中", retrying: "重试中" };
 const stateClass: Record<string, string> = { running: "delay-good", connecting: "delay-warn", retrying: "delay-bad" };
-const kindLabel: Record<string, string> = { frp: "FRP", ssh: "SSH -R" };
+const kindLabel: Record<string, string> = { frp: "FRP", ssh: "SSH" };
+
+// localRule takes what comes in through a tunnel straight to its local target (here Clash One's own
+// proxy port, whose requests then follow the rules) instead of matching the rules itself.
+export const localRule = (tunnel: string) => `IN-NAME,${tunnel},DIRECT`;
 
 export default function Tunnels({ status }: { status: Status }) {
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
   const [mine, setMine] = useState<string[]>([]);
-  const [error, setError] = useState("");
   const [dialog, setDialog] = useState(false);
   const [open, setOpen] = useState("");
 
   const load = useCallback(() => {
-    CoreService.ReverseTunnels().then((t) => { setTunnels(t ?? []); setError(""); }).catch((e) => setError(String(e)));
+    CoreService.ReverseTunnels().then((t) => setTunnels(t ?? [])).catch(() => {}); // polling: a lost core shows up in the events, not here
     ProfileService.UserItems().then((u) => setMine(nonNull(u.tunnels).map((t) => String(t.name)))).catch(() => {});
   }, []);
 
@@ -27,12 +30,11 @@ export default function Tunnels({ status }: { status: Status }) {
     return () => clearInterval(t);
   }, [status.running, load]);
 
-  const remove = (name: string) => ProfileService.RemoveTunnel(name).then(load).catch((e) => setError(String(e)));
+  const remove = (name: string) => ProfileService.RemoveTunnel(name).then(() => ProfileService.RemoveRule(localRule(name))).then(load).catch(() => {});
 
   return (
     <>
       <div className="hint">通过 FRP 或 SSH 把本机服务暴露到公网。</div>
-      {error && <div className="error" style={{ marginTop: 10 }}>{error}</div>}
 
       <div className="tile-head"><span className="tile-title groups">隧道</span></div>
       <div className="tiles">
