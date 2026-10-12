@@ -1,5 +1,6 @@
 # Builds the Linux (Ubuntu 22.04+, x86-64) .deb on Ubuntu 22.04, so it links against the oldest
-# glibc and GTK it supports; checks it starts, and attaches it to the release of a pushed tag.
+# glibc and GTK it supports; installs and starts it there and on the newer LTS releases, and attaches
+# it to the release of a pushed tag.
 name: linux
 
 on:
@@ -37,8 +38,9 @@ jobs:
       - name: Install GTK 3, WebKit2GTK 4.1 and wails3
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev xvfb dbus-x11
-          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev xvfb dbus
+          # the CLI links the GUI stack too, GTK 4 unless told otherwise; 22.04 only has GTK 3
+          go install -tags gtk3 github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
 
       - name: Build the .deb
         working-directory: Connaio
@@ -48,17 +50,11 @@ jobs:
         working-directory: Connaio
         run: CONNAIO_CORE=$PWD/bin/connaio-core go test -tags gtk3 ./internal/profile ./internal/core ./internal/sysproxy ./internal/daemon
 
-      - name: Smoke test, installed
+      - name: Install and start it
         working-directory: Connaio
         run: |
           sudo apt-get install -y ./bin/connaio_*.deb
-          dbus-run-session -- xvfb-run -a sh -c '
-            connaio > /tmp/connaio.log 2>&1 &
-            for i in $(seq 30); do curl -sf --unix-socket "$HOME/.config/Connaio/core.sock" http://x/version && break; sleep 1; done
-            echo; curl -s -o /dev/null -w "through mixed-port: %{http_code}\n" -x http://127.0.0.1:7899 http://www.gstatic.com/generate_204
-            kill %1'
-          cat /tmp/connaio.log
-          test -S "$HOME/.config/Connaio/core.sock"
+          build/linux/smoke.sh
 
       - name: Name the .deb like the other releases
         working-directory: Connaio
@@ -75,3 +71,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${GITHUB_REF_NAME}" "$DEB" --clobber -R "$GITHUB_REPOSITORY"
+
+  # the same .deb on the newer LTS releases: installs with their packages, starts and proxies
+  install:
+    needs: deb
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['ubuntu:24.04', 'ubuntu:26.04']
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: build/linux/smoke.sh
+      - uses: actions/download-artifact@v4
+        with:
+          name: deb
+      - name: Install and start it
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ./Connaio-*-linux-amd64.deb xvfb xauth dbus curl ca-certificates
+          build/linux/smoke.sh
