@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Events } from "@wailsio/runtime";
 import { CoreService, ProfileService, SettingsService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Activity as ActivityData, DiagSection, Latency, Status, Traffic, Usage } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
-import { size, sizeText, speed, useCachedURL } from "./format";
+import { size, sizeText, speed } from "./format";
 import { DiagLog } from "./ProxyDiagnose";
+import { on, usePoll, useCachedURL } from "./hooks";
 
 const modes: Record<string, string> = { rule: "规则判定", global: "全局代理", direct: "直接连接" };
 
@@ -103,7 +103,7 @@ function Diagnose({ onClose }: { onClose: () => void }) {
   const [sections, setSections] = useState<DiagSection[]>([]);
   const [running, setRunning] = useState(true);
   useEffect(() => {
-    const off = Events.On("diagnose", (e) => setSections((s) => [...s, e.data]));
+    const off = on("diagnose", (d) => setSections((s) => [...s, d]));
     ToolService.Diagnose().finally(() => setRunning(false));
     return () => { off(); ToolService.CancelDiagnose(); };
   }, []);
@@ -221,7 +221,7 @@ export default function Activity({ status, activity, history }: { status: Status
     const show = (p: { current: string; profiles: { id: string; name: string }[] | null }) =>
       setProfile((p.profiles ?? []).find((x) => x.id === p.current)?.name ?? "");
     ProfileService.Profiles().then(show);
-    return Events.On("profiles", (e) => show(e.data));
+    return on("profiles", (d) => show(d));
   }, []);
   const [diagnosing, setDiagnosing] = useState(false);
   const [ip, setIP] = useState("");
@@ -231,12 +231,7 @@ export default function Activity({ status, activity, history }: { status: Status
     CoreService.Latency().then(setLatency).finally(() => setMeasuring(false));
   }, []);
 
-  useEffect(() => {
-    if (!status.running) return;
-    measure();
-    const t = setInterval(measure, 60_000);
-    return () => clearInterval(t);
-  }, [status.running, measure]);
+  usePoll(measure, 60_000, status.running);
 
   const mode = activity?.mode ?? "";
   useEffect(() => {

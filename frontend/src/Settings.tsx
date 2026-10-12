@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { Events } from "@wailsio/runtime";
 import { CoreService, EnhancedService, ProfileService, SettingsService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { About, DNSLeak, Resolver } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import { on } from "./hooks";
 
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
@@ -31,7 +31,7 @@ export function useSetting<T>(path: string, fallback: T): [T, (v: T) => Promise<
   useEffect(() => {
     const load = () => ProfileService.Value(path).then((v) => setValue(sameShape(v, fallback))).catch(() => {});
     load();
-    return Events.On("setting", (e) => e.data === path && load()); // also changed from the menu bar
+    return on("setting", (d) => d === path && load()); // also changed from the menu bar
   }, [path]);
   const save = (v: T) => ProfileService.Set(path, v).then(() => setValue(v)).catch(() => {}); // a failure is listed in the events
   return [value, save];
@@ -51,7 +51,7 @@ export function General() {
     SettingsService.LaunchAtLogin().then(setLogin);
     SettingsService.TraySpeed().then(setTraySpeed);
   }, []);
-  useEffect(() => { load(); return Events.On("enhanced", load); }, [load]);
+  useEffect(() => { load(); return on("enhanced", load); }, [load]);
   useEffect(() => setPortText(String(port)), [port]);
 
   const run = (p: Promise<unknown>, key = "") => {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { Events } from "@wailsio/runtime";
 import { CoreService, ProfileService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { localRule } from "./Tunnels";
+import { on } from "./hooks";
 
 type Row = Record<string, string>;
 
@@ -46,7 +46,7 @@ function DeployFrps({ onDone, onClose }: { onDone: (host: string, port: number, 
   const [auth, setAuth] = useState<Auth>("password");
   const [log, setLog] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  useEffect(() => Events.On("frps-deploy", (e) => setLog((l) => [...l, e.data])), []);
+  useEffect(() => on("frps-deploy", (d) => setLog((l) => [...l, d])), []);
   const f = (k: string, placeholder = "", type = "text") => <input type={type} placeholder={placeholder} value={d[k] ?? ""} onChange={(e) => setD({ ...d, [k]: e.target.value })} />;
   const deploy = () => {
     setBusy(true); setLog([]);

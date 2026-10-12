@@ -3,6 +3,7 @@ import { CoreService, DeviceService } from "../bindings/github.com/ryanzhangtian
 import type { Device, LanInfo, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { sizeText } from "./format";
 import { Switch } from "./Settings";
+import { usePoll } from "./hooks";
 
 function PolicyMenu({ device, policies, onDone }: { device: Device; policies: string[]; onDone: () => void }) {
   const [policy, setPolicy] = useState(device.policy || "DIRECT");
@@ -36,13 +37,8 @@ export default function Devices({ status }: { status: Status }) {
     DeviceService.Devices().then((d) => setDevices(d ?? [])).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (!status.running) return;
-    load();
-    CoreService.Policies().then((p) => setPolicies(p ?? []));
-    const t = setInterval(load, 2000);
-    return () => clearInterval(t);
-  }, [status.running, load]);
+  usePoll(load, 2000, status.running);
+  useEffect(() => { if (status.running) CoreService.Policies().then((p) => setPolicies(p ?? [])); }, [status.running]);
 
   const allowLan = (on: boolean) => {
     DeviceService.SetAllowLan(on).then(load).catch(() => {});

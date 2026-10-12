@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Status, Tunnel } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import TunnelDialog from "./TunnelDialog";
 import { nonNull } from "./format";
+import { usePoll } from "./hooks";
 
 const stateLabel: Record<string, string> = { running: "运行中", connecting: "连接中", retrying: "重试中" };
 const stateClass: Record<string, string> = { running: "delay-good", connecting: "delay-warn", retrying: "delay-bad" };
@@ -23,12 +24,7 @@ export default function Tunnels({ status }: { status: Status }) {
     ProfileService.UserItems().then((u) => setMine(nonNull(u.tunnels).map((t) => String(t.name)))).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (!status.running) return;
-    load();
-    const t = setInterval(load, 2000);
-    return () => clearInterval(t);
-  }, [status.running, load]);
+  usePoll(load, 2000, status.running);
 
   const remove = (name: string) => ProfileService.RemoveTunnel(name).then(() => ProfileService.RemoveRule(localRule(name))).then(load).catch(() => {});
 

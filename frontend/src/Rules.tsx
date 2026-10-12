@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Rule, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import { usePoll } from "./hooks";
 
 const ruleTypes = ["DOMAIN-SUFFIX", "DOMAIN", "DOMAIN-KEYWORD", "DOMAIN-REGEX", "DOMAIN-WILDCARD", "GEOSITE", "IP-CIDR", "IP-CIDR6", "SRC-IP-CIDR", "GEOIP", "IP-ASN",
   "DST-PORT", "SRC-PORT", "PROCESS-NAME", "PROCESS-PATH", "PROCESS-ANCESTOR", "PROCESS-ANCESTOR-PATH", "IN-NAME", "IN-TYPE", "NETWORK", "RULE-SET"];
@@ -40,12 +41,7 @@ export default function Rules({ status }: { status: Status }) {
     ProfileService.UserItems().then((u) => setMine(u.rules?.length ?? 0)).catch(() => {});
   };
 
-  useEffect(() => {
-    if (!status.running) return;
-    load();
-    const t = setInterval(load, 3000); // hit counts move
-    return () => clearInterval(t);
-  }, [status.running]);
+  usePoll(load, 3000, status.running); // hit counts move
 
   const q = filter.toLowerCase();
   const shown = rules.filter((r) => !q || `${r.type} ${r.payload} ${r.proxy}`.toLowerCase().includes(q));

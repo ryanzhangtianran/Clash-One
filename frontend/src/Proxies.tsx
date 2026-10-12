@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Events } from "@wailsio/runtime";
 import { CoreService, ProfileService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Group, Proxy, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import ProxyDialog, { protocols } from "./ProxyDialog";
 import ProxyDiagnose from "./ProxyDiagnose";
 import GroupDialog from "./GroupDialog";
+import { on } from "./hooks";
 
 const modes = [
   { key: "direct", label: "直接连接", hint: "所有请求都将被直接发往目标服务器。" },
@@ -44,7 +44,7 @@ export default function Proxies({ status }: { status: Status }) {
     load();
     CoreService.TestGroup("GLOBAL").catch(() => {}).finally(load); // latencies on open, as Surge shows them
     CoreService.Mode().then(setMode).catch(() => {});
-    return Events.On("mode", (e) => setMode(e.data));
+    return on("mode", (d) => setMode(d));
   }, [status.running, load]);
 
   useEffect(() => {

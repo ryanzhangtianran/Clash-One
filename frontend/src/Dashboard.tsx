@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CoreService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Conn, Status, TempRule } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { RuleDialog, age } from "./RuleDialog";
 import { sizeText } from "./format";
+import { usePoll } from "./hooks";
 
 // method approximates Surge's column from what the core knows: transport and port.
 function method(c: Conn) {
@@ -45,16 +46,10 @@ export default function Dashboard({ status }: { status: Status }) {
   const [dialog, setDialog] = useState<Conn | null>(null);
   const [tempOpen, setTempOpen] = useState(false);
 
-  useEffect(() => {
-    if (!status.running) return;
-    const poll = () => {
-      CoreService.Connections().then((c) => setConns(c ?? [])).catch(() => {});
-      CoreService.TempRules().then((r) => setTemp(r ?? [])).catch(() => {});
-    };
-    poll();
-    const t = setInterval(poll, 1000);
-    return () => clearInterval(t);
-  }, [status.running]);
+  usePoll(() => {
+    CoreService.Connections().then((c) => setConns(c ?? [])).catch(() => {});
+    CoreService.TempRules().then((r) => setTemp(r ?? [])).catch(() => {});
+  }, 1000, status.running);
 
   const keyOf = (c: Conn) => (groupBy === "client" ? client(c) : c.host);
   const groups = useMemo(() => {

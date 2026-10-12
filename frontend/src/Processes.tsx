@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { EnhancedService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { ProcessChoice, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { Switch, useSetting } from "./Settings";
+import { usePoll } from "./hooks";
 
 const sources: Record<string, string> = { app: "正在运行", network: "有网络连接" };
 
@@ -14,11 +15,7 @@ export default function Processes({ status, mode, rooted }: { status: Status; mo
   const [query, setQuery] = useState("");
 
   const load = useCallback(() => { SettingsService.ProcessChoices().then((c) => setChoices(c ?? [])); }, []);
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
-  }, [load]);
+  usePoll(load, 5000);
 
   const run = (key: string, p: Promise<unknown>) => {
     setBusy(key);

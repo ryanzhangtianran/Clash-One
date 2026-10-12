@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Events } from "@wailsio/runtime";
 import { ProfileService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Profiles as ProfilesData } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { sizeText } from "./format";
+import { on } from "./hooks";
 
 const host = (url: string) => { try { return new URL(url).host; } catch { return url; } };
 
@@ -62,7 +62,7 @@ export default function Profiles() {
     load();
     ProfileService.Override().then((o) => { setOverride(o); setSavedOverride(o); });
     SettingsService.About().then((a) => setDataDir(a.dataDir));
-    return Events.On("profiles", (e) => setData(e.data));
+    return on("profiles", (d) => setData(d));
   }, [load]);
 
   const run = (key: string, action: () => Promise<unknown>) => {

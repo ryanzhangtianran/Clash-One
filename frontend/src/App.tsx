@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Events } from "@wailsio/runtime";
 import { CoreService, EnhancedService, SettingsService, SystemProxyService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Activity as ActivityData, Event as AppEvent, LogLine, Status, Traffic } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import Activity from "./Activity";
@@ -13,7 +12,7 @@ import Devices from "./Devices";
 import { AboutPage, Dns, General } from "./Settings";
 import Profiles from "./Profiles";
 import ErrorBoundary from "./ErrorBoundary";
-import { useCachedURL } from "./format";
+import { on, usePoll, useCachedURL } from "./hooks";
 
 const HISTORY = 60; // seconds of traffic kept for the sparklines
 
@@ -51,7 +50,7 @@ function EventsButton() {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     CoreService.Events().then((l) => setList(l ?? []));
-    return Events.On("event", (e) => setList((l) => [...l.slice(-49), e.data]));
+    return on("event", (d) => setList((l) => [...l.slice(-49), d]));
   }, []);
   useEffect(() => {
     if (!open) return;
@@ -102,32 +101,21 @@ export default function App() {
     const mode = () => { EnhancedService.Mode().then(setEnhanced); EnhancedService.DaemonInstalled().then(setRooted); };
     mode();
     const offs = [
-      Events.On("enhanced", mode),
-      Events.On("navigate", (e) => setCurrent(e.data)),
-      Events.On("setting", (e) => e.data === "capture.mode" && mode()),
-      Events.On("log", (e) => setLogs((l) => [...l.slice(1 - LOG_LINES), e.data])),
-      Events.On("sysproxy", (e) => setSysProxy(e.data)),
-      Events.On("status", (e) => setStatus(e.data)),
-      Events.On("traffic", (e) => setHistory((h) => [...h.slice(1 - HISTORY), e.data])),
+      on("enhanced", mode),
+      on("navigate", (d) => setCurrent(d)),
+      on("setting", (d) => d === "capture.mode" && mode()),
+      on("log", (d) => setLogs((l) => [...l.slice(1 - LOG_LINES), d])),
+      on("sysproxy", (d) => setSysProxy(d)),
+      on("status", (d) => setStatus(d)),
+      on("traffic", (d) => setHistory((h) => [...h.slice(1 - HISTORY), d])),
     ];
     return () => offs.forEach((off) => off());
   }, []);
 
   // the "status" event can be missed while the page loads, and the first Status() reply can land
   // after it with the stale "starting"; ask again until the core has settled either way
-  useEffect(() => {
-    if (status.running || status.error) return;
-    const t = setInterval(() => CoreService.Status().then(setStatus), 1000);
-    return () => clearInterval(t);
-  }, [status.running, status.error]);
-
-  useEffect(() => {
-    if (!status.running) return;
-    const poll = () => CoreService.Activity().then(setActivity).catch(() => {});
-    poll();
-    const t = setInterval(poll, 1000);
-    return () => clearInterval(t);
-  }, [status.running]);
+  usePoll(() => CoreService.Status().then(setStatus), 1000, !status.running && !status.error);
+  usePoll(() => CoreService.Activity().then(setActivity).catch(() => {}), 1000, status.running);
 
   return (
     <div className="app">
