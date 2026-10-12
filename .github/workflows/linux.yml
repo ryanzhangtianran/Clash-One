@@ -53,14 +53,14 @@ jobs:
       - name: Install and start it
         working-directory: Connaio
         run: |
-          sudo apt-get install -y ./bin/connaio_*.deb
+          sudo apt-get install -y ./bin/connaio.deb
           build/linux/smoke.sh
 
       - name: Name the .deb like the other releases
         working-directory: Connaio
         run: |
           version=$(git describe --tags --abbrev=0 | sed 's/^v//')
-          mv bin/connaio_*.deb "bin/Connaio-$version-linux-amd64.deb"
+          mv bin/connaio.deb "bin/Connaio-$version-linux-amd64.deb"
           echo "DEB=Connaio/bin/Connaio-$version-linux-amd64.deb" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         with:
