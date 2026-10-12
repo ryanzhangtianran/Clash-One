@@ -1,7 +1,7 @@
 import { Component, type ReactNode } from "react";
 import { CoreService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 
-const report = (msg: string) => { CoreService.ReportError(msg).catch(() => {}); };
+const report = (msg: string) => { CoreService.ReportError(msg); };
 
 // errors outside React's render (handlers, effects' promises) land in the log too
 window.addEventListener("error", (e) => report(`error: ${e.message}\n${e.error?.stack ?? ""}`));

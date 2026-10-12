@@ -28,7 +28,7 @@ export default function GroupDialog({ onClose }: { onClose: () => void }) {
       : { name, type, proxies: members };
     if (probes) Object.assign(group, { url, interval: Number(period) });
     if (type === "load-balance") group.strategy = strategy;
-    ProfileService.AddGroup(group).then(onClose).catch(() => {});
+    ProfileService.AddGroup(group).then(onClose);
   };
 
   return (

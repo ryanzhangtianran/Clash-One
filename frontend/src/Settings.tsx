@@ -29,11 +29,11 @@ function sameShape<T>(v: unknown, fallback: T): T {
 export function useSetting<T>(path: string, fallback: T): [T, (v: T) => Promise<void>] {
   const [value, setValue] = useState<T>(fallback);
   useEffect(() => {
-    const load = () => ProfileService.Value(path).then((v) => setValue(sameShape(v, fallback))).catch(() => {});
+    const load = () => ProfileService.Value(path).then((v) => setValue(sameShape(v, fallback)));
     load();
     return on("setting", (d) => d === path && load()); // also changed from the menu bar
   }, [path]);
-  const save = (v: T) => ProfileService.Set(path, v).then(() => setValue(v)).catch(() => {}); // a failure is listed in the events
+  const save = (v: T) => ProfileService.Set(path, v).then(() => setValue(v));
   return [value, save];
 }
 
@@ -56,7 +56,7 @@ export function General() {
 
   const run = (p: Promise<unknown>, key = "") => {
     setBusy(key);
-    p.catch(() => {}).finally(() => { setBusy(""); load(); });
+    p.finally(() => { setBusy(""); load(); });
   };
 
   return (

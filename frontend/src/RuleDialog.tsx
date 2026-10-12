@@ -29,14 +29,10 @@ export function RuleDialog({ conn, onClose }: { conn: Conn; onClose: () => void 
 
   const add = async () => {
     const rule = `${type},${value},${policy}`;
-    try {
-      if (permanent) await ProfileService.AddRule(rule);
-      else await CoreService.AddTempRule(rule);
-      if (reconnect) await CoreService.CloseHost(type.startsWith("DOMAIN") ? value : conn.host);
-      onClose();
-    } catch {
-      // listed in the events
-    }
+    if (permanent) await ProfileService.AddRule(rule);
+    else await CoreService.AddTempRule(rule);
+    if (reconnect) await CoreService.CloseHost(type.startsWith("DOMAIN") ? value : conn.host);
+    onClose();
   };
 
   return (

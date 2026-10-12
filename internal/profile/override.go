@@ -1,17 +1,5 @@
-// The override (override.yaml) is the user's layer over the current profile, kept apart so a
-// subscription update never loses it. Merge applies it in this order:
-//
-//  1. ordinary keys merge deeply over the profile: maps key by key, any other value replaces;
-//  2. prepend-rules / append-rules, prepend-proxies / append-proxies and prepend-proxy-groups /
-//     append-proxy-groups put their items before / after the profile's list;
-//  3. remove-rules drops the profile's rules with exactly that text;
-//  4. group-members (group -> proxies) puts proxies at the front of an existing group;
-//  5. patch-proxies (proxy -> fields) merges fields over a proxy, a null removing one;
-//  6. remove-proxies / remove-proxy-groups drop those by name with every reference to them: their
-//     members in other groups (an emptied group falls back to DIRECT) and the rules that use them.
-//
-// reverse-tunnels and capture are ordinary keys the core reads. The GUI edits the override through
-// the functions below, on its YAML tree so the user's comments and layout survive.
+// The override's keys and the order Merge applies them in: README.md, 覆写. The GUI edits it
+// through the functions below, on its YAML tree so the user's comments and layout survive.
 
 package profile
 

@@ -99,7 +99,7 @@ export default function ProxyDialog({ groups, editing, onClose }: { groups: stri
     return p;
   };
   const save = () => {
-    (editing ? ProfileService.EditProxy(editing.name, patch(), extra) : ProfileService.AddProxy(build(), extra, join)).then(onClose).catch(() => {});
+    (editing ? ProfileService.EditProxy(editing.name, patch(), extra) : ProfileService.AddProxy(build(), extra, join)).then(onClose);
   };
 
   const input = (f: Field) => {

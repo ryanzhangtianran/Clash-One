@@ -19,13 +19,13 @@ export default function Processes({ status, mode, rooted }: { status: Status; mo
 
   const run = (key: string, p: Promise<unknown>) => {
     setBusy(key);
-    p.catch(() => {}).finally(() => setBusy(""));
+    p.finally(() => setBusy(""));
   };
   const partial = mode === "process-tun";
   const picked = processes ?? [];
   const has = (exec: string) => picked.some((p) => p.toLowerCase() === exec.toLowerCase());
   const toggle = (exec: string, on: boolean) => setProcesses(on ? [...picked, exec] : picked.filter((p) => p.toLowerCase() !== exec.toLowerCase()));
-  const pick = () => SettingsService.PickApp().then((c) => { if (c.exec && !has(c.exec)) toggle(c.exec, true); }).catch(() => {});
+  const pick = () => SettingsService.PickApp().then((c) => { if (c.exec && !has(c.exec)) toggle(c.exec, true); });
 
   const known = new Map(choices.map((c) => [c.exec.toLowerCase(), c]));
   const rows = [

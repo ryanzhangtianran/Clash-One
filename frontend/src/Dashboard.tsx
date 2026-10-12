@@ -47,8 +47,8 @@ export default function Dashboard({ status }: { status: Status }) {
   const [tempOpen, setTempOpen] = useState(false);
 
   usePoll(() => {
-    CoreService.Connections().then((c) => setConns(c ?? [])).catch(() => {});
-    CoreService.TempRules().then((r) => setTemp(r ?? [])).catch(() => {});
+    CoreService.Connections().then((c) => setConns(c ?? []));
+    CoreService.TempRules().then((r) => setTemp(r ?? []));
   }, 1000, status.running);
 
   const keyOf = (c: Conn) => (groupBy === "client" ? client(c) : c.host);
@@ -60,7 +60,6 @@ export default function Dashboard({ status }: { status: Status }) {
   const q = query.toLowerCase();
   const shown = conns.filter((c) => (!selected || keyOf(c) === selected) && (!q || `${client(c)} ${c.host} ${c.rule} ${c.chain}`.toLowerCase().includes(q)));
   const current = conns.find((c) => c.id === detail);
-  const run = (p: Promise<unknown>) => { p.catch(() => {}); }; // a failure is listed in the events
 
   return (
     <div className="dash">
@@ -85,8 +84,8 @@ export default function Dashboard({ status }: { status: Status }) {
           <div className="dash-top">
             <input className="dash-search" placeholder="搜索" title="按客户端、主机、规则或策略搜索" value={query} onChange={(e) => setQuery(e.target.value)} />
             <div className="dash-actions">
-              <button className="btn" disabled={!status.running} onClick={() => run(CoreService.CloseAll())}>断开全部</button>
-              <button className="btn" disabled={!status.running} onClick={() => run(CoreService.Reload())}>重新载入</button>
+              <button className="btn" disabled={!status.running} onClick={() => CoreService.CloseAll()}>断开全部</button>
+              <button className="btn" disabled={!status.running} onClick={() => CoreService.Reload()}>重新载入</button>
               <span className="tile-wrap">
                 <button className="btn" onClick={(e) => { e.stopPropagation(); setTempOpen(!tempOpen); }}>临时规则（{temp.length}）</button>
                 {tempOpen && (

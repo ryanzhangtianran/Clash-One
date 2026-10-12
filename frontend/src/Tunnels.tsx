@@ -20,13 +20,13 @@ export default function Tunnels({ status }: { status: Status }) {
   const [open, setOpen] = useState("");
 
   const load = useCallback(() => {
-    CoreService.ReverseTunnels().then((t) => setTunnels(t ?? [])).catch(() => {}); // polling: a lost core shows up in the events, not here
-    ProfileService.UserItems().then((u) => setMine(nonNull(u.tunnels).map((t) => String(t.name)))).catch(() => {});
+    CoreService.ReverseTunnels().then((t) => setTunnels(t ?? []));
+    ProfileService.UserItems().then((u) => setMine(nonNull(u.tunnels).map((t) => String(t.name))));
   }, []);
 
   usePoll(load, 2000, status.running);
 
-  const remove = (name: string) => ProfileService.RemoveTunnel(name).then(() => ProfileService.RemoveRule(localRule(name))).then(load).catch(() => {});
+  const remove = (name: string) => ProfileService.RemoveTunnel(name).then(() => ProfileService.RemoveRule(localRule(name))).then(load);
 
   return (
     <>

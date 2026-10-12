@@ -16,7 +16,7 @@ function AddRule({ onAdded }: { onAdded: () => void }) {
   useEffect(() => { CoreService.Policies().then((p) => setPolicies(p ?? [])); }, []);
   const add = () => {
     const rule = [type, payload, policy, ...(ipTypes.has(type) && noResolve ? ["no-resolve"] : [])].join(",");
-    ProfileService.AddRule(rule).then(() => { setPayload(""); onAdded(); }).catch(() => {});
+    ProfileService.AddRule(rule).then(() => { setPayload(""); onAdded(); });
   };
   return (
     <div className="card" style={{ marginBottom: 16 }}>
@@ -37,15 +37,15 @@ export default function Rules({ status }: { status: Status }) {
   const [filter, setFilter] = useState("");
   const [mine, setMine] = useState(0); // the first `mine` rules are the user's own (prepend-rules), the only ones that move
   const load = () => {
-    CoreService.Rules().then((r) => setRules(r ?? [])).catch(() => {}); // polling: a lost core shows up in the events, not here
-    ProfileService.UserItems().then((u) => setMine(u.rules?.length ?? 0)).catch(() => {});
+    CoreService.Rules().then((r) => setRules(r ?? []));
+    ProfileService.UserItems().then((u) => setMine(u.rules?.length ?? 0));
   };
 
   usePoll(load, 3000, status.running); // hit counts move
 
   const q = filter.toLowerCase();
   const shown = rules.filter((r) => !q || `${r.type} ${r.payload} ${r.proxy}`.toLowerCase().includes(q));
-  const run = (p: Promise<unknown>) => { p.then(load).catch(() => {}); };
+  const run = (p: Promise<unknown>) => { p.then(load); };
   const toggle = (r: Rule) => run(CoreService.SetRuleDisabled(r.index, !r.disabled));
 
   return (

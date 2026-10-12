@@ -115,7 +115,7 @@ export default function App() {
   // the "status" event can be missed while the page loads, and the first Status() reply can land
   // after it with the stale "starting"; ask again until the core has settled either way
   usePoll(() => CoreService.Status().then(setStatus), 1000, !status.running && !status.error);
-  usePoll(() => CoreService.Activity().then(setActivity).catch(() => {}), 1000, status.running);
+  usePoll(() => CoreService.Activity().then(setActivity), 1000, status.running);
 
   return (
     <div className="app">
@@ -131,7 +131,7 @@ export default function App() {
             className="pill"
             disabled={!status.running}
             title="将 macOS 系统代理指向本机代理端口"
-            onClick={() => SystemProxyService.SetEnabled(!sysProxy).catch(() => {})}
+            onClick={() => SystemProxyService.SetEnabled(!sysProxy)}
           >
             <span className={`dot ${sysProxy ? "on" : ""}`} />系统代理
           </button>
@@ -141,7 +141,7 @@ export default function App() {
             title={rooted ? "TUN 接管全部流量" : "需先在「通用」中授予 root 权限"}
             onClick={() => {
               setEnhancedBusy(true);
-              EnhancedService.SetMode(enhanced === "tun" ? "" : "tun").catch(() => {}).finally(() => setEnhancedBusy(false));
+              EnhancedService.SetMode(enhanced === "tun" ? "" : "tun").finally(() => setEnhancedBusy(false));
             }}
           >
             <span className={`dot ${enhanced === "tun" && activity?.tun ? "on" : ""}`} />

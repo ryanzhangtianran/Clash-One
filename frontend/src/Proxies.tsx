@@ -36,14 +36,14 @@ export default function Proxies({ status }: { status: Status }) {
   const [menu, setMenu] = useState<Menu | null>(null);
 
   const load = useCallback(() => {
-    CoreService.Groups().then((g) => setGroups(g ?? [])).catch(() => {}); // polling: a lost core shows up in the events, not here
+    CoreService.Groups().then((g) => setGroups(g ?? []));
   }, []);
 
   useEffect(() => {
     if (!status.running) return;
     load();
-    CoreService.TestGroup("GLOBAL").catch(() => {}).finally(load); // latencies on open, as Surge shows them
-    CoreService.Mode().then(setMode).catch(() => {});
+    CoreService.TestGroup("GLOBAL").finally(load); // latencies on open, as Surge shows them
+    CoreService.Mode().then(setMode);
     return on("mode", (d) => setMode(d));
   }, [status.running, load]);
 
@@ -62,12 +62,12 @@ export default function Proxies({ status }: { status: Status }) {
   const shownGroups = groups.filter((g) => g.name !== "GLOBAL");
   const global = groups.find((g) => g.name === "GLOBAL");
 
-  const choose = (m: string) => CoreService.SetMode(m).catch(() => {});
-  const select = (group: string, name: string) => CoreService.Select(group, name).then(load).catch(() => {});
+  const choose = (m: string) => CoreService.SetMode(m);
+  const select = (group: string, name: string) => CoreService.Select(group, name).then(load);
   const testAll = () => {
     setTesting(true);
     setPending(new Set(nodes.map((n) => n.name)));
-    CoreService.TestGroup("GLOBAL").catch(() => {}).finally(() => { setTesting(false); setPending(new Set()); load(); }); // a lost core shows in the events
+    CoreService.TestGroup("GLOBAL").finally(() => { setTesting(false); setPending(new Set()); load(); });
   };
   const testOne = (name: string) => {
     setPending((p) => new Set(p).add(name));
@@ -147,7 +147,7 @@ export default function Proxies({ status }: { status: Status }) {
                     <span className={delayClass(p.delay)}>{p.delay > 0 ? `${p.delay} ms` : ""}</span>
                   </button>
                 ))}
-                <button className="danger" onClick={() => ProfileService.RemoveGroup(g.name).then(load).catch(() => {})}>删除此策略组</button>
+                <button className="danger" onClick={() => ProfileService.RemoveGroup(g.name).then(load)}>删除此策略组</button>
               </div>
             )}
           </div>
@@ -158,11 +158,11 @@ export default function Proxies({ status }: { status: Status }) {
       {menu && (
         <div className="menu" style={{ position: "fixed", left: menu.x, top: menu.y }}>
           {menu.kind === "proxy" && <button onClick={() => ProfileService.Proxy(menu.target)
-            .then((p) => (protocols[p?.type] ? setEditing(p) : CoreService.Notify("warning", `${p?.type} 类型的代理暂不支持表单编辑，可在「配置」中直接编辑 YAML`))).catch(() => {})}>编辑</button>}
+            .then((p) => (protocols[p?.type] ? setEditing(p) : CoreService.Notify("warning", `${p?.type} 类型的代理暂不支持表单编辑，可在「配置」中直接编辑 YAML`)))}>编辑</button>}
           <button onClick={() => testOne(menu.name)}>测试延迟</button>
           <button disabled={!!measuring} onClick={() => speed(menu.name)}>测试带宽</button>
           <button onClick={() => setDiagnose(menu.target)}>诊断</button>
-          <button className="danger" onClick={() => (menu.kind === "proxy" ? ProfileService.RemoveProxy(menu.target) : ProfileService.RemoveGroup(menu.target)).then(load).catch(() => {})}>删除</button>
+          <button className="danger" onClick={() => (menu.kind === "proxy" ? ProfileService.RemoveProxy(menu.target) : ProfileService.RemoveGroup(menu.target)).then(load)}>删除</button>
         </div>
       )}
       {dialog === "proxy" && <ProxyDialog groups={shownGroups.filter((g) => g.type === "Selector").map((g) => g.name)} onClose={() => { setDialog(""); load(); }} />}

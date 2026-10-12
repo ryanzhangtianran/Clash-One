@@ -20,8 +20,8 @@ function PolicyMenu({ device, policies, onDone }: { device: Device; policies: st
         <label className="radio"><input type="radio" checked={!permanent} onChange={() => setPermanent(false)} /> 临时</label>
         <label className="radio"><input type="radio" checked={permanent} onChange={() => setPermanent(true)} /> 永久（写入覆写）</label>
       </div>
-      <button onClick={() => DeviceService.SetPolicy(device.ip, policy, permanent).catch(() => {}).finally(onDone)}>应用：此设备全部走 {policy}</button>
-      {device.policy && <button className="danger" onClick={() => DeviceService.ClearPolicy(device.ip).catch(() => {}).finally(onDone)}>恢复按规则分流</button>}
+      <button onClick={() => DeviceService.SetPolicy(device.ip, policy, permanent).finally(onDone)}>应用：此设备全部走 {policy}</button>
+      {device.policy && <button className="danger" onClick={() => DeviceService.ClearPolicy(device.ip).finally(onDone)}>恢复按规则分流</button>}
     </div>
   );
 }
@@ -33,15 +33,15 @@ export default function Devices({ status }: { status: Status }) {
   const [open, setOpen] = useState("");
 
   const load = useCallback(() => {
-    DeviceService.Lan().then(setLan).catch(() => {}); // polling: a lost core shows up in the events, not here
-    DeviceService.Devices().then((d) => setDevices(d ?? [])).catch(() => {});
+    DeviceService.Lan().then(setLan);
+    DeviceService.Devices().then((d) => setDevices(d ?? []));
   }, []);
 
   usePoll(load, 2000, status.running);
   useEffect(() => { if (status.running) CoreService.Policies().then((p) => setPolicies(p ?? [])); }, [status.running]);
 
   const allowLan = (on: boolean) => {
-    DeviceService.SetAllowLan(on).then(load).catch(() => {});
+    DeviceService.SetAllowLan(on).then(load);
   };
 
   return (
