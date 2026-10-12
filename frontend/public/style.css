@@ -111,7 +111,7 @@ button { font: inherit; color: inherit; }
 /* cards */
 /* activity fills the window: the top two rows share the spare height, the page scrolls only when too small */
 .activity { display: flex; flex-direction: column; height: calc(100vh - var(--chrome)); }
-.grid { flex: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: minmax(auto, 1fr) minmax(auto, 1fr) auto; gap: var(--gap); } /* fills the window; small windows scroll */
+.grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: minmax(auto, 1fr) minmax(auto, 1fr) auto; gap: var(--gap); } /* fills the window; small windows scroll */
 .grid .card { padding: 12px 16px; }
 .grid > .card { display: flex; flex-direction: column; }
 .grid .stats { margin-top: auto; padding-top: 12px; }
@@ -375,7 +375,9 @@ tr.muted td.rule-actions { text-decoration: none; }
 .setting-control .ctl { width: 80px; } /* one column of equal-width controls */
 .setting-control .btn.ctl { height: 24px; font-size: 12px; border-radius: 6px; }
 .ranking { display: flex; flex-direction: column; min-height: 0; }
-.ranking .rank { flex: 1; min-height: 0; overflow-y: auto; }
+/* the list scrolls in whatever height the card gets, without adding to it: grid rows size from content in WebKit */
+.rank-scroll { flex: 1; min-height: 80px; position: relative; }
+.rank-scroll > .rank { position: absolute; inset: 0; overflow-y: auto; }
 .ranking .head { margin-bottom: 4px; }
 .client-icon { width: 24px; height: 24px; flex: none; }
 .client-icon.device { display: grid; place-items: center; border-radius: 6px; background: var(--track); color: var(--text-2); }

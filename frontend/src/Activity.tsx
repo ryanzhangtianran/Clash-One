@@ -191,23 +191,25 @@ function Ranking({ activity }: { activity: ActivityData }) {
       {tab === 0 && rows.some((r) => r.children?.length) && (
         <label className="rank-toggle"><input type="checkbox" checked={children} onChange={(e) => setChildren(e.target.checked)} /> 显示子进程</label>
       )}
-      <div className={`rank ${tab === 0 ? "with-icons" : ""}`}>
-        {rows.map((r) => (
-          <div key={r.name}>
-            <div className="row">
-              {tab === 0 && <ClientIcon path={r.icon} />}
-              <span className="name" title={r.name}>{r.name}</span>
-              <span className="bytes">{sizeText(pick(r))}</span>
-              <span className="bar"><i style={{ width: `${(pick(r) / peak) * 100}%` }} /></span>
-            </div>
-            {tab === 0 && children && (r.children ?? []).filter((c) => pick(c) > 0).map((c) => (
-              <div className="row child" key={c.name}>
-                <span className="name" title={c.name}>{c.name}</span>
-                <span className="bytes">{sizeText(pick(c))}</span>
+      <div className="rank-scroll">
+        <div className={`rank ${tab === 0 ? "with-icons" : ""}`}>
+          {rows.map((r) => (
+            <div key={r.name}>
+              <div className="row">
+                {tab === 0 && <ClientIcon path={r.icon} />}
+                <span className="name" title={r.name}>{r.name}</span>
+                <span className="bytes">{sizeText(pick(r))}</span>
+                <span className="bar"><i style={{ width: `${(pick(r) / peak) * 100}%` }} /></span>
               </div>
-            ))}
-          </div>
-        ))}
+              {tab === 0 && children && (r.children ?? []).filter((c) => pick(c) > 0).map((c) => (
+                <div className="row child" key={c.name}>
+                  <span className="name" title={c.name}>{c.name}</span>
+                  <span className="bytes">{sizeText(pick(c))}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

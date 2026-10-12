@@ -28,7 +28,6 @@ static void setTray(void *item, const void *icon, int iconLen, const char *badge
 		NSRect box = NSMakeRect(iconW - side, round(h * 0.1), side, side);
 		NSImage *img = [NSImage imageWithSize:NSMakeSize(iconW, h) flipped:NO drawingHandler:^BOOL(NSRect r) {
 			CGContextRef cg = NSGraphicsContext.currentContext.CGContext;
-			CGContextSetAlpha(cg, dim ? 0.4 : 1); // grey while nothing is captured
 			CGContextBeginTransparencyLayer(cg, NULL);
 			[trayIcon drawInRect:NSMakeRect(0, 0, catW, h)];
 			if (b) {
@@ -47,6 +46,7 @@ static void setTray(void *item, const void *icon, int iconLen, const char *badge
 			return YES;
 		}];
 		img.template = YES;
+		button.appearsDisabled = dim; // grey while nothing is captured
 		button.imageScaling = NSImageScaleNone;
 		button.image = img;
 		button.imagePosition = NSImageLeft;
@@ -60,7 +60,7 @@ static void setTray(void *item, const void *icon, int iconLen, const char *badge
 		p.minimumLineHeight = p.maximumLineHeight = 9;
 		button.attributedTitle = [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%@\n%@", u, d] attributes:@{
 			NSFontAttributeName: [NSFont monospacedDigitSystemFontOfSize:9 weight:NSFontWeightMedium],
-			NSForegroundColorAttributeName: [NSColor.labelColor colorWithAlphaComponent:dim ? 0.4 : 1], // greyed with the cat
+			NSForegroundColorAttributeName: [NSColor.labelColor colorWithAlphaComponent:dim ? 0.4 : 1], // appearsDisabled greys the cat, not the title
 			NSParagraphStyleAttributeName: p,
 			NSBaselineOffsetAttributeName: @(-4), // the button sits a two-line title high; centre it on the bar
 		}];
