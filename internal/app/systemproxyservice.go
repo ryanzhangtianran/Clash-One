@@ -79,6 +79,17 @@ func mixedPort(c *core.Core) (int, error) {
 	return cfg.MixedPort, nil
 }
 
+// directThenProxy are one-shot clients to try in turn: direct, then through the core's mixed-port
+// (for hosts the network blocks), when the core has one.
+func directThenProxy(c *core.Core, timeout time.Duration) []*http.Client {
+	direct := oneShotClient(0, timeout)
+	port, err := mixedPort(c)
+	if err != nil {
+		return []*http.Client{direct}
+	}
+	return []*http.Client{direct, oneShotClient(port, timeout)}
+}
+
 // oneShotClient is an HTTP client through the core's mixed-port (port > 0) or direct, its connection
 // closed after each request: a fresh Transport's idle connection is never reused, and would linger
 // (listed as this app's own live connection) until the server drops it.

@@ -82,14 +82,7 @@ func (s *ProfileService) Profiles() Profiles {
 }
 
 // clients try the subscription directly first, then through the core's mixed-port (blocked hosts).
-func (s *ProfileService) clients() []*http.Client {
-	direct := oneShotClient(0, 30*time.Second)
-	port, err := mixedPort(s.core)
-	if err != nil {
-		return []*http.Client{direct}
-	}
-	return []*http.Client{direct, oneShotClient(port, 30*time.Second)}
-}
+func (s *ProfileService) clients() []*http.Client { return directThenProxy(s.core, 30*time.Second) }
 
 // Add downloads a subscription; it is applied right away when it is the first profile.
 func (s *ProfileService) Add(name, link string) error {

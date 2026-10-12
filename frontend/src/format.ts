@@ -1,3 +1,14 @@
+import { System } from "@wailsio/runtime";
+
+// platform is the OS the window runs on; words are what that OS calls its parts, one row per
+// phrase and a column per platform, so a new platform fills a column rather than every page.
+export const platform = System.IsWindows() ? "windows" : System.IsLinux() ? "linux" : "macos";
+export const words = {
+  showInFiles: { macos: "在 Finder 中显示", linux: "在文件管理器中显示", windows: "在资源管理器中显示" }[platform],
+  pickApp: { macos: "从 Finder 添加…", linux: "选择应用…", windows: "选择应用…" }[platform],
+  tray: { macos: "菜单栏", linux: "托盘", windows: "通知区域" }[platform],
+};
+
 // [value, unit] for big-number displays, e.g. 813 KB/s
 export function speed(bytes: number): [string, string] {
   if (bytes < 1000) return [String(bytes), "B/s"];

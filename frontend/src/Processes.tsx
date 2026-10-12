@@ -3,6 +3,7 @@ import { EnhancedService, SettingsService } from "../bindings/github.com/ryanzha
 import type { ProcessChoice, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { Switch, useSetting } from "./Settings";
 import { usePoll } from "./hooks";
+import { words } from "./format";
 
 const sources: Record<string, string> = { app: "正在运行", network: "有网络连接" };
 
@@ -60,7 +61,7 @@ export default function Processes({ status, mode, rooted }: { status: Status; mo
           <div className="plist-tools">
             <input className="dash-search" placeholder="搜索" value={query} onChange={(e) => setQuery(e.target.value)} />
             <span className="grow" />
-            <button className="btn" onClick={pick}>从 Finder 添加…</button>
+            <button className="btn" onClick={pick}>{words.pickApp}</button>
             <button className="btn" onClick={load}>刷新</button>
           </div>
           {shown.length === 0 && <div className="plist-empty muted">没有找到应用或进程</div>}

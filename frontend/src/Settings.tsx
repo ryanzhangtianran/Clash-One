@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { CoreService, EnhancedService, ProfileService, SettingsService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
-import type { About, DNSLeak, Resolver } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { About, DNSLeak, Resolver, Update } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { on } from "./hooks";
+import { words } from "./format";
 
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
@@ -45,6 +46,9 @@ export function General() {
   const [port, setPort] = useSetting<number>("mixed-port", 7899);
   const [portText, setPortText] = useState("");
   const [logLevel, setLogLevel] = useSetting<string>("log-level", "info");
+  const [version, setVersion] = useState("");
+  const [update, setUpdate] = useState<Update | null>(null);
+  useEffect(() => { SettingsService.About().then((a) => setVersion(a.version)); }, []);
 
   const load = useCallback(() => {
     EnhancedService.DaemonInstalled().then(setDaemon);
@@ -87,8 +91,17 @@ export function General() {
         <Row title="开机时启动">
           <Switch on={login} onChange={(v) => run(SettingsService.SetLaunchAtLogin(v))} />
         </Row>
-        <Row title="菜单栏显示网速">
+        <Row title={`${words.tray}显示网速`}>
           <Switch on={traySpeed} onChange={(v) => run(SettingsService.SetTraySpeed(v))} />
+        </Row>
+      </div>
+
+      <div className="card settings-card">
+        <div className="section-title">更新</div>
+        <Row title={`当前版本 ${version}`} desc={update ? (update.newer ? `发现新版本 ${update.latest}，从 GitHub Releases 下载安装后自动重启` : "已是最新版本") : undefined}>
+          {update?.newer
+            ? <button className="btn ctl" disabled={!!busy} onClick={() => run(SettingsService.InstallUpdate(), "update")}>{busy === "update" ? "更新中…" : "更新"}</button>
+            : <button className="btn ctl" disabled={!!busy} onClick={() => run(SettingsService.CheckUpdate().then(setUpdate), "check")}>{busy === "check" ? "检查中…" : "检查更新"}</button>}
         </Row>
       </div>
     </>
@@ -243,7 +256,7 @@ export function AboutPage() {
       <Row title="Connaio">{about.version}</Row>
       <Row title="内核">{about.coreVersion || "—"}</Row>
       <Row title="内核运行方式">{about.attached ? "root" : "当前用户"}</Row>
-      <Row title="数据目录" desc={about.dataDir}><button className="btn" onClick={() => SettingsService.OpenDataDir()}>在 Finder 中显示</button></Row>
+      <Row title="数据目录" desc={about.dataDir}><button className="btn" onClick={() => SettingsService.OpenDataDir()}>{words.showInFiles}</button></Row>
     </div>
   );
 }

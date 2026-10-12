@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ProfileService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Profiles as ProfilesData } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
-import { sizeText } from "./format";
+import { sizeText, words } from "./format";
 import { on } from "./hooks";
 
 const host = (url: string) => { try { return new URL(url).host; } catch { return url; } };
@@ -170,7 +170,7 @@ export default function Profiles() {
       <div className="plist">
         <div className="plist-row static">
           <div className="plist-main"><div className="plist-name">数据目录</div><div className="muted small selectable">{dataDir}</div></div>
-          <button className="btn" onClick={() => SettingsService.OpenDataDir()}>在 Finder 中显示</button>
+          <button className="btn" onClick={() => SettingsService.OpenDataDir()}>{words.showInFiles}</button>
         </div>
       </div>
     </>

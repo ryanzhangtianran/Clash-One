@@ -130,7 +130,7 @@ export default function App() {
           <button
             className="pill"
             disabled={!status.running}
-            title="将 macOS 系统代理指向本机代理端口"
+            title="将系统代理指向本机代理端口"
             onClick={() => SystemProxyService.SetEnabled(!sysProxy)}
           >
             <span className={`dot ${sysProxy ? "on" : ""}`} />系统代理
