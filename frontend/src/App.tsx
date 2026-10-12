@@ -18,27 +18,27 @@ const HISTORY = 60; // seconds of traffic kept for the sparklines
 
 const LOG_LINES = 500;
 
-// NavIcon is an SF Symbol in white on a coloured rounded square, as in System Settings.
-function NavIcon({ symbol, color }: { symbol: string; color: string }) {
+// NavIcon is a flat SF Symbol, grey or, for the page shown, the accent colour.
+function NavIcon({ symbol }: { symbol: string }) {
   const src = useCachedURL(symbol, SettingsService.Symbol);
-  return <span className="nav-icon" style={{ "--c": color } as React.CSSProperties}>{src && <img src={src} alt="" />}</span>;
+  return <span className="nav-icon" data-symbol={symbol} style={src ? { maskImage: `url(${src})` } : undefined} />;
 }
 
-type Page = { key: string; title: string; symbol: string; color: string };
+type Page = { key: string; title: string; symbol: string };
 // one list, from what you check most to what you touch least
 const pages: Page[] = [
-  { key: "activity", title: "活动", symbol: "waveform.path.ecg", color: "#ff3b30" },
-  { key: "proxies", title: "策略", symbol: "arrow.triangle.branch", color: "#007aff" },
-  { key: "tunnels", title: "反向", symbol: "arrow.left.arrow.right", color: "#5856d6" },
-  { key: "devices", title: "设备", symbol: "laptopcomputer.and.iphone", color: "#34c759" },
-  { key: "rules", title: "规则", symbol: "line.3.horizontal.decrease", color: "#ff9500" },
-  { key: "processes", title: "增强", symbol: "bolt.fill", color: "#af52de" },
-  { key: "profiles", title: "配置", symbol: "doc.text", color: "#a2845e" },
-  { key: "dns", title: "DNS", symbol: "globe", color: "#30b0c7" },
-  { key: "dashboard", title: "连接", symbol: "point.3.connected.trianglepath.dotted", color: "#5ac8fa" },
-  { key: "logs", title: "日志", symbol: "list.bullet", color: "#64748b" },
-  { key: "general", title: "通用", symbol: "gearshape.fill", color: "#8e8e93" },
-  { key: "about", title: "关于", symbol: "info", color: "#0a84ff" },
+  { key: "activity", title: "活动", symbol: "waveform.path.ecg" },
+  { key: "proxies", title: "策略", symbol: "signpost.right.and.left" },
+  { key: "tunnels", title: "反向", symbol: "server.rack" },
+  { key: "devices", title: "设备", symbol: "wifi" },
+  { key: "rules", title: "规则", symbol: "line.3.horizontal.decrease.circle" },
+  { key: "processes", title: "增强", symbol: "bolt" },
+  { key: "profiles", title: "配置", symbol: "doc.text" },
+  { key: "dns", title: "DNS", symbol: "globe" },
+  { key: "dashboard", title: "连接", symbol: "link" },
+  { key: "logs", title: "日志", symbol: "text.alignleft" },
+  { key: "general", title: "通用", symbol: "gearshape" },
+  { key: "about", title: "关于", symbol: "info.circle" },
 ];
 
 const levelNames: Record<string, string> = { info: "状态", warning: "警告", error: "错误" };
@@ -121,7 +121,7 @@ export default function App() {
     <div className="app">
       <nav className="sidebar">
         {pages.map((p) => (
-          <button key={p.key} className={`item ${p.key === current ? "active" : ""}`} onClick={() => setCurrent(p.key)}><NavIcon symbol={p.symbol} color={p.color} />{p.title}</button>
+          <button key={p.key} className={`item ${p.key === current ? "active" : ""}`} onClick={() => setCurrent(p.key)}><NavIcon symbol={p.symbol} />{p.title}</button>
         ))}
       </nav>
       <main className="main">

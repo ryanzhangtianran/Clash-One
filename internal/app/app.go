@@ -37,18 +37,21 @@ func Run(assets fs.FS, trayIcon []byte) error {
 	}
 
 	var window *application.WebviewWindow
+	// a closed window leaves the app running in the menu bar only, out of the Dock; showing it brings both back
+	show := func() {
+		if window != nil {
+			setDockVisible(true)
+			window.Show()
+			window.Focus()
+		}
+	}
 	app := application.New(application.Options{
 		// the window shows no errors: whatever a call from it fails with is listed under the events button
 		MarshalError: func(err error) []byte { notify("error", "%v", err); return nil },
 		// a second copy would fight the first over the core's ports; bring the first forward instead
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: "com.ryanzhangtianran.connaio",
-			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
-				if window != nil {
-					window.Show()
-					window.Focus()
-				}
-			},
+			OnSecondInstanceLaunch: func(application.SecondInstanceData) { show() },
 		},
 		Name:        "Connaio",
 		Description: "Rule-based proxy with reverse tunnels",
@@ -76,13 +79,14 @@ func Run(assets fs.FS, trayIcon []byte) error {
 	window.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) { makeVibrant(window) })
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		window.Hide()
+		setDockVisible(false)
 		e.Cancel()
 	})
 
 	tray := app.SystemTray.New()
 	tray.SetTemplateIcon(trayIcon)
 	newTrayMenu(&trayMenu{
-		app: app, tray: tray, icon: trayIcon, show: func() { window.Show(); window.Focus() },
+		app: app, tray: tray, icon: trayIcon, show: show,
 		svc: svc, profiles: profiles, sysProxy: sysProxy, enhanced: enhanced, settings: settings,
 	})
 

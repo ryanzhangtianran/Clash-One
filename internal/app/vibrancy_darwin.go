@@ -71,11 +71,21 @@ static void *pngOf(NSImage *img, int px, BOOL fit, int *n) {
 	return out;
 }
 
-// symbolPNG renders SF Symbol name in white into a px×px PNG.
+// setDockVisible shows the app in the Dock (a regular app, brought forward) or takes it out, so a
+// closed window leaves only the menu bar item running.
+static void setDockVisible(int visible) {
+	dispatch_async(dispatch_get_main_queue(), ^{
+		[NSApp setActivationPolicy:visible ? NSApplicationActivationPolicyRegular : NSApplicationActivationPolicyAccessory];
+		if (visible) [NSApp activateIgnoringOtherApps:YES];
+	});
+}
+
+// symbolPNG renders SF Symbol name into a px×px PNG, opaque where the symbol is: the window uses
+// it as a mask, so its colour doesn't matter.
 static void *symbolPNG(const char *name, int px, int *n) {
 	@autoreleasepool {
 		NSImage *sym = [NSImage imageWithSystemSymbolName:@(name) accessibilityDescription:nil];
-		NSImageSymbolConfiguration *cfg = [NSImageSymbolConfiguration configurationWithPointSize:px * 0.6 weight:NSFontWeightSemibold];
+		NSImageSymbolConfiguration *cfg = [NSImageSymbolConfiguration configurationWithPointSize:px * 0.75 weight:NSFontWeightRegular];
 		cfg = [cfg configurationByApplyingConfiguration:[NSImageSymbolConfiguration configurationWithPaletteColors:@[NSColor.whiteColor]]];
 		return pngOf([sym imageWithSymbolConfiguration:cfg], px, NO, n);
 	}
@@ -98,6 +108,14 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
+func setDockVisible(visible bool) {
+	v := 0
+	if visible {
+		v = 1
+	}
+	C.setDockVisible(C.int(v))
+}
+
 func makeVibrant(w *application.WebviewWindow) {
 	if p := w.NativeWindow(); p != nil {
 		C.makeVibrant(p)
@@ -116,12 +134,12 @@ func (s *SettingsService) AppIcon(path string) string {
 	})
 }
 
-// Symbol is SF Symbol name in white as a PNG data URL (rendered at 3× of the 14 pt the sidebar shows).
+// Symbol is SF Symbol name as a PNG data URL, for the sidebar to use as a mask (3× its 18 px).
 func (s *SettingsService) Symbol(name string) string {
 	return cachedPNG("symbol:"+name, func(n *C.int) unsafe.Pointer {
 		cs := C.CString(name)
 		defer C.free(unsafe.Pointer(cs))
-		return C.symbolPNG(cs, 48, n)
+		return C.symbolPNG(cs, 54, n)
 	})
 }
 
