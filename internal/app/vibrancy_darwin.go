@@ -6,6 +6,7 @@ package app
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 // makeVibrant lets the window's blur through: Wails adds the effect view for a translucent window
 // but leaves its default, all but opaque material, and its "transparent webview" call doesn't take
@@ -52,19 +53,16 @@ static void makeVibrant(void *w) {
 	});
 }
 
-// pngOf draws img into a px×px PNG, centred: scaled to fit (its longer side filling it) when fit is
-// set, else at its own size; in a malloc'd buffer of *n bytes, or NULL.
-static void *pngOf(NSImage *img, int px, BOOL fit, int *n) {
+// pngOf draws img into a px×px PNG, centred and scaled so its longer side fills it, in a malloc'd
+// buffer of *n bytes, or NULL.
+static void *pngOf(NSImage *img, int px, int *n) {
 	if (!img) return NULL;
 	NSBitmapImageRep *rep = [[[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:px pixelsHigh:px
 		bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0] autorelease];
 	[NSGraphicsContext saveGraphicsState];
 	NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep];
-	NSSize s = img.size;
-	if (fit) {
-		CGFloat k = MIN(px / s.width, px / s.height);
-		s = NSMakeSize(s.width * k, s.height * k);
-	}
+	CGFloat k = MIN(px / img.size.width, px / img.size.height);
+	NSSize s = NSMakeSize(img.size.width * k, img.size.height * k);
 	[img drawInRect:NSMakeRect((px - s.width) / 2, (px - s.height) / 2, s.width, s.height)];
 	[NSGraphicsContext restoreGraphicsState];
 	NSData *png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
@@ -77,7 +75,7 @@ static void *pngOf(NSImage *img, int px, BOOL fit, int *n) {
 
 // setDockVisible shows the app in the Dock (a regular app, brought forward) or takes it out, so a
 // closed window leaves only the menu bar item running.
-static void setDockVisible(int visible) {
+static void setDockVisible(bool visible) {
 	dispatch_async(dispatch_get_main_queue(), ^{
 		[NSApp setActivationPolicy:visible ? NSApplicationActivationPolicyRegular : NSApplicationActivationPolicyAccessory];
 		if (visible) [NSApp activateIgnoringOtherApps:YES];
@@ -91,15 +89,14 @@ static void *symbolPNG(const char *name, int px, int *n) {
 	@autoreleasepool {
 		NSImage *sym = [NSImage imageWithSystemSymbolName:@(name) accessibilityDescription:nil];
 		NSImageSymbolConfiguration *cfg = [NSImageSymbolConfiguration configurationWithPointSize:px * 0.75 weight:NSFontWeightRegular];
-		cfg = [cfg configurationByApplyingConfiguration:[NSImageSymbolConfiguration configurationWithPaletteColors:@[NSColor.whiteColor]]];
-		return pngOf([sym imageWithSymbolConfiguration:cfg], px, YES, n);
+		return pngOf([sym imageWithSymbolConfiguration:cfg], px, n);
 	}
 }
 
 // iconPNG is the Finder icon of path as a 64 px PNG.
 static void *iconPNG(const char *path, int *n) {
 	@autoreleasepool {
-		return pngOf([[NSWorkspace sharedWorkspace] iconForFile:@(path)], 64, YES, n);
+		return pngOf([[NSWorkspace sharedWorkspace] iconForFile:@(path)], 64, n);
 	}
 }
 */
@@ -113,13 +110,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-func setDockVisible(visible bool) {
-	v := 0
-	if visible {
-		v = 1
-	}
-	C.setDockVisible(C.int(v))
-}
+func setDockVisible(visible bool) { C.setDockVisible(C.bool(visible)) }
 
 func makeVibrant(w *application.WebviewWindow) {
 	if p := w.NativeWindow(); p != nil {
@@ -139,12 +130,12 @@ func (s *SettingsService) AppIcon(path string) string {
 	})
 }
 
-// Symbol is SF Symbol name as a PNG data URL, for the sidebar to use as a mask (3× its 18 px).
+// Symbol is SF Symbol name as a PNG data URL, for the sidebar to use as a mask (3× its 15 px).
 func (s *SettingsService) Symbol(name string) string {
 	return cachedPNG("symbol:"+name, func(n *C.int) unsafe.Pointer {
 		cs := C.CString(name)
 		defer C.free(unsafe.Pointer(cs))
-		return C.symbolPNG(cs, 54, n)
+		return C.symbolPNG(cs, 45, n)
 	})
 }
 

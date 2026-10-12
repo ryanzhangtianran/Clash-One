@@ -50,7 +50,7 @@ func Run(assets fs.FS, trayIcon []byte) error {
 		MarshalError: func(err error) []byte { notify("error", "%v", err); return nil },
 		// a second copy would fight the first over the core's ports; bring the first forward instead
 		SingleInstance: &application.SingleInstanceOptions{
-			UniqueID: "com.ryanzhangtianran.connaio",
+			UniqueID:               "com.ryanzhangtianran.connaio",
 			OnSecondInstanceLaunch: func(application.SecondInstanceData) { show() },
 		},
 		Name:        "Connaio",
