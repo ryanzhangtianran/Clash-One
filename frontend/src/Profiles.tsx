@@ -55,7 +55,7 @@ export default function Profiles() {
   const [dataDir, setDataDir] = useState("");
   const [field, setField] = useState("");
   const [value, setValue] = useState("");
-  const [editing, setEditing] = useState<{ id: string; name: string; text: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; name: string; text: string; saved?: string } | null>(null);
 
   const load = useCallback(() => ProfileService.Profiles().then(setData), []);
   useEffect(() => {
@@ -118,7 +118,7 @@ export default function Profiles() {
           <button className="btn" title="从 URL 添加订阅" onClick={() => setAdding(true)}>＋</button>
           <button className="btn" title="删除所选配置" disabled={!selected || !!busy} onClick={() => selected && run("remove", () => ProfileService.Remove(selected.id).then(() => setSel("")))}>－</button>
           <button className="btn" disabled={!selected?.url || !!busy} onClick={() => selected && run("update", () => ProfileService.Update(selected.id))}>{busy === "update" ? "更新中…" : "更新"}</button>
-          <button className="btn" disabled={!selected || !!busy} onClick={() => selected && ProfileService.Content(selected.id).then((text) => setEditing({ id: selected.id, name: selected.name, text }))}>编辑</button>
+          <button className="btn" disabled={!selected || !!busy} onClick={() => selected && ProfileService.Content(selected.id).then((text) => setEditing({ id: selected.id, name: selected.name, text, saved: text }))}>编辑</button>
           <button className="btn" disabled={!!busy} onClick={() => run("import", () => ProfileService.ImportFile())}>导入…</button>
           <span className="grow" />
           <button className="btn" disabled={!selected || selected.id === data.current || !!busy} onClick={() => selected && use(selected.id)}>{busy === "use" ? "切换中…" : "使用"}</button>
@@ -145,7 +145,7 @@ export default function Profiles() {
       </div>
 
       {editing && (
-        <div className="modal-bg" onClick={() => setEditing(null)}>
+        <div className="modal-bg" onClick={() => editing.text === editing.saved && setEditing(null)}>
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-head">
               <div className="sheet-title">编辑 {editing.name}</div>

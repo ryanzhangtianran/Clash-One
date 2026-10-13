@@ -32,7 +32,7 @@ type ProfileService struct {
 	store    *profile.Store
 	core     *core.Core
 	settings *settingsFile
-	mu       sync.Mutex // serializes rebuild + reload
+	mu       sync.Mutex // one change at a time: read the old state, change, apply, roll back
 }
 
 func (s *ProfileService) build() ([]byte, error) {
@@ -54,6 +54,10 @@ func (s *ProfileService) WriteConfig() error {
 func (s *ProfileService) apply() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.applyLocked()
+}
+
+func (s *ProfileService) applyLocked() error {
 	b, err := s.build()
 	if err != nil {
 		return err
@@ -62,7 +66,7 @@ func (s *ProfileService) apply() error {
 	if err := os.WriteFile(next, b, 0o600); err != nil {
 		return err
 	}
-	if err := s.core.Validate(next); err != nil {
+	if err := s.core.Validate(context.Background(), next); err != nil {
 		os.Remove(next)
 		return err
 	}
@@ -91,8 +95,10 @@ func (s *ProfileService) Add(name, link string) error {
 		return err
 	}
 	defer s.changed()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if current, _ := s.store.List(); current == p.ID {
-		return s.apply()
+		return s.applyLocked()
 	}
 	return nil
 }
@@ -104,8 +110,10 @@ func (s *ProfileService) AddLocal(name, content string) error {
 		return err
 	}
 	defer s.changed()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if current, _ := s.store.List(); current == p.ID {
-		return s.apply()
+		return s.applyLocked()
 	}
 	return nil
 }
@@ -133,6 +141,8 @@ func (s *ProfileService) Content(id string) (string, error) { return s.store.Con
 // SetContent saves a hand-edited profile; for the profile in use it is applied, and restored if the
 // core rejects it.
 func (s *ProfileService) SetContent(id, content string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	old, err := s.store.Content(id)
 	if err != nil {
 		return err
@@ -143,43 +153,58 @@ func (s *ProfileService) SetContent(id, content string) error {
 	if current, _ := s.store.List(); current != id {
 		return nil
 	}
-	if err := s.apply(); err != nil {
+	if err := s.applyLocked(); err != nil {
 		return errors.Join(err, s.store.SetContent(id, old))
 	}
 	return nil
 }
 
+// Update re-downloads a subscription; one the core rejects is put back, so later edits keep
+// working (its UpdatedAt stays bumped, which holds the auto-update off for an interval).
 func (s *ProfileService) Update(id string) error {
+	old, err := s.store.Content(id) // the download runs outside the lock; the swap and apply inside
+	if err != nil {
+		return err
+	}
 	if _, err := s.store.Update(id, s.clients()...); err != nil {
 		return err
 	}
 	defer s.changed()
-	if current, _ := s.store.List(); current == id {
-		return s.apply()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if current, _ := s.store.List(); current != id {
+		return nil
+	}
+	if err := s.applyLocked(); err != nil {
+		return errors.Join(err, s.store.SetContent(id, old))
 	}
 	return nil
 }
 
 func (s *ProfileService) Remove(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	wasCurrent, _ := s.store.List()
 	if err := s.store.Remove(id); err != nil {
 		return err
 	}
 	defer s.changed()
 	if wasCurrent == id {
-		return s.apply()
+		return s.applyLocked()
 	}
 	return nil
 }
 
 // Select switches profiles; on a rejected config the previous one stays selected and running.
 func (s *ProfileService) Select(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	previous, _ := s.store.List()
 	if err := s.store.Select(id); err != nil {
 		return err
 	}
 	defer s.changed()
-	if err := s.apply(); err != nil {
+	if err := s.applyLocked(); err != nil {
 		if previous != "" {
 			_ = s.store.Select(previous)
 		}
@@ -194,22 +219,15 @@ func (s *ProfileService) Override() (string, error) {
 
 // SetOverride saves and applies the override, restoring the old one if the core rejects the result.
 func (s *ProfileService) SetOverride(content string) error {
-	old, err := s.store.Override()
-	if err != nil {
-		return err
-	}
-	if err := s.store.SetOverride(content); err != nil {
-		return err
-	}
-	if err := s.apply(); err != nil {
-		return errors.Join(err, s.store.SetOverride(old))
-	}
-	return nil
+	return s.edit(func() error { return s.store.SetOverride(content) })
 }
 
 // edit runs a change to the override and applies it; if the core rejects the result the override
-// is restored, so a bad form entry never breaks the running config.
+// is restored, so a bad form entry never breaks the running config. The whole sequence holds the
+// lock: two edits at once would otherwise roll each other's work back.
 func (s *ProfileService) edit(change func() error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	old, err := s.store.Override()
 	if err != nil {
 		return err
@@ -217,7 +235,7 @@ func (s *ProfileService) edit(change func() error) error {
 	if err := change(); err != nil {
 		return err
 	}
-	if err := s.apply(); err != nil {
+	if err := s.applyLocked(); err != nil {
 		return errors.Join(err, s.store.SetOverride(old))
 	}
 	return nil

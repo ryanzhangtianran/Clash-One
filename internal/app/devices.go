@@ -36,8 +36,20 @@ type DeviceService struct {
 	profiles *ProfileService
 
 	mu    sync.Mutex
-	names map[string]string // reverse DNS cache
+	names map[string]dnsName // reverse DNS cache
 }
+
+// dnsName is a cached reverse lookup; an empty answer is asked again after a while.
+type dnsName struct {
+	name string
+	at   time.Time
+}
+
+const (
+	lookupTimeout  = 500 * time.Millisecond
+	emptyNameTTL   = 10 * time.Minute
+	parallelLookup = 8
+)
 
 func (s *DeviceService) Lan() (LanInfo, error) {
 	var cfg struct {
@@ -92,6 +104,7 @@ func (s *DeviceService) Devices() ([]Device, error) {
 		return nil, err
 	}
 	macs := arpTable()
+	s.resolve(byIP)
 	devices := make([]Device, 0, len(byIP))
 	for _, d := range byIP {
 		d.MAC = macs[d.IP]
@@ -175,24 +188,42 @@ func (s *DeviceService) ClearPolicy(ip string) error {
 	return nil
 }
 
-// name is the device's reverse DNS name (often set by the router from DHCP), cached.
+// resolve looks up the devices whose reverse DNS name (often set by the router from DHCP) isn't
+// cached yet, a few at a time rather than one after another: each can take its whole timeout.
+func (s *DeviceService) resolve(byIP map[string]*Device) {
+	var todo []string
+	s.mu.Lock()
+	for ip := range byIP {
+		if n, ok := s.names[ip]; !ok || n.name == "" && time.Since(n.at) > emptyNameTTL {
+			todo = append(todo, ip)
+		}
+	}
+	s.mu.Unlock()
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, parallelLookup)
+	for _, ip := range todo {
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			ctx, cancel := context.WithTimeout(context.Background(), lookupTimeout)
+			defer cancel()
+			var name string
+			if names, err := net.DefaultResolver.LookupAddr(ctx, ip); err == nil && len(names) > 0 {
+				name = strings.TrimSuffix(names[0], ".")
+			}
+			s.mu.Lock()
+			if s.names == nil {
+				s.names = map[string]dnsName{}
+			}
+			s.names[ip] = dnsName{name, time.Now()}
+			s.mu.Unlock()
+		})
+	}
+	wg.Wait()
+}
+
 func (s *DeviceService) name(ip string) string {
 	s.mu.Lock()
-	if s.names == nil {
-		s.names = map[string]string{}
-	}
-	name, ok := s.names[ip]
-	s.mu.Unlock()
-	if ok {
-		return name
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	if names, err := net.DefaultResolver.LookupAddr(ctx, ip); err == nil && len(names) > 0 {
-		name = strings.TrimSuffix(names[0], ".")
-	}
-	s.mu.Lock()
-	s.names[ip] = name
-	s.mu.Unlock()
-	return name
+	defer s.mu.Unlock()
+	return s.names[ip].name
 }

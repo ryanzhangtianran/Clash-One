@@ -3,6 +3,8 @@ package profile
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -435,5 +437,35 @@ func TestMergePatchProxies(t *testing.T) {
 	a := cfg["proxies"].([]any)[0].(map[string]any)
 	if a["server"] != "2.2.2.2" || a["udp"] != true || cfg["patch-proxies"] != nil {
 		t.Fatalf("%v / %v", a, cfg["patch-proxies"])
+	}
+}
+
+// A torn index.json is moved aside instead of keeping the app from launching, and a failed
+// auto-update waits a full interval before the next try.
+func TestTornIndexAndUpdateBackoff(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "profiles"), 0o755)
+	os.WriteFile(filepath.Join(dir, "profiles", "index.json"), []byte("{\"current\": \"ab"), 0o644)
+	s, err := Open(dir)
+	if err != nil || len(s.index.Profiles) != 0 {
+		t.Fatalf("Open: %v %+v", err, s.index)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "profiles", "index.json.bad")); err != nil {
+		t.Error("the torn index was not moved aside")
+	}
+	now := time.Now()
+	s.index.Profiles = []Profile{{ID: "a", URL: "http://x", Interval: 1, UpdatedAt: now.Add(-2 * time.Hour)}}
+	if got := s.Due(now); len(got) != 1 {
+		t.Errorf("due before a failure: %v", got)
+	}
+	s.index.Profiles[0].LastTried = now.Add(-10 * time.Minute)
+	if got := s.Due(now); len(got) != 0 {
+		t.Errorf("due right after a failure: %v", got)
+	}
+	if err := WriteAtomic(filepath.Join(dir, "x"), []byte("1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "x.tmp")); err == nil {
+		t.Error("temp file left behind")
 	}
 }

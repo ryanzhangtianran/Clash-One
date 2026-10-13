@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ryanzhangtianran/Connaio/internal/core"
@@ -116,13 +117,39 @@ type CoreService struct {
 
 	mu     sync.Mutex
 	status Status
+
+	connMu sync.Mutex // the last connection snapshot, see connections
+	conns  []Conn
+	connAt time.Time
+
+	netMu   sync.Mutex // networkName's cache
+	netName string
+	netAt   time.Time
+
+	latMu sync.Mutex // Latency's cache, and its one-at-a-time measurement
+	lat   Latency
+	latAt time.Time
 }
+
+// restarting counts GUI-initiated core restarts in progress (Restart, moving onto the daemon): the
+// traffic stream breaks during one, and must not push the config a second time when it is back.
+var restarting atomic.Int32
 
 func (s *CoreService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	go func() { // start in the background so the window shows right away
+		// the streams retry on their own, so they run whatever the first start does: a core that
+		// comes up later (a restart, the crash recovery in streamTraffic) is picked up by them
+		go s.streamLogs(ctx)
+		if s.ledger != nil {
+			go s.countTraffic(ctx)
+		}
 		var err error
 		if daemon.Installed() {
-			err = s.core.Attach(ctx, daemon.Socket)
+			if err = s.core.Attach(ctx, daemon.Socket, daemon.LogPath); err != nil {
+				// a daemon that doesn't answer (launchd trouble) must not leave the app proxy-less
+				notify("warning", "root 内核没有响应（%v），改用 App 自己的内核；增强模式不可用", err)
+				err = s.core.Start(ctx)
+			}
 		} else {
 			err = s.core.Start(ctx)
 		}
@@ -132,28 +159,35 @@ func (s *CoreService) ServiceStartup(ctx context.Context, _ application.ServiceO
 		if err != nil {
 			s.setStatus(Status{Error: err.Error()})
 			notify("error", "内核启动失败：%v", err)
-			return
-		}
-		info, _ := s.core.Version(ctx)
-		s.setStatus(Status{Running: true, Version: info.Version})
-		notify("info", "内核已启动（%s）", info.Version)
-		if info.API < core.API {
-			notify("warning", "内核接口版本为 %d，App 需要 %d：部分功能不可用，请用新版 connaio-core 重新打包", info.API, core.API)
-		}
-		if w := s.portWarning(); w != "" {
-			notify("warning", "%s", w)
-		}
-		if mode, err := s.Mode(); err == nil {
-			s.modeChanged(mode)
-		}
-		go s.streamLogs(ctx)
-		if s.ledger != nil {
-			go s.countTraffic(ctx)
+		} else {
+			s.announce(ctx)
 		}
 		go s.updateDaemon()
 		s.streamTraffic(ctx)
 	}()
 	return nil
+}
+
+// markRunning records the core as running, with its version.
+func (s *CoreService) markRunning(ctx context.Context) core.Info {
+	info, _ := s.core.Version(ctx)
+	s.setStatus(Status{Running: true, Version: info.Version})
+	return info
+}
+
+// announce marks the core running and tells the user, with the warnings a fresh core brings.
+func (s *CoreService) announce(ctx context.Context) {
+	info := s.markRunning(ctx)
+	notify("info", "内核已启动（%s）", info.Version)
+	if info.API < core.API {
+		notify("warning", "内核接口版本为 %d，App 需要 %d：部分功能不可用，请用新版 connaio-core 重新打包", info.API, core.API)
+	}
+	if w := s.portWarning(); w != "" {
+		notify("warning", "%s", w)
+	}
+	if mode, err := s.Mode(); err == nil {
+		s.modeChanged(mode)
+	}
 }
 
 // ServiceShutdown stops the child core, or puts the daemon back on its boot config so it doesn't
@@ -298,11 +332,15 @@ func (s *CoreService) ProxyNames() ([]string, error) {
 
 // TestProxy measures one proxy and returns its delay in ms.
 func (s *CoreService) TestProxy(name string) (int, error) {
+	return s.testProxy(context.Background(), name)
+}
+
+func (s *CoreService) testProxy(ctx context.Context, name string) (int, error) {
 	var d struct {
 		Delay int `json:"delay"`
 	}
 	q := url.Values{"url": {"https://www.gstatic.com/generate_204"}, "timeout": {"5000"}}
-	err := s.core.Do(context.Background(), http.MethodGet, "/proxies/"+url.PathEscape(name)+"/delay?"+q.Encode(), nil, &d)
+	err := s.core.Do(ctx, http.MethodGet, "/proxies/"+url.PathEscape(name)+"/delay?"+q.Encode(), nil, &d)
 	return d.Delay, err
 }
 
@@ -335,40 +373,50 @@ func (s *CoreService) updateDaemon() {
 // The stream doubles as the core's heartbeat: when it breaks the core went away (a crash, launchd
 // restarting the root daemon, an update), and a core that comes back runs its boot config, so the
 // GUI's config is pushed again once the stream is back.
+// A child core that has exited (a crash) is started again here, with backoff.
 func (s *CoreService) streamTraffic(ctx context.Context) {
-	broken := false
-	for ctx.Err() == nil {
-		err := s.core.Stream(ctx, "/traffic", func(line []byte) {
-			if broken {
-				broken = false
-				go func() {
-					if s.onReady != nil {
-						if err := s.onReady(); err != nil {
-							notify("error", "内核已重新连接，但载入配置失败：%v", err)
-							return
-						}
-					}
-					notify("info", "内核已重新连接")
-				}()
+	warned := false
+	s.retryStream(ctx, "traffic stream", "/traffic", func(line []byte) {
+		var t Traffic
+		if json.Unmarshal(line, &t) != nil {
+			return
+		}
+		if s.onTraffic != nil {
+			s.onTraffic(t)
+		}
+		emit("traffic", t)
+	}, func(error) {
+		if restarting.Load() > 0 {
+			return
+		}
+		if !warned {
+			warned = true
+			notify("warning", "与内核的连接中断，正在重连")
+		}
+		if !s.core.Daemon() && s.core.Exited() {
+			s.setStatus(Status{Error: "内核已退出，正在重启"})
+			if err := s.core.Start(ctx); err != nil {
+				notify("error", "内核重启失败：%v", err)
 			}
-			var t Traffic
-			if json.Unmarshal(line, &t) != nil {
-				return
-			}
-			if s.onTraffic != nil {
-				s.onTraffic(t)
-			}
-			emit("traffic", t)
-		})
-		if ctx.Err() == nil {
-			if !broken {
-				broken = true
-				notify("warning", "与内核的连接中断，正在重连")
-			}
-			log.Printf("traffic stream: %v, retrying", err)
-			time.Sleep(time.Second)
+		}
+	}, func() { warned = false; go s.reconnected(ctx) })
+}
+
+// reconnected pushes the config to a core that came back on its own (a crash, launchd restarting
+// the daemon, an update); a restart the GUI made has done that itself.
+func (s *CoreService) reconnected(ctx context.Context) {
+	if restarting.Load() > 0 {
+		return
+	}
+	if s.onReady != nil {
+		if err := s.onReady(); err != nil {
+			s.setStatus(Status{Error: err.Error()})
+			notify("error", "内核已重新连接，但载入配置失败：%v", err)
+			return
 		}
 	}
+	s.markRunning(ctx)
+	notify("info", "内核已重新连接")
 }
 
 // ReportError records a frontend error (render crash, unhandled rejection) in gui-errors.log.

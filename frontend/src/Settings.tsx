@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CoreService, EnhancedService, ProfileService, SettingsService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { About, DNSLeak, Resolver, Update } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { on } from "./hooks";
-import { words } from "./format";
+import { words, validPort } from "./format";
 
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
@@ -69,7 +69,8 @@ export function General() {
         <div className="section-title">内核</div>
         <Row title="代理端口" desc="HTTP 与 SOCKS5 共用">
           <input className="ctl" value={portText} onChange={(e) => setPortText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && portText !== String(port) && setPort(Number(portText))} onBlur={() => setPortText(String(port))} />
+            onKeyDown={(e) => e.key === "Enter" && (validPort(portText) && portText !== String(port) ? setPort(Number(portText)) : setPortText(String(port)))}
+            onBlur={() => setPortText(String(port))} />
         </Row>
         <Row title="日志级别">
           <select className="ctl" value={logLevel} onChange={(e) => setLogLevel(e.target.value)}>
@@ -227,7 +228,7 @@ export function Dns() {
         <Row title="地址段">
           <div className="inline">
             <input value={rangeText} onChange={(e) => setRangeText(e.target.value)} style={{ width: 160 }} />
-            <button className="btn" disabled={rangeText === range} onClick={() => setRange(rangeText.trim())}>保存</button>
+            <button className="btn" disabled={rangeText === range || !/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(rangeText.trim())} onClick={() => setRange(rangeText.trim())}>保存</button>
           </div>
         </Row>
         <ListSetting title="不分配虚拟 IP 的域名" desc="局域网、时间服务器、游戏主机等需要真实 IP 的域名。" path="dns.fake-ip-filter" placeholder="如 +.lan、time.*.com" />

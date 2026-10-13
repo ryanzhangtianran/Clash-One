@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ryanzhangtianran/Connaio/internal/profile"
 )
 
 // Usage is a client, host or policy's traffic today; Icon is a file whose Finder icon stands for it.
@@ -88,8 +90,19 @@ func (s *CoreService) Activity() (Activity, error) {
 }
 
 // networkName is the Wi-Fi SSID, or the default route's interface when it is unknown. macOS redacts
-// the SSID from users, so only the core running as the root daemon can tell.
+// the SSID from users, so only the core running as the root daemon can tell. Cached for 10s: the
+// fallback runs two commands, and the activity page asks every second.
 func (s *CoreService) networkName(ctx context.Context) string {
+	s.netMu.Lock()
+	defer s.netMu.Unlock()
+	if time.Since(s.netAt) < 10*time.Second {
+		return s.netName
+	}
+	s.netName, s.netAt = s.lookupNetworkName(ctx), time.Now()
+	return s.netName
+}
+
+func (s *CoreService) lookupNetworkName(ctx context.Context) string {
 	var n struct {
 		SSID string `json:"ssid"`
 	}
@@ -123,7 +136,18 @@ func pingMs(ctx context.Context, host string) int {
 
 // Latency measures the router, the direct internet path, the system DNS and the policy of the
 // final MATCH rule (where unmatched traffic goes); a DIRECT one is the internet path already.
+// One measurement at a time, and its result serves the menu bar and the activity page for a minute.
 func (s *CoreService) Latency() Latency {
+	s.latMu.Lock()
+	defer s.latMu.Unlock()
+	if time.Since(s.latAt) < time.Minute {
+		return s.lat
+	}
+	s.lat, s.latAt = s.measureLatency(), time.Now()
+	return s.lat
+}
+
+func (s *CoreService) measureLatency() Latency {
 	l := Latency{Group: cmp.Or(s.matchPolicy(), "代理")}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -242,7 +266,7 @@ type ledger struct {
 	mu    sync.Mutex
 	days  map[string]*Day  // "2006-01-02" -> traffic
 	seen  map[string]int64 // bytes per live connection at the last count; nil before the first
-	dirty bool
+	dirty bool             // changed since the last save
 }
 
 func openLedger(path string) *ledger {
@@ -334,11 +358,13 @@ func (l *ledger) totals(now time.Time) (today, month Split) {
 	return today, month
 }
 
-// today is today's traffic by hour, and its top clients, hosts and policies.
+// today is today's traffic by hour, and its top clients, hosts and policies. Ranking the day's
+// maps costs a few sorts, so the last answer is served again until the ledger changes.
 func (l *ledger) today(now time.Time) (hours [24]Split, clients, hosts, policies []Usage) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	d := l.days[now.Format(time.DateOnly)]
+	key := now.Format(time.DateOnly)
+	d := l.days[key]
 	if d == nil {
 		return
 	}
@@ -371,27 +397,51 @@ func topUsage(m map[string]Split, icons map[string]string, n int) []Usage {
 	return out[:min(len(out), n)]
 }
 
+// keepDays is how long a day's traffic stays in the ledger: a year of months, plus the current one.
+const keepDays = 13 * 31
+
 func (l *ledger) save() error {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 	if !l.dirty {
+		l.mu.Unlock()
 		return nil
 	}
-	for _, d := range l.days { // ponytail: hosts grow without bound in a day; keep the 500 busiest
-		if len(d.Host) > 500 {
-			top := topUsage(d.Host, nil, 500)
-			d.Host = make(map[string]Split, len(top))
-			for _, u := range top {
-				d.Host[u.Name] = u.Split
+	cutoff := time.Now().AddDate(0, 0, -keepDays).Format(time.DateOnly)
+	for day, d := range l.days {
+		if day < cutoff {
+			delete(l.days, day)
+			continue
+		}
+		// ponytail: hosts, clients and processes grow without bound in a day; keep the 500 busiest
+		d.Host, d.Client = trimUsage(d.Host, 500), trimUsage(d.Client, 500)
+		for client, procs := range d.Procs {
+			if _, kept := d.Client[client]; !kept {
+				delete(d.Procs, client)
+				continue
 			}
+			d.Procs[client] = trimUsage(procs, 500)
 		}
 	}
 	b, err := json.Marshal(l.days)
+	l.dirty = err != nil
+	l.mu.Unlock() // the write happens outside the lock: counting goes on meanwhile
 	if err != nil {
 		return err
 	}
-	l.dirty = false
-	return os.WriteFile(l.path, b, 0o644)
+	return profile.WriteAtomic(l.path, b, 0o644)
+}
+
+// trimUsage keeps the n largest entries of m.
+func trimUsage(m map[string]Split, n int) map[string]Split {
+	if len(m) <= n {
+		return m
+	}
+	top := topUsage(m, nil, n)
+	m = make(map[string]Split, len(top))
+	for _, u := range top {
+		m[u.Name] = u.Split
+	}
+	return m
 }
 
 // countTraffic feeds the ledger every second (and the menu bar's process rows), saving it every minute.
@@ -403,7 +453,7 @@ func (s *CoreService) countTraffic(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case now := <-t.C:
-			if conns, err := s.Connections(); err == nil {
+			if conns, err := s.refreshConnections(); err == nil {
 				deltas := s.ledger.add(conns, now)
 				if s.onConns != nil {
 					s.onConns(conns, deltas)

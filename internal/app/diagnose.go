@@ -68,8 +68,8 @@ func (s *ToolService) CancelDiagnose() {
 	}
 }
 
-func (s *ToolService) diagConfig(context.Context) DiagSection {
-	if err := s.cs.core.Validate(s.cs.core.ConfigPath()); err != nil {
+func (s *ToolService) diagConfig(ctx context.Context) DiagSection {
+	if err := s.cs.core.Validate(ctx, s.cs.core.ConfigPath()); err != nil {
 		return DiagSection{Title: "检查配置", Lines: []string{err.Error()}}
 	}
 	return DiagSection{Title: "检查配置", Lines: []string{"配置检查成功"}, OK: true}
@@ -143,7 +143,7 @@ func (s *ToolService) diagProxies(ctx context.Context) DiagSection {
 			continue
 		}
 		seen[g.Now] = true
-		delay, err := s.cs.TestProxy(g.Now)
+		delay, err := s.cs.testProxy(ctx, g.Now)
 		if err != nil {
 			sec.Lines = append(sec.Lines, fmt.Sprintf("通过 %s 连接失败", g.Now))
 			sec.OK = false

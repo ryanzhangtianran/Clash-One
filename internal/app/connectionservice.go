@@ -20,6 +20,7 @@ type Conn struct {
 	Process  string `json:"process"`
 	Path     string `json:"path"`
 	Source   string `json:"source"`
+	SrcPort  string `json:"-"`    // for finding this process's own test connection
 	Host     string `json:"host"` // domain, or destination IP when there is none
 	Port     string `json:"port"`
 	Rule     string `json:"rule"` // e.g. "DomainSuffix(google.com)"
@@ -43,7 +44,45 @@ type TempRule struct {
 func (s *CoreService) Connections() ([]Conn, error) { return s.connections(false) }
 
 // connections lists live connections, those outside partial enhancement's scope too when all is set.
+// The ledger fetches the list every second; everyone else (the activity, connections, devices and
+// processes pages) gets that snapshot while it is fresh, so the core serialises it once a second,
+// not four times.
 func (s *CoreService) connections(all bool) ([]Conn, error) {
+	s.connMu.Lock()
+	conns, at := s.conns, s.connAt
+	s.connMu.Unlock()
+	if conns == nil || time.Since(at) > 1500*time.Millisecond {
+		var err error
+		if conns, err = s.refreshConnections(); err != nil {
+			return nil, err
+		}
+	}
+	if all {
+		return conns, nil
+	}
+	out := make([]Conn, 0, len(conns))
+	for _, c := range conns {
+		if c.Rule != "CaptureFilter" { // constant.CaptureFilter's name in the core
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+// refreshConnections fetches the snapshot from the core and keeps it for connections. Callers
+// treat the slice as read-only.
+func (s *CoreService) refreshConnections() ([]Conn, error) {
+	conns, err := s.fetchConnections()
+	if err != nil {
+		return nil, err
+	}
+	s.connMu.Lock()
+	s.conns, s.connAt = conns, time.Now()
+	s.connMu.Unlock()
+	return conns, nil
+}
+
+func (s *CoreService) fetchConnections() ([]Conn, error) {
 	var snap struct {
 		Connections []struct {
 			ID          string    `json:"id"`
@@ -57,6 +96,7 @@ func (s *CoreService) connections(all bool) ([]Conn, error) {
 				Network     string `json:"network"`
 				Type        string `json:"type"`
 				SourceIP    string `json:"sourceIP"`
+				SourcePort  string `json:"sourcePort"`
 				Host        string `json:"host"`
 				DestIP      string `json:"destinationIP"`
 				DestPort    string `json:"destinationPort"`
@@ -70,9 +110,6 @@ func (s *CoreService) connections(all bool) ([]Conn, error) {
 	}
 	conns := make([]Conn, 0, len(snap.Connections))
 	for _, c := range snap.Connections {
-		if c.Rule == "CaptureFilter" && !all { // constant.CaptureFilter's name in the core
-			continue
-		}
 		m := c.Metadata
 		host := m.Host
 		if host == "" {
@@ -89,7 +126,7 @@ func (s *CoreService) connections(all bool) ([]Conn, error) {
 		chain := slices.Clone(c.Chains)
 		slices.Reverse(chain) // the core lists the exit first; show group → node
 		conns = append(conns, Conn{
-			ID: c.ID, Network: m.Network, Inbound: m.Type, Process: process, Path: m.ProcessPath, Source: m.SourceIP,
+			ID: c.ID, Network: m.Network, Inbound: m.Type, Process: process, Path: m.ProcessPath, Source: m.SourceIP, SrcPort: m.SourcePort,
 			Host: host, Port: m.DestPort, Rule: rule, Chain: strings.Join(chain, " → "),
 			Upload: c.Upload, Download: c.Download, Start: c.Start.Format(time.RFC3339),
 		})
@@ -100,7 +137,15 @@ func (s *CoreService) connections(all bool) ([]Conn, error) {
 
 // CloseAll closes every live connection.
 func (s *CoreService) CloseAll() error {
+	defer s.forgetConnections()
 	return s.core.Do(context.Background(), http.MethodDelete, "/connections", nil, nil)
+}
+
+// forgetConnections drops the cached snapshot, so a list after a close shows the close.
+func (s *CoreService) forgetConnections() {
+	s.connMu.Lock()
+	s.connAt = time.Time{}
+	s.connMu.Unlock()
 }
 
 // Reload re-applies the current config (profile and override) to the core.
@@ -114,6 +159,8 @@ func (s *CoreService) Reload() error {
 // Restart restarts the core process (the root daemon re-executes itself, a child is started anew)
 // and hands it the current config again.
 func (s *CoreService) Restart() error {
+	restarting.Add(1) // the heartbeat would reload the config a second time otherwise
+	defer restarting.Add(-1)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	if s.core.Daemon() {
@@ -121,7 +168,7 @@ func (s *CoreService) Restart() error {
 			return err
 		}
 		time.Sleep(time.Second) // the old process answers until it has re-executed
-		if err := s.core.Attach(ctx, daemon.Socket); err != nil {
+		if err := s.core.Attach(ctx, daemon.Socket, daemon.LogPath); err != nil {
 			return err
 		}
 	} else {
@@ -134,11 +181,13 @@ func (s *CoreService) Restart() error {
 	if err := s.Reload(); err != nil {
 		return err
 	}
+	s.markRunning(ctx)
 	notify("info", "内核已重启")
 	return nil
 }
 
 func (s *CoreService) CloseConnection(id string) error {
+	defer s.forgetConnections()
 	return s.core.Do(context.Background(), http.MethodDelete, "/connections/"+url.PathEscape(id), nil, nil)
 }
 

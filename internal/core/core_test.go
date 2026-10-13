@@ -19,7 +19,7 @@ func TestCore(t *testing.T) {
 	if err := os.WriteFile(c.ConfigPath(), []byte("mixed-port: 0\nrules:\n  - MATCH,DIRECT\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Validate(c.ConfigPath()); err != nil {
+	if err := c.Validate(context.Background(), c.ConfigPath()); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Start(ctx); err != nil {

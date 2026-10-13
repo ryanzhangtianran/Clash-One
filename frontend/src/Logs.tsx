@@ -1,9 +1,10 @@
 import { useState } from "react";
-import type { LogLine } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import { clearLogs, useLogs } from "./store";
 
 const levels = ["debug", "info", "warning", "error"];
 
-export default function Logs({ lines, onClear }: { lines: LogLine[]; onClear: () => void }) {
+export default function Logs() {
+  const lines = useLogs();
   const [level, setLevel] = useState("info");
   const [filter, setFilter] = useState("");
   const min = levels.indexOf(level);
@@ -18,12 +19,12 @@ export default function Logs({ lines, onClear }: { lines: LogLine[]; onClear: ()
           </div>
           <div className="actions">
             <input placeholder="搜索…" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ width: 200 }} />
-            <button className="btn" onClick={onClear}>清空</button>
+            <button className="btn" onClick={clearLogs}>清空</button>
           </div>
         </div>
         <div className="logs">
-          {shown.slice().reverse().map((l, i) => (
-            <div key={i} className={`log ${l.type}`}><span className="lvl">{l.type}</span>{l.payload}</div>
+          {shown.slice().reverse().map((l) => (
+            <div key={l.id} className={`log ${l.type}`}><span className="lvl">{l.type}</span>{l.payload}</div>
           ))}
         </div>
       </div>

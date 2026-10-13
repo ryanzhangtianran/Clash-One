@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { CoreService, ProfileService, SettingsService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
-import type { Activity as ActivityData, DiagSection, Latency, Status, Traffic, Usage } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { Activity as ActivityData, DiagSection, Latency, Status, Usage } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { size, sizeText, speed } from "./format";
 import { DiagLog } from "./ProxyDiagnose";
 import { on, usePoll, useCachedURL } from "./hooks";
+import { useHistory } from "./store";
 
 const modes: Record<string, string> = { rule: "规则判定", global: "全局代理", direct: "直接连接" };
 
@@ -215,7 +216,8 @@ function Ranking({ activity }: { activity: ActivityData }) {
   );
 }
 
-export default function Activity({ status, activity, history }: { status: Status; activity: ActivityData | null; history: Traffic[] }) {
+export default function Activity({ status, activity }: { status: Status; activity: ActivityData | null }) {
+  const history = useHistory();
   const [latency, setLatency] = useState<Latency | null>(null);
   const [measuring, setMeasuring] = useState(false);
   const [profile, setProfile] = useState(""); // the profile in use, by name

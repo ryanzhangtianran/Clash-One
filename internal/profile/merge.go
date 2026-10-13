@@ -297,19 +297,30 @@ func applyPatch(dst, patch map[string]any) {
 	}
 }
 
-// Value reads a dotted path from the merged config, e.g. "dns.nameserver".
+// Value reads a dotted path from the merged config, e.g. "dns.nameserver". The merge is cached by
+// the profile and override files' modification times: settings pages read a dozen values at once.
 func (s *Store) Value(enhanced bool, path []string) (any, error) {
-	cfg, err := s.merged(enhanced)
-	if err != nil {
-		return nil, err
-	}
-	b, err := yaml.Marshal(cfg) // round-trip so values come back in the same shapes as the core's YAML
-	if err != nil {
-		return nil, err
-	}
-	var cur any = map[string]any{}
-	if err := yaml.Unmarshal(b, &cur); err != nil {
-		return nil, err
+	s.mu.Lock()
+	current := s.index.Current
+	s.mu.Unlock()
+	key := fmt.Sprintf("%s|%v|%s|%s", current, enhanced, mtime(s.path(current+".yaml")), mtime(s.path("override.yaml")))
+	s.valueMu.Lock()
+	defer s.valueMu.Unlock()
+	cur := s.valueCache
+	if key != s.valueKey {
+		cfg, err := s.merged(enhanced)
+		if err != nil {
+			return nil, err
+		}
+		b, err := yaml.Marshal(cfg) // round-trip so values come back in the same shapes as the core's YAML
+		if err != nil {
+			return nil, err
+		}
+		cur = map[string]any{}
+		if err := yaml.Unmarshal(b, &cur); err != nil {
+			return nil, err
+		}
+		s.valueKey, s.valueCache = key, cur
 	}
 	for _, key := range path {
 		m, ok := cur.(map[string]any)
@@ -319,4 +330,13 @@ func (s *Store) Value(enhanced bool, path []string) (any, error) {
 		cur = m[key]
 	}
 	return cur, nil
+}
+
+// mtime identifies a file's current content for caching: its size and modification time.
+func mtime(path string) string {
+	st, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%d@%d", st.Size(), st.ModTime().UnixNano())
 }

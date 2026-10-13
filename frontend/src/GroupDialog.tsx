@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import { useDirty } from "./hooks";
 
 const types = [
   ["select", "手动选择"],
@@ -19,7 +20,9 @@ export default function GroupDialog({ onClose }: { onClose: () => void }) {
   const [strategy, setStrategy] = useState("consistent-hashing");
   const [def, setDef] = useState("DIRECT");
   const [rules, setRules] = useState<[string, string][]>([["SSID:", "DIRECT"]]);
-  useEffect(() => { CoreService.ProxyNames().then((n) => setNames([...(n ?? []), "DIRECT", "REJECT"])); }, []);
+  const [busy, setBusy] = useState(false);
+  const dirty = useDirty([name, type, members, url, period, strategy, def, rules]);
+  useEffect(() => { CoreService.ProxyNames().then((n) => setNames([...new Set([...(n ?? []), "DIRECT", "REJECT"])])); }, []);
 
   const probes = type !== "select" && type !== "subnet"; // url-test, fallback, load-balance
   const add = () => {
@@ -28,15 +31,18 @@ export default function GroupDialog({ onClose }: { onClose: () => void }) {
       : { name, type, proxies: members };
     if (probes) Object.assign(group, { url, interval: Number(period) });
     if (type === "load-balance") group.strategy = strategy;
-    ProfileService.AddGroup(group).then(onClose);
+    setBusy(true);
+    ProfileService.AddGroup(group).then(onClose).finally(() => setBusy(false));
   };
+  const duplicate = names.includes(name.trim());
+  const ready = !!name.trim() && !duplicate && (type === "subnet" || members.length > 0) && (!probes || (/^\d+$/.test(period) && Number(period) > 0));
 
   return (
-    <div className="modal-bg" onClick={onClose}>
+    <div className="modal-bg" onClick={dirty ? undefined : onClose}>
       <div className="modal card" onClick={(e) => e.stopPropagation()}>
         <h2 className="modal-title">增加策略组</h2>
         <div className="form-grid">
-          <label>名称</label><input autoFocus placeholder="必填" value={name} onChange={(e) => setName(e.target.value)} />
+          <label>名称</label><input autoFocus placeholder={duplicate ? "已有同名策略组或代理" : "必填"} value={name} onChange={(e) => setName(e.target.value)} style={duplicate ? { borderColor: "var(--bad)" } : undefined} />
           <label>类型</label>
           <select value={type} onChange={(e) => setType(e.target.value)}>{types.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
           {probes && <><label>测试 URL</label><input value={url} onChange={(e) => setURL(e.target.value)} /><label>间隔（秒）</label><input value={period} onChange={(e) => setPeriod(e.target.value)} /></>}
@@ -70,7 +76,7 @@ export default function GroupDialog({ onClose }: { onClose: () => void }) {
         )}
         <div className="actions end">
           <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn primary" disabled={!name || (type !== "subnet" && members.length === 0)} onClick={add}>完成</button>
+          <button className="btn primary" disabled={!ready || busy} onClick={add}>完成</button>
         </div>
       </div>
     </div>

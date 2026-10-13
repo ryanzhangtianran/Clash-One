@@ -4,7 +4,7 @@ import type { Group, Proxy, Status } from "../bindings/github.com/ryanzhangtianr
 import ProxyDialog, { protocols } from "./ProxyDialog";
 import ProxyDiagnose from "./ProxyDiagnose";
 import GroupDialog from "./GroupDialog";
-import { on } from "./hooks";
+import { on, useClickAway } from "./hooks";
 
 const modes = [
   { key: "direct", label: "直接连接", hint: "所有请求都将被直接发往目标服务器。" },
@@ -12,6 +12,7 @@ const modes = [
   { key: "rule", label: "规则判定", hint: "根据规则系统判定处理方式。" },
 ];
 const builtin = new Set(["Direct", "Reject", "RejectDrop", "Compatible", "Pass", "Dns"]);
+let lastTested = 0; // when the page last probed every node on open; not again within 5 minutes
 const groupTypes: Record<string, string> = { Selector: "手动选择", URLTest: "自动测速", Fallback: "故障转移", LoadBalance: "负载均衡", Relay: "链式", Subnet: "Subnet 策略组" };
 
 function delayClass(ms: number) {
@@ -42,22 +43,22 @@ export default function Proxies({ status }: { status: Status }) {
   useEffect(() => {
     if (!status.running) return;
     load();
-    CoreService.TestGroup("GLOBAL").finally(load); // latencies on open, as Surge shows them
+    if (Date.now() - lastTested > 5 * 60_000) { // latencies on open, as Surge shows them
+      lastTested = Date.now();
+      CoreService.TestGroup("GLOBAL").finally(load);
+    }
     CoreService.Mode().then(setMode);
     return on("mode", (d) => setMode(d));
   }, [status.running, load]);
 
-  useEffect(() => {
-    const close = () => setMenu(null);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, []);
+  useClickAway(!!menu || !!open, () => { setMenu(null); setOpen(""); });
 
   // nodes: every non-group member across groups, built-ins (DIRECT, REJECT…) left out
   const groupNames = new Set(groups.map((g) => g.name));
   const nodes: Proxy[] = [];
+  const seen = new Set<string>();
   for (const g of groups) for (const p of g.all ?? []) {
-    if (!groupNames.has(p.name) && !builtin.has(p.type) && !nodes.some((n) => n.name === p.name)) nodes.push(p);
+    if (!groupNames.has(p.name) && !builtin.has(p.type) && !seen.has(p.name)) { seen.add(p.name); nodes.push(p); }
   }
   const shownGroups = groups.filter((g) => g.name !== "GLOBAL");
   const global = groups.find((g) => g.name === "GLOBAL");
@@ -125,7 +126,7 @@ export default function Proxies({ status }: { status: Status }) {
       <div className="tiles">
         {shownGroups.map((g) => (
           <div key={g.name} className="tile-wrap">
-            <button className={`tile ${open === g.name ? "selected" : ""}`} onClick={() => setOpen(open === g.name ? "" : g.name)}
+            <button className={`tile ${open === g.name ? "selected" : ""}`} onClick={(e) => { e.stopPropagation(); setMenu(null); setOpen(open === g.name ? "" : g.name); }}
               onContextMenu={(e) => contextMenu(e, { name: g.now, kind: "group", target: g.name })}>
               <span className="kind">{groupTypes[g.type] ?? g.type}</span>
               <span className="name">{g.name}</span>

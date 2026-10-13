@@ -31,7 +31,7 @@ export default function ProxyDiagnose({ nodes, groups, initial, onClose }: { nod
       .then((s) => setLog((l) => [...l, s])).finally(() => setBusy(""));
   };
   return (
-    <div className="modal-bg" onClick={onClose}>
+    <div className="modal-bg" onClick={busy ? undefined : onClose}>
       <div className="sheet diag-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-head"><div className="sheet-title">代理诊断</div></div>
         <div className="diag-controls">
@@ -56,7 +56,7 @@ export default function ProxyDiagnose({ nodes, groups, initial, onClose }: { nod
           {busy && <span className="spinner" />}
           <span className="grow" />
           <button className="btn" disabled={!log.length} onClick={() => setLog([])}>清除</button>
-          <button className="btn primary" onClick={onClose}>完成</button>
+          <button className="btn primary" disabled={!!busy} title={busy ? "等测试结束" : ""} onClick={onClose}>完成</button>
         </div>
       </div>
     </div>

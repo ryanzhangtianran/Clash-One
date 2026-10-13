@@ -176,3 +176,31 @@ func TestNotifyCollapsesRepeats(t *testing.T) {
 		t.Fatalf("events %+v", eventLog.list)
 	}
 }
+
+// save drops days older than the ledger keeps and trims a day's maps to the busiest entries.
+func TestLedgerSavePrunesAndTrims(t *testing.T) {
+	l := openLedger(filepath.Join(t.TempDir(), "traffic.json"))
+	old := time.Now().AddDate(0, 0, -keepDays-1).Format(time.DateOnly)
+	today := time.Now().Format(time.DateOnly)
+	l.days[old] = &Day{Split: Split{Direct: 1}}
+	d := &Day{Client: map[string]Split{}, Procs: map[string]map[string]Split{}}
+	for i := 0; i < 600; i++ {
+		name := fmt.Sprintf("c%d", i)
+		d.Client[name] = Split{Direct: int64(i)}
+		d.Procs[name] = map[string]Split{"p": {Direct: int64(i)}}
+	}
+	l.days[today] = d
+	l.dirty = true
+	if err := l.save(); err != nil {
+		t.Fatal(err)
+	}
+	if l.days[old] != nil {
+		t.Error("an old day survived")
+	}
+	if len(d.Client) != 500 || len(d.Procs) != 500 || d.Client["c0"] != (Split{}) || d.Client["c599"].Direct != 599 {
+		t.Errorf("trim: %d clients, %d procs", len(d.Client), len(d.Procs))
+	}
+	if _, err := os.Stat(l.path); err != nil {
+		t.Error("not saved")
+	}
+}

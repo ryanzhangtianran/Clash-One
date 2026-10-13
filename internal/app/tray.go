@@ -3,6 +3,7 @@ package app
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -42,7 +43,10 @@ type trayMenu struct {
 	menu     *application.Menu
 
 	mu           sync.Mutex
-	started      bool // the native menu exists; decorating before would block on the main thread
+	started      bool        // the native menu exists; decorating before would block on the main thread
+	updates      chan func() // one pending update from the data path (traffic, connections); a newer one replaces it
+	drawMu       sync.Mutex  // one native redraw at a time, outside mu
+	drawn        drawing     // what the native side shows, to skip redraws that change nothing
 	traffic      Traffic
 	mode         string
 	proxy, enhOn bool
@@ -69,17 +73,33 @@ type procRow struct {
 	rate, total int64
 }
 
+// drawing is everything the native side is told: the menu bar item's inputs and the decorations.
+type drawing struct {
+	traffic          Traffic
+	mode             string
+	capturing, speed bool
+	details, icons   map[*application.MenuItem]string
+}
+
 func newTrayMenu(t *trayMenu) {
 	t.mode, t.proxy, t.enhOn = "rule", t.sysProxy.Enabled(), t.enhanced.Enabled()
 	t.lastActive = map[string]time.Time{}
+	t.updates = make(chan func(), 1)
 	t.menu = application.NewMenu()
 	t.build(nil, Profiles{})
 	t.tray.SetMenu(t.menu)
 	t.svc.onMode = t.setMode
+	// the data path (ledger count, traffic stream) must never wait on the main thread, which the
+	// administrator prompt can hold: it drops an update off here and goes on
 	t.svc.onConns = func(conns []Conn, deltas map[string]int64) {
-		t.locked(func() { t.rows = processRows(conns, deltas, t.lastActive, time.Now()); t.showRows() })
+		t.offer(func() { t.rows = processRows(conns, deltas, t.lastActive, time.Now()); t.showRows() })
 	}
-	t.svc.onTraffic = func(tr Traffic) { t.locked(func() { t.traffic = tr }) }
+	t.svc.onTraffic = func(tr Traffic) { t.offer(func() { t.traffic = tr }) }
+	go func() {
+		for fn := range t.updates {
+			t.locked(fn)
+		}
+	}()
 	t.sysProxy.onChange = func(on bool) { t.locked(func() { t.proxy = on; t.proxyItem.SetChecked(on) }) }
 	t.enhanced.onChange = func(on bool) { t.locked(func() { t.enhOn = on; t.checkEnhanced() }) }
 	t.app.Event.On("setting", func(e *application.CustomEvent) {
@@ -95,19 +115,40 @@ func newTrayMenu(t *trayMenu) {
 	})
 }
 
-// locked runs change under the lock, then redraws the menu bar item and the native decorations.
+// offer queues an update for the menu bar, replacing one still waiting: only the latest matters.
+func (t *trayMenu) offer(fn func()) {
+	select {
+	case <-t.updates:
+	default:
+	}
+	select {
+	case t.updates <- fn:
+	default:
+	}
+}
+
+// locked runs change under the lock, then redraws the menu bar item and the native decorations
+// when something they show has changed; the native calls wait on the main thread, outside the lock.
 func (t *trayMenu) locked(change func()) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	change()
 	t.details[t.modeItem] = ""
 	if letter := modeBadges[t.mode]; letter != "" {
 		t.details[t.modeItem] = pill("accent", letter)
 	}
-	showTray(t.tray, t.icon, t.traffic, t.mode, t.proxy || t.enhOn, !t.settings.Get().HideTraySpeed)
-	if t.started {
-		decorate(t.details, t.icons)
+	next := drawing{t.traffic, t.mode, t.proxy || t.enhOn, !t.settings.Get().HideTraySpeed, maps.Clone(t.details), maps.Clone(t.icons)}
+	started := t.started
+	t.mu.Unlock()
+
+	t.drawMu.Lock()
+	defer t.drawMu.Unlock()
+	if next.traffic != t.drawn.traffic || next.mode != t.drawn.mode || next.capturing != t.drawn.capturing || next.speed != t.drawn.speed {
+		showTray(t.tray, t.icon, next.traffic, next.mode, next.capturing, next.speed)
 	}
+	if started && (!maps.Equal(next.details, t.drawn.details) || !maps.Equal(next.icons, t.drawn.icons)) {
+		decorate(next.details, next.icons)
+	}
+	t.drawn = next
 }
 
 func (t *trayMenu) setMode(mode string) {
@@ -141,15 +182,16 @@ func (t *trayMenu) toggleEnhanced(mode string) {
 	t.locked(t.checkEnhanced) // also puts the checkbox back after a failure
 }
 
-// loop refreshes the menu every second, and the network quality every minute.
-// ponytail: polls /proxies and /connections even while the menu is closed; hook menuWillOpen if it shows up in a profile.
+// loop refreshes the groups and profiles every 5s (the process rows and speed come from the data
+// path), and the network quality every minute.
+// ponytail: polls /proxies even while the menu is closed; hook menuWillOpen if it shows up in a profile.
 func (t *trayMenu) loop() {
-	for i := 0; ; i++ {
+	for i := 0; ; i += 5 {
 		if i%60 == 0 {
 			go t.measure()
 		}
 		t.tick()
-		time.Sleep(time.Second)
+		time.Sleep(5 * time.Second)
 	}
 }
 
@@ -237,6 +279,11 @@ func processRows(conns []Conn, deltas map[string]int64, lastActive map[string]ti
 		}
 		if now.Sub(lastActive[name]) <= trayRecent { // idle connections (kept alive, or opened before the proxy was turned off) stay out
 			rows = append(rows, *r)
+		}
+	}
+	for name, at := range lastActive { // forget processes gone quiet, or the map holds every one ever seen
+		if now.Sub(at) > trayRecent {
+			delete(lastActive, name)
 		}
 	}
 	slices.SortFunc(rows, func(a, b procRow) int {

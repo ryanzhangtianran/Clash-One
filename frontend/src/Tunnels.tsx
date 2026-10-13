@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useEffect, useState } from "react";
 import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Status, Tunnel } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import TunnelDialog from "./TunnelDialog";
@@ -19,12 +19,11 @@ export default function Tunnels({ status }: { status: Status }) {
   const [dialog, setDialog] = useState(false);
   const [open, setOpen] = useState("");
 
-  const load = useCallback(() => {
-    CoreService.ReverseTunnels().then((t) => setTunnels(t ?? []));
-    ProfileService.UserItems().then((u) => setMine(nonNull(u.tunnels).map((t) => String(t.name))));
-  }, []);
-
-  usePoll(load, 2000, status.running);
+  const loadMine = () => ProfileService.UserItems().then((u) => setMine(nonNull(u.tunnels).map((t) => String(t.name))));
+  const poll = () => CoreService.ReverseTunnels().then((t) => setTunnels(t ?? []));
+  const load = () => Promise.all([poll(), loadMine()]);
+  useEffect(() => { if (status.running) loadMine(); }, [status.running]);
+  usePoll(poll, 2000, status.running);
 
   const remove = (name: string) => ProfileService.RemoveTunnel(name).then(() => ProfileService.RemoveRule(localRule(name))).then(load);
 

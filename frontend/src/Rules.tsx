@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Rule, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { usePoll } from "./hooks";
@@ -14,9 +14,12 @@ function AddRule({ onAdded }: { onAdded: () => void }) {
   const [policy, setPolicy] = useState("DIRECT");
   const [noResolve, setNoResolve] = useState(true);
   useEffect(() => { CoreService.Policies().then((p) => setPolicies(p ?? [])); }, []);
+  const [busy, setBusy] = useState(false);
+  const value = payload.trim();
   const add = () => {
-    const rule = [type, payload, policy, ...(ipTypes.has(type) && noResolve ? ["no-resolve"] : [])].join(",");
-    ProfileService.AddRule(rule).then(() => { setPayload(""); onAdded(); });
+    const rule = [type, value, policy, ...(ipTypes.has(type) && noResolve ? ["no-resolve"] : [])].join(",");
+    setBusy(true);
+    ProfileService.AddRule(rule).then(() => { setPayload(""); onAdded(); }).finally(() => setBusy(false));
   };
   return (
     <div className="card" style={{ marginBottom: 16 }}>
@@ -26,7 +29,7 @@ function AddRule({ onAdded }: { onAdded: () => void }) {
         <input placeholder="值，如 google.com、10.0.0.0/8、ghostty" value={payload} onChange={(e) => setPayload(e.target.value)} className="grow" />
         <select value={policy} onChange={(e) => setPolicy(e.target.value)}>{policies.map((p) => <option key={p}>{p}</option>)}</select>
         {ipTypes.has(type) && <label className="radio"><input type="checkbox" checked={noResolve} onChange={(e) => setNoResolve(e.target.checked)} /> no-resolve</label>}
-        <button className="btn primary" disabled={!payload} onClick={add}>增加</button>
+        <button className="btn primary" disabled={busy || !value || value.includes(",")} title={value.includes(",") ? "值里不能有逗号" : ""} onClick={add}>增加</button>
       </div>
     </div>
   );
@@ -36,15 +39,15 @@ export default function Rules({ status }: { status: Status }) {
   const [rules, setRules] = useState<Rule[]>([]);
   const [filter, setFilter] = useState("");
   const [mine, setMine] = useState(0); // the first `mine` rules are the user's own (prepend-rules), the only ones that move
-  const load = () => {
-    CoreService.Rules().then((r) => setRules(r ?? []));
-    ProfileService.UserItems().then((u) => setMine(u.rules?.length ?? 0));
-  };
-
-  usePoll(load, 3000, status.running); // hit counts move
+  const loadRules = () => CoreService.Rules().then((r) => setRules(r ?? []));
+  // the user's own count only changes on an edit here; the rules' hit counts move on their own
+  const load = () => Promise.all([loadRules(), ProfileService.UserItems().then((u) => setMine(u.rules?.length ?? 0))]);
+  useEffect(() => { if (status.running) load(); }, [status.running]);
+  usePoll(loadRules, 10_000, status.running);
 
   const q = filter.toLowerCase();
-  const shown = rules.filter((r) => !q || `${r.type} ${r.payload} ${r.proxy}`.toLowerCase().includes(q));
+  const shown = useMemo(() => rules.filter((r) => !q || `${r.type} ${r.payload} ${r.proxy}`.toLowerCase().includes(q)), [rules, q]);
+  const MAX_ROWS = 500; // ponytail: a cap instead of virtualisation; virtualise if people scroll past it
   const run = (p: Promise<unknown>) => { p.then(load); };
   const toggle = (r: Rule) => run(CoreService.SetRuleDisabled(r.index, !r.disabled));
 
@@ -60,7 +63,7 @@ export default function Rules({ status }: { status: Status }) {
           <table className="table">
             <thead><tr><th>#</th><th>类型</th><th>内容</th><th>策略</th><th>命中</th><th /></tr></thead>
             <tbody>
-              {shown.map((r) => (
+              {shown.slice(0, MAX_ROWS).map((r) => (
                 <tr key={r.index} className={r.disabled ? "muted" : ""}>
                   <td>{r.index}</td>
                   <td>{r.type}</td>
@@ -79,6 +82,7 @@ export default function Rules({ status }: { status: Status }) {
               ))}
             </tbody>
           </table>
+          {shown.length > MAX_ROWS && <div className="muted small" style={{ padding: 8 }}>还有 {shown.length - MAX_ROWS} 条，搜索查看</div>}
         </div>
       </div>
     </div>

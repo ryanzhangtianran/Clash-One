@@ -43,10 +43,20 @@ func (s *EnhancedService) SetMode(mode string) error {
 	case "":
 		return s.SetEnabled(false)
 	case "tun", "process-tun":
-		if err := s.profiles.Set("capture.mode", mode); err != nil {
+		// capture.mode goes into the override without applying; SetEnabled applies once and
+		// rolls both back if the core refuses
+		old, _ := s.profiles.Value("capture.mode")
+		if err := s.profiles.store.SetPath([]string{"capture", "mode"}, mode); err != nil {
 			return err
 		}
-		return s.SetEnabled(true)
+		if err := s.SetEnabled(true); err != nil {
+			if old != nil {
+				_ = s.profiles.store.SetPath([]string{"capture", "mode"}, old)
+			}
+			return err
+		}
+		emit("setting", "capture.mode")
+		return nil
 	}
 	return fmt.Errorf("unknown enhanced mode %q", mode)
 }
@@ -94,10 +104,12 @@ func (s *EnhancedService) SetEnabled(on bool) error {
 
 // useDaemon moves the GUI from its child core to the installed daemon.
 func (s *EnhancedService) useDaemon() error {
+	restarting.Add(1) // the traffic stream breaks here; the caller applies the config itself
+	defer restarting.Add(-1)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	_ = s.core.Stop() // frees the ports the daemon is about to take over
-	if err := s.core.Attach(ctx, daemon.Socket); err != nil {
+	if err := s.core.Attach(ctx, daemon.Socket, daemon.LogPath); err != nil {
 		return errors.Join(err, s.core.Start(ctx)) // keep a working core either way
 	}
 	return nil

@@ -25,14 +25,19 @@ export function RuleDialog({ conn, onClose }: { conn: Conn; onClose: () => void 
   const [policy, setPolicy] = useState("DIRECT");
   const [permanent, setPermanent] = useState(false);
   const [reconnect, setReconnect] = useState(true);
+  const [busy, setBusy] = useState(false);
   useEffect(() => { CoreService.Policies().then((p) => setPolicies(p ?? [])); }, []);
 
+  const payload = value.trim();
   const add = async () => {
-    const rule = `${type},${value},${policy}`;
-    if (permanent) await ProfileService.AddRule(rule);
-    else await CoreService.AddTempRule(rule);
-    if (reconnect) await CoreService.CloseHost(type.startsWith("DOMAIN") ? value : conn.host);
-    onClose();
+    setBusy(true);
+    try {
+      const rule = `${type},${payload},${policy}`;
+      if (permanent) await ProfileService.AddRule(rule);
+      else await CoreService.AddTempRule(rule);
+      if (reconnect) await CoreService.CloseHost(type.startsWith("DOMAIN") ? payload : conn.host);
+      onClose();
+    } finally { setBusy(false); }
   };
 
   return (
@@ -60,7 +65,7 @@ export function RuleDialog({ conn, onClose }: { conn: Conn; onClose: () => void 
         </div>
         <div className="actions end">
           <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn primary" disabled={!value} onClick={add}>增加</button>
+          <button className="btn primary" disabled={busy || !payload || payload.includes(",")} title={payload.includes(",") ? "值里不能有逗号" : ""} onClick={add}>增加</button>
         </div>
       </div>
     </div>

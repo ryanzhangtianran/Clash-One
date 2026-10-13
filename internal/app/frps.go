@@ -43,11 +43,11 @@ const frpsScript = `set -e
 SUDO=""; [ "$(id -u)" = 0 ] || SUDO="sudo -n"
 case "$(uname -m)" in x86_64|amd64) a=amd64;; aarch64|arm64) a=arm64;; armv7l|armv6l) a=arm;; *) echo "不支持的架构 $(uname -m)"; exit 1;; esac
 echo "==> 查询 frp 最新版本"
-v=$(curl -fsSL https://api.github.com/repos/fatedier/frp/releases/latest | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -1)
+v=$(curl -fsSL --max-time 60 https://api.github.com/repos/fatedier/frp/releases/latest | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -1)
 [ -n "$v" ] || { echo "无法获取 frp 版本，服务器能访问 GitHub 吗？"; exit 1; }
 echo "==> 下载 frp $v（linux/$a）"
 t=$(mktemp -d); cd "$t"
-curl -fsSL -o frp.tgz "https://github.com/fatedier/frp/releases/download/v$v/frp_${v}_linux_$a.tar.gz"
+curl -fsSL --max-time 300 -o frp.tgz "https://github.com/fatedier/frp/releases/download/v$v/frp_${v}_linux_$a.tar.gz"
 tar xzf frp.tgz
 echo "==> 安装 /usr/local/bin/frps"
 $SUDO install -m 755 "frp_${v}_linux_$a/frps" /usr/local/bin/frps

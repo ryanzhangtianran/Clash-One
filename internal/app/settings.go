@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/ryanzhangtianran/Connaio/internal/profile"
 )
 
 // Settings are the GUI's own switches, kept in settings.json next to the config.
@@ -43,5 +45,5 @@ func (f *settingsFile) Update(change func(*Settings)) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(f.path, b, 0o644)
+	return profile.WriteAtomic(f.path, b, 0o644)
 }

@@ -3,7 +3,7 @@ import { CoreService } from "../bindings/github.com/ryanzhangtianran/Connaio/int
 import type { Conn, Status, TempRule } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { RuleDialog, age } from "./RuleDialog";
 import { sizeText } from "./format";
-import { usePoll } from "./hooks";
+import { usePoll, useClickAway } from "./hooks";
 
 // method approximates Surge's column from what the core knows: transport and port.
 function method(c: Conn) {
@@ -46,10 +46,11 @@ export default function Dashboard({ status }: { status: Status }) {
   const [dialog, setDialog] = useState<Conn | null>(null);
   const [tempOpen, setTempOpen] = useState(false);
 
-  usePoll(() => {
-    CoreService.Connections().then((c) => setConns(c ?? []));
-    CoreService.TempRules().then((r) => setTemp(r ?? []));
-  }, 1000, status.running);
+  usePoll(() => Promise.all([
+    CoreService.Connections().then((c) => setConns(c ?? [])),
+    CoreService.TempRules().then((r) => setTemp(r ?? [])),
+  ]), 2000, status.running);
+  useClickAway(tempOpen, () => setTempOpen(false));
 
   const keyOf = (c: Conn) => (groupBy === "client" ? client(c) : c.host);
   const groups = useMemo(() => {
@@ -58,7 +59,8 @@ export default function Dashboard({ status }: { status: Status }) {
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [conns, groupBy]);
   const q = query.toLowerCase();
-  const shown = conns.filter((c) => (!selected || keyOf(c) === selected) && (!q || `${client(c)} ${c.host} ${c.rule} ${c.chain}`.toLowerCase().includes(q)));
+  const shown = useMemo(() => conns.filter((c) => (!selected || keyOf(c) === selected) && (!q || `${client(c)} ${c.host} ${c.rule} ${c.chain}`.toLowerCase().includes(q))), [conns, groupBy, selected, q]);
+  const MAX_ROWS = 300; // ponytail: a cap instead of virtualisation; virtualise if people scroll past it
   const current = conns.find((c) => c.id === detail);
 
   return (
@@ -108,7 +110,7 @@ export default function Dashboard({ status }: { status: Status }) {
               <colgroup><col style={{ width: "13%" }} /><col /><col style={{ width: "19%" }} /><col style={{ width: 74 }} /><col style={{ width: 74 }} /><col style={{ width: 52 }} /></colgroup>
               <thead><tr><th>客户端</th><th className="addr">地址</th><th>策略</th><th className="num">上传</th><th className="num">下载</th><th className="num">时长</th></tr></thead>
               <tbody>
-                {shown.map((c) => (
+                {shown.slice(0, MAX_ROWS).map((c) => (
                   <tr key={c.id} className={c.id === detail ? "row-selected" : ""} onClick={() => setDetail(c.id === detail ? "" : c.id)}>
                     <td title={c.path}>{client(c)}</td>
                     <td className="addr" title={`${c.host}:${c.port}`}><span className={`method m-${method(c).toLowerCase()}`}>{method(c)}</span>{c.host}:{c.port}</td>
@@ -121,6 +123,7 @@ export default function Dashboard({ status }: { status: Status }) {
               </tbody>
             </table>
             {shown.length === 0 && <div className="dash-empty muted">没有连接</div>}
+            {shown.length > MAX_ROWS && <div className="dash-empty muted">还有 {shown.length - MAX_ROWS} 条，搜索或按客户端筛选查看</div>}
           </div>
         </div>
       </div>

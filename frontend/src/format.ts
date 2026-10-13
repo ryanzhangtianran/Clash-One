@@ -9,6 +9,9 @@ export const words = {
   tray: { macos: "菜单栏", linux: "托盘", windows: "通知区域" }[platform],
 };
 
+// validPort accepts 1..65535 as typed.
+export const validPort = (s: string) => /^\d+$/.test(s) && Number(s) >= 1 && Number(s) <= 65535;
+
 // [value, unit] for big-number displays, e.g. 813 KB/s
 export function speed(bytes: number): [string, string] {
   if (bytes < 1000) return [String(bytes), "B/s"];

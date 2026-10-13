@@ -12,6 +12,7 @@ package app
 static NSImage *trayIcon;
 
 static void setTray(void *item, const void *icon, int iconLen, const char *badge, bool dim, const char *up, const char *down) {
+	@autoreleasepool { // called from a Go thread, which has no pool of its own
 	if (!trayIcon) {
 		trayIcon = [[NSImage alloc] initWithData:[NSData dataWithBytes:icon length:iconLen]];
 	}
@@ -55,16 +56,17 @@ static void setTray(void *item, const void *icon, int iconLen, const char *badge
 			return;
 		}
 		// the speed is the button's own two-line title, so it renders like other menu bar text
-		NSMutableParagraphStyle *p = [NSMutableParagraphStyle new];
+		NSMutableParagraphStyle *p = [[NSMutableParagraphStyle new] autorelease];
 		p.alignment = NSTextAlignmentRight;
 		p.minimumLineHeight = p.maximumLineHeight = 9;
-		button.attributedTitle = [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%@\n%@", u, d] attributes:@{
+		button.attributedTitle = [[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%@\n%@", u, d] attributes:@{
 			NSFontAttributeName: [NSFont monospacedDigitSystemFontOfSize:9 weight:NSFontWeightMedium],
 			NSForegroundColorAttributeName: [NSColor.labelColor colorWithAlphaComponent:dim ? 0.4 : 1], // appearsDisabled greys the cat, not the title
 			NSParagraphStyleAttributeName: p,
 			NSBaselineOffsetAttributeName: @(-4), // the button sits a two-line title high; centre it on the bar
-		}];
+		}] autorelease];
 	});
+	}
 }
 
 // DetailItemView draws a menu item that carries something on its right, as Surge's menu does: an

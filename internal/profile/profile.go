@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -37,12 +38,17 @@ type Profile struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 	Interval  int       `json:"interval"` // auto-update hours, 0 = never
 	Usage     *Usage    `json:"usage,omitempty"`
+	LastTried time.Time `json:"lastTried,omitempty"` // last failed auto-update, so it waits a full interval before the next
 }
 
 type Store struct {
-	dir   string
-	mu    sync.Mutex
-	index struct {
+	dir string
+	mu  sync.Mutex
+	// the last merged config Value served, and the files it came from (see Value)
+	valueMu    sync.Mutex
+	valueKey   string
+	valueCache any
+	index      struct {
 		Current  string    `json:"current"`
 		Profiles []Profile `json:"profiles"`
 	}
@@ -61,7 +67,27 @@ func Open(dir string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s, json.Unmarshal(b, &s.index)
+	if err := json.Unmarshal(b, &s.index); err != nil {
+		// a torn file must not keep the app from launching; the profiles themselves are still on disk
+		log.Printf("profiles/index.json unreadable (%v), moving it aside", err)
+		_ = os.Rename(s.path("index.json"), s.path("index.json.bad"))
+		s.index.Current, s.index.Profiles = "", nil
+	}
+	return s, nil
+}
+
+// WriteAtomic writes data to a temporary file next to path and renames it in, so a crash mid-write
+// leaves the old file rather than a torn one.
+func WriteAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 func (s *Store) path(name string) string { return filepath.Join(s.dir, name) }
@@ -71,7 +97,7 @@ func (s *Store) save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path("index.json"), b, 0o644)
+	return WriteAtomic(s.path("index.json"), b, 0o644)
 }
 
 func (s *Store) List() (string, []Profile) {
@@ -106,7 +132,7 @@ func (s *Store) add(p Profile, content []byte) (Profile, error) {
 	p.ID, p.UpdatedAt = hex.EncodeToString(id), time.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := os.WriteFile(s.path(p.ID+".yaml"), formatted(content), 0o600); err != nil {
+	if err := WriteAtomic(s.path(p.ID+".yaml"), formatted(content), 0o600); err != nil {
 		return Profile{}, err
 	}
 	s.index.Profiles = append(s.index.Profiles, p)
@@ -128,19 +154,21 @@ func (s *Store) Update(id string, clients ...*http.Client) (Profile, error) {
 	s.mu.Unlock()
 
 	content, usage, interval, err := download(url, clients)
-	if err != nil {
-		return Profile{}, err
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if i = slices.IndexFunc(s.index.Profiles, func(p Profile) bool { return p.ID == id }); i < 0 {
 		return Profile{}, fmt.Errorf("profile %s was removed", id)
 	}
-	if err := os.WriteFile(s.path(id+".yaml"), formatted(content), 0o600); err != nil {
+	p := &s.index.Profiles[i]
+	if err != nil {
+		p.LastTried = time.Now() // Due waits a full interval before trying again
+		_ = s.save()
 		return Profile{}, err
 	}
-	p := &s.index.Profiles[i]
-	p.UpdatedAt, p.Usage = time.Now(), usage
+	if err := WriteAtomic(s.path(id+".yaml"), formatted(content), 0o600); err != nil {
+		return Profile{}, err
+	}
+	p.UpdatedAt, p.Usage, p.LastTried = time.Now(), usage, time.Time{}
 	if interval > 0 && p.Interval == 0 {
 		p.Interval = interval
 	}
@@ -182,7 +210,7 @@ func (s *Store) SetContent(id, content string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path(id+".yaml"), []byte(formatted), 0o600)
+	return WriteAtomic(s.path(id+".yaml"), []byte(formatted), 0o600)
 }
 
 func (s *Store) has(id string) bool {
@@ -207,7 +235,11 @@ func (s *Store) Due(now time.Time) []string {
 	defer s.mu.Unlock()
 	var ids []string
 	for _, p := range s.index.Profiles {
-		if p.URL != "" && p.Interval > 0 && now.Sub(p.UpdatedAt) >= time.Duration(p.Interval)*time.Hour {
+		since := p.UpdatedAt
+		if p.LastTried.After(since) {
+			since = p.LastTried
+		}
+		if p.URL != "" && p.Interval > 0 && now.Sub(since) >= time.Duration(p.Interval)*time.Hour {
 			ids = append(ids, p.ID)
 		}
 	}
@@ -227,7 +259,7 @@ func (s *Store) SetOverride(content string) error {
 	if _, err := parseMap([]byte(content)); err != nil {
 		return fmt.Errorf("覆写不是有效的 YAML 字典: %w", err)
 	}
-	return os.WriteFile(s.path("override.yaml"), []byte(content), 0o644)
+	return WriteAtomic(s.path("override.yaml"), []byte(content), 0o644)
 }
 
 // formatted is a profile as stored: Format'd, or as given if it can't be (validate already passed).
