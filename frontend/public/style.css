@@ -430,3 +430,10 @@ tr.muted td.rule-actions { text-decoration: none; }
 .linux { --bg: #eef0f4; --panel: #ffffff; }
 @media (prefers-color-scheme: dark) { .linux { --bg: #1c1d21; --panel: #26272c; } }
 .linux .sidebar { padding-top: 10px; -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* password fields: the input plus a 显示 / 隐藏 toggle at its right edge */
+.pw { position: relative; display: flex; min-width: 0; }
+.pw input { width: 100%; padding-right: 30px; }
+.pw button { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: flex; border: 0; background: none; padding: 2px; color: var(--text-2); cursor: pointer; }
+.pw svg { width: 15px; height: 15px; }
+.pw button:hover { color: var(--text); }

@@ -1,7 +1,9 @@
+import { validPort } from "./format";
 import { useEffect, useState } from "react";
+import PasswordInput from "./PasswordInput";
 import { CoreService, ProfileService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { localRule } from "./Tunnels";
-import { on } from "./hooks";
+import { on, useDirty } from "./hooks";
 
 type Row = Record<string, string>;
 
@@ -29,6 +31,12 @@ function Rows({ cols, rows, setRows }: { cols: [string, string][]; rows: Row[]; 
 }
 
 const num = (s: string) => (s && !isNaN(Number(s)) ? Number(s) : undefined);
+const validName = (s: string) => /^[\w.-]+$/.test(s); // goes into an IN-NAME rule, so no commas or spaces
+// input is a text field bound to key k of a form state; secret ("password") shows it through PasswordInput.
+const input = (s: Record<string, string>, set: (v: Record<string, string>) => void) => (k: string, placeholder = "", secret = "") => {
+  const props = { placeholder, value: s[k] ?? "", onChange: (e: React.ChangeEvent<HTMLInputElement>) => set({ ...s, [k]: e.target.value }) };
+  return secret ? <PasswordInput {...props} /> : <input {...props} />;
+};
 const clean = (o: Record<string, any>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== ""));
 
 type Auth = "password" | "key";
@@ -47,7 +55,7 @@ function DeployFrps({ onDone, onClose }: { onDone: (host: string, port: number, 
   const [log, setLog] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   useEffect(() => on("frps-deploy", (d) => setLog((l) => [...l, d])), []);
-  const f = (k: string, placeholder = "", type = "text") => <input type={type} placeholder={placeholder} value={d[k] ?? ""} onChange={(e) => setD({ ...d, [k]: e.target.value })} />;
+  const f = input(d, setD);
   const deploy = () => {
     setBusy(true); setLog([]);
     ToolService.DeployFRPS({ host: d.host, port: Number(d.port) || 22, user: d.user, password: auth === "password" ? d.password : "", key: auth === "key" ? d.key : "", bindPort: Number(d.bindPort) || 7000 })
@@ -93,6 +101,8 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
   const [names, setNames] = useState<string[]>([]);
   const [auth, setAuth] = useState<Auth>("password");
   const [deploying, setDeploying] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const dirty = useDirty([v, frpRows, sshRows, kind, auth]);
   const [mixedPort, setMixedPort] = useState(0);
   useEffect(() => { ProfileService.Value("mixed-port").then((p) => setMixedPort(Number(p) || 0)); }, []);
   // viaRules: a forward from the server to Connaio's proxy port, so devices using it as a proxy
@@ -104,7 +114,7 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
     else setSshRows(on ? [...sshRows, { remote: "0.0.0.0:17890", local: proxyTarget }] : sshRows.filter((r) => r.local !== proxyTarget));
   };
   useEffect(() => { CoreService.ProxyNames().then((n) => setNames(n ?? [])); }, []);
-  const field = (k: string, placeholder = "", type = "text") => <input type={type} placeholder={placeholder} value={v[k] ?? ""} onChange={(e) => setV({ ...v, [k]: e.target.value })} />;
+  const field = input(v, setV);
 
   const build = (): Record<string, any> => {
     const base = clean({ name: v.name, type: kind, "dialer-proxy": v.dialer });
@@ -127,11 +137,17 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
   };
 
   const add = () => {
-    ProfileService.AddTunnel(build()).then(() => (viaRules ? ProfileService.AddRule(localRule(v.name)) : undefined)).then(onClose);
+    setBusy(true);
+    ProfileService.AddTunnel(build()).then(() => (viaRules ? ProfileService.AddRule(localRule(v.name)) : undefined)).then(onClose).finally(() => setBusy(false));
   };
+  // every port the form sends must be a real one; a blank optional port is fine
+  const ports = kind === "frp"
+    ? [v.serverPort, ...frpRows.flatMap((r) => [r.localPort, r.remotePort])]
+    : [v.port];
+  const ready = validName(v.name ?? "") && ports.every((p) => !p || validPort(p)) && (kind === "frp" ? !!v.serverAddr : !!v.server && !!v.username);
 
   return (
-    <div className="modal-bg" onClick={onClose}>
+    <div className="modal-bg" onClick={dirty ? undefined : onClose}>
       <div className="modal card wide" onClick={(e) => e.stopPropagation()}>
         <h2 className="modal-title">增加隧道</h2>
         <div className="seg" style={{ marginBottom: 8 }}>
@@ -139,7 +155,7 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
           <button className={kind === "ssh" ? "on" : ""} onClick={() => setKind("ssh")}>SSH</button>
         </div>
         <div className="form-grid">
-          <label>名称</label>{field("name", "必填")}
+          <label>名称</label>{field("name", v.name && !validName(v.name) ? "只能用字母、数字、. _ -" : "必填")}
           {kind === "frp" ? (
             <>
               <label>frps 地址</label>
@@ -181,7 +197,7 @@ export default function TunnelDialog({ onClose }: { onClose: () => void }) {
         <button className="btn" style={{ marginTop: 8 }} onClick={() => (kind === "frp" ? setFrpRows([...frpRows, { type: "tcp", localIP: "127.0.0.1" }]) : setSshRows([...sshRows, {}]))}>{kind === "frp" ? "添加代理" : "添加转发"}</button>
         <div className="actions end">
           <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn primary" disabled={!v.name} onClick={add}>完成</button>
+          <button className="btn primary" disabled={!ready || busy} onClick={add}>完成</button>
         </div>
       </div>
       {deploying && <div onClick={(e) => e.stopPropagation()}>{/* clicks in it must not close this dialog */}

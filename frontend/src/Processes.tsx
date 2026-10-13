@@ -5,7 +5,12 @@ import { Switch, useSetting } from "./Settings";
 import { usePoll } from "./hooks";
 import { words } from "./format";
 
-const sources: Record<string, string> = { app: "正在运行", network: "有网络连接" };
+const sources: Record<string, string> = { app: "正在运行", network: "有网络连接", tool: "命令行工具" };
+
+// tools are command-line programs that ignore the system proxy; picking one captures it and what it
+// spawns (git's ssh and git-remote-https, pip's and npm's downloads) by PROCESS-ANCESTOR.
+const tools: ProcessChoice[] = ["ssh", "scp", "sftp", "rsync", "git", "curl", "wget", "pip3", "python3", "npm", "node", "go", "brew", "kubectl", "conda"]
+  .map((exec) => ({ name: exec, exec, source: "tool" }));
 
 // Processes is the enhanced page: enhanced mode routes all traffic through TUN, partial enhancement
 // only the selected apps (and their child processes). The two exclude each other (EnhancedService.Mode).
@@ -15,14 +20,14 @@ export default function Processes({ status, mode, rooted }: { status: Status; mo
   const [choices, setChoices] = useState<ProcessChoice[]>([]);
   const [query, setQuery] = useState("");
 
-  const load = useCallback(() => { SettingsService.ProcessChoices().then((c) => setChoices(c ?? [])); }, []);
-  usePoll(load, 5000);
+  const load = useCallback(() => SettingsService.ProcessChoices().then((c) => setChoices(c ?? [])), []);
+  const partial = mode === "process-tun";
+  usePoll(load, 5000, status.running && partial);
 
   const run = (key: string, p: Promise<unknown>) => {
     setBusy(key);
     p.finally(() => setBusy(""));
   };
-  const partial = mode === "process-tun";
   const picked = processes ?? [];
   const has = (exec: string) => picked.some((p) => p.toLowerCase() === exec.toLowerCase());
   const toggle = (exec: string, on: boolean) => setProcesses(on ? [...picked, exec] : picked.filter((p) => p.toLowerCase() !== exec.toLowerCase()));
@@ -32,6 +37,7 @@ export default function Processes({ status, mode, rooted }: { status: Status; mo
   const rows = [
     ...picked.map((exec) => known.get(exec.toLowerCase()) ?? { name: exec, exec, source: "" }),
     ...choices.filter((c) => !has(c.exec)),
+    ...tools.filter((t) => !has(t.exec) && !known.has(t.exec)),
   ];
   const q = query.toLowerCase();
   const shown = rows.filter((r) => !q || `${r.name} ${r.exec}`.toLowerCase().includes(q));

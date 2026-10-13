@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -36,6 +37,30 @@ type Tunnel struct {
 	Error    string    `json:"error"`
 	Since    string    `json:"since"`
 	Forwards []Forward `json:"forwards"`
+}
+
+// EasyConnectTunnel is one EasyConnect (campus VPN) outbound's state, from the core.
+type EasyConnectTunnel struct {
+	Name    string              `json:"name"`
+	State   string              `json:"state"` // up, connecting, down
+	Error   string              `json:"error"`
+	Address string              `json:"address"`
+	Routing *EasyConnectRouting `json:"routing"`
+}
+
+// EasyConnectRouting is what the gateway routes: traffic outside it is dropped by the gateway.
+type EasyConnectRouting struct {
+	IP      []EasyConnectRange `json:"ip"`
+	Domains []string           `json:"domains"`
+	DNS     []string           `json:"dns"`
+}
+
+type EasyConnectRange struct {
+	From     string `json:"from"`
+	To       string `json:"to"`
+	PortMin  int    `json:"portMin"`
+	PortMax  int    `json:"portMax"`
+	Protocol string `json:"protocol"`
 }
 
 type LogLine struct {
@@ -87,18 +112,58 @@ func (s *CoreService) ReverseTunnels() ([]Tunnel, error) {
 	return resp.Tunnels, err
 }
 
+func (s *CoreService) EasyConnects() ([]EasyConnectTunnel, error) {
+	var resp struct {
+		Tunnels []EasyConnectTunnel `json:"tunnels"`
+	}
+	err := s.core.Do(context.Background(), http.MethodGet, "/easyconnect", nil, &resp)
+	return resp.Tunnels, err
+}
+
 // streamLogs forwards core log lines (info and above) to the frontend, reconnecting on errors.
 func (s *CoreService) streamLogs(ctx context.Context) {
-	for ctx.Err() == nil {
-		err := s.core.Stream(ctx, "/logs?level=info", func(line []byte) {
-			var l LogLine
-			if json.Unmarshal(line, &l) == nil {
-				emit("log", l)
+	s.retryStream(ctx, "log stream", "/logs?level=info", func(line []byte) {
+		var l LogLine
+		if json.Unmarshal(line, &l) == nil {
+			emit("log", l)
+			if (l.Level == "warning" || l.Level == "error") && strings.Contains(l.Payload, "[EasyConnect]") {
+				if _, after, ok := strings.Cut(l.Payload, ")"); ok {
+					notify("warning", "VPN：%s", strings.TrimSpace(after))
+				}
 			}
-		})
-		if ctx.Err() == nil {
-			log.Printf("log stream: %v, retrying", err)
-			time.Sleep(time.Second)
 		}
+	}, nil, nil)
+}
+
+// retryStream keeps a core stream open, reconnecting with backoff (1s doubling to 30s). It logs
+// once when the stream breaks and once when it is back; onBroken and onBack run then, when given.
+func (s *CoreService) retryStream(ctx context.Context, name, path string, onLine func([]byte), onBroken func(error), onBack func()) {
+	delay, broken := time.Second, false
+	for ctx.Err() == nil {
+		err := s.core.Stream(ctx, path, func(line []byte) {
+			if broken {
+				broken, delay = false, time.Second
+				log.Printf("%s: back", name)
+				if onBack != nil {
+					onBack()
+				}
+			}
+			onLine(line)
+		})
+		if ctx.Err() != nil {
+			return
+		}
+		if !broken {
+			broken = true
+			log.Printf("%s: %v, retrying", name, err)
+		}
+		if onBroken != nil {
+			onBroken(err)
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(delay):
+		}
+		delay = min(delay*2, 30*time.Second)
 	}
 }

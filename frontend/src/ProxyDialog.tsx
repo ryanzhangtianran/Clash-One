@@ -1,6 +1,9 @@
+import { validPort } from "./format";
 import { useEffect, useState } from "react";
 import { CoreService, ProfileService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { Switch } from "./Settings";
+import PasswordInput from "./PasswordInput";
+import { useDirty } from "./hooks";
 
 type Field = {
   key: string; // mihomo key; dots nest: "ws-opts.path"
@@ -70,6 +73,8 @@ export default function ProxyDialog({ groups, editing, onClose }: { groups: stri
   const [join, setJoin] = useState<string[]>(groups.slice(0, 1));
   const [extra, setExtra] = useState("");
   const [more, setMore] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const dirty = useDirty([v, type, extra, join]);
   useEffect(() => { CoreService.ProxyNames().then((n) => setNames(n ?? [])); }, []);
 
   const fields = protocols[type].fields;
@@ -99,7 +104,8 @@ export default function ProxyDialog({ groups, editing, onClose }: { groups: stri
     return p;
   };
   const save = () => {
-    (editing ? ProfileService.EditProxy(editing.name, patch(), extra) : ProfileService.AddProxy(build(), extra, join)).then(onClose);
+    setBusy(true);
+    (editing ? ProfileService.EditProxy(editing.name, patch(), extra) : ProfileService.AddProxy(build(), extra, join)).then(onClose).finally(() => setBusy(false));
   };
 
   const input = (f: Field) => {
@@ -107,22 +113,24 @@ export default function ProxyDialog({ groups, editing, onClose }: { groups: stri
     const on = (value: unknown) => setV({ ...v, [f.key]: value });
     if (f.kind === "bool") return <Switch on={!!x} onChange={on} />;
     if (f.kind === "select") return <select value={x} onChange={(e) => on(e.target.value)}>{f.options!.map((o) => <option key={o} value={o}>{o || "无"}</option>)}</select>;
-    return <input type={f.kind === "password" ? "password" : "text"} placeholder={f.placeholder ?? "可选"} value={x} onChange={(e) => on(e.target.value)} />;
+    if (f.kind === "password") return <PasswordInput placeholder={f.placeholder ?? "可选"} value={x} onChange={(e) => on(e.target.value)} />;
+    return <input placeholder={f.placeholder ?? "可选"} value={x} onChange={(e) => on(e.target.value)} />;
   };
   const row = (label: string, control: React.ReactNode, key?: string) => (
     <div key={key ?? label} className="form-row"><span>{label}</span>{control}</div>
   );
-  const ready = !!(v.name && v.server && v.port);
+  const duplicate = !editing && names.includes(v.name);
+  const ready = !!(v.name && v.server) && validPort(v.port ?? "") && !duplicate;
 
   return (
-    <div className="modal-bg" onClick={onClose}>
+    <div className="modal-bg" onClick={dirty ? undefined : onClose}>
       <div className="sheet wide" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-head"><div className="sheet-title">{editing ? `编辑 ${editing.name}` : "增加代理"}</div></div>
         <div className="sheet-body two-col">
           <div>
             <div className="group-title">基本信息</div>
             <div className="plist">
-              {row("名称", <input autoFocus placeholder="必填" disabled={!!editing} value={v.name ?? ""} onChange={(e) => setV({ ...v, name: e.target.value })} />)}
+              {row("名称", <input autoFocus placeholder={duplicate ? "已有同名代理" : "必填"} disabled={!!editing} value={v.name ?? ""} onChange={(e) => setV({ ...v, name: e.target.value })} style={duplicate ? { borderColor: "var(--bad)" } : undefined} />)}
               {row("协议", <select value={type} disabled={!!editing} onChange={(e) => setType(e.target.value)}>{Object.entries(protocols).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}</select>)}
             </div>
             <div className="group-title">服务器信息</div>
@@ -184,7 +192,7 @@ export default function ProxyDialog({ groups, editing, onClose }: { groups: stri
           <button className="btn" onClick={() => setMore(!more)}>{more ? "收起更多设置" : "更多设置…"}</button>
           <span className="grow" />
           <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn primary" disabled={!ready} onClick={save}>完成</button>
+          <button className="btn primary" disabled={!ready || busy} onClick={save}>完成</button>
         </div>
       </div>
     </div>
