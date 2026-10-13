@@ -77,8 +77,10 @@ tasks:
     cmds:
       # the WebView2 bootstrapper the installer runs when the runtime is missing
       - wails3 generate webview2bootstrapper -dir "{{.ROOT_DIR}}/build/windows/nsis"
-      - makensis -DINFO_PRODUCTVERSION={{.VERSION}} -DARG_WAILS_AMD64_BINARY="{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}.exe" -DARG_CORE_BINARY="{{.ROOT_DIR}}/{{.BIN_DIR}}/connaio-core.exe" -DARG_WINTUN="{{.ROOT_DIR}}/{{.BIN_DIR}}/wintun.dll" project.nsi
+      # NSIS on Windows wants backslashes in File paths (a mixed D:\...\x/bin/y.exe finds nothing)
+      - makensis -DINFO_PRODUCTVERSION={{.VERSION}} -DARG_WAILS_AMD64_BINARY="{{.BIN}}{{.APP_NAME}}.exe" -DARG_CORE_BINARY="{{.BIN}}connaio-core.exe" -DARG_WINTUN="{{.BIN}}wintun.dll" project.nsi
     vars:
+      BIN: '{{if eq OS "windows"}}{{.ROOT_DIR}}\{{.BIN_DIR}}\{{else}}{{.ROOT_DIR}}/{{.BIN_DIR}}/{{end}}'
       VERSION:
         sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 0.0.0
 
