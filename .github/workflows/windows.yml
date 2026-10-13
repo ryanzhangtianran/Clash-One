@@ -41,7 +41,7 @@ jobs:
         run: |
           go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
           choco install nsis -y --no-progress
-          echo "/c/Program Files (x86)/NSIS" >> "$GITHUB_PATH"
+          echo "C:\\Program Files (x86)\\NSIS" >> "$GITHUB_PATH" # a native path: wails3 looks makensis up through the Windows PATH
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build the installer
