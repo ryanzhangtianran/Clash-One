@@ -75,7 +75,7 @@ jobs:
           sleep 1
           # the root core saw curl's connection, and named its process
           sudo tail -n 25 /var/lib/connaio/$uid/core.log
-          sudo grep -E '\(curl[,)].*gstatic' /var/lib/connaio/$uid/core.log
+          sudo grep -E '\(curl[,)]' /var/lib/connaio/$uid/core.log # the destination shows as a name or an IP, depending on whether DNS went through the TUN
       - name: Turn the root core off
         if: always()
         run: sudo /usr/lib/connaio/connaio-root disable "$(id -u)" || true
