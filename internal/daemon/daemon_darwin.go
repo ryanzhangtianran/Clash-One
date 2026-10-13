@@ -1,8 +1,6 @@
 package daemon
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,11 +9,12 @@ import (
 )
 
 const (
-	Label  = "com.ryanzhangtianran.connaio.core"
-	Helper = "/Library/PrivilegedHelperTools/" + Label
-	Plist  = "/Library/LaunchDaemons/" + Label + ".plist"
-	Dir    = "/Library/Application Support/Connaio Core"
-	Socket = Dir + "/core.sock"
+	Label   = "com.ryanzhangtianran.connaio.core"
+	Helper  = "/Library/PrivilegedHelperTools/" + Label
+	Plist   = "/Library/LaunchDaemons/" + Label + ".plist"
+	Dir     = "/Library/Application Support/Connaio Core"
+	Socket  = Dir + "/core.sock"
+	LogPath = Dir + "/core.log" // launchd writes the daemon's output here
 )
 
 // Installed reports whether the LaunchDaemon is set up.
@@ -128,19 +127,6 @@ func asAdmin(script, prompt string) error {
 	default:
 		return fmt.Errorf("授权失败：%s", msg)
 	}
-}
-
-func sum(b []byte) string {
-	h := sha256.Sum256(b)
-	return hex.EncodeToString(h[:])
-}
-
-func fileSum(path string) (string, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	return sum(b), nil
 }
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }

@@ -1,4 +1,5 @@
-// Package core runs connaio-core as a child process and talks to its REST API over a Unix socket.
+// Package core runs connaio-core as a child process and talks to its REST API over a Unix socket
+// (a named pipe on Windows).
 package core
 
 import (
@@ -16,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -26,6 +26,7 @@ type Core struct {
 	Dir  string
 	http *http.Client
 
+	life    sync.Mutex // serialises Start, Stop and Attach
 	mu      sync.Mutex
 	socket  string
 	logPath string
@@ -36,13 +37,17 @@ type Core struct {
 
 func New(dir string) *Core {
 	c := &Core{Dir: dir}
-	c.http = &http.Client{Transport: &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", c.Socket())
-		},
-		DisableKeepAlives: true, // the socket changes when switching between child and daemon
-	}}
+	c.http = client(c.Socket)
 	return c
+}
+
+// client talks HTTP to the core at addr(); connections aren't kept, as the socket changes when
+// switching between child and daemon.
+func client(addr func() string) *http.Client {
+	return &http.Client{Transport: &http.Transport{
+		DialContext:       func(ctx context.Context, _, _ string) (net.Conn, error) { return dialControl(ctx, addr()) },
+		DisableKeepAlives: true,
+	}}
 }
 
 func (c *Core) Socket() string {
@@ -58,27 +63,33 @@ func (c *Core) Daemon() bool {
 	return c.daemon
 }
 
-// Attach talks to a core that is already running on socket, e.g. the root daemon.
-func (c *Core) Attach(ctx context.Context, socket string) error {
+// Attach talks to a core that is already running on socket, e.g. the root daemon, whose log is at
+// logPath. The switch is made only once that socket answers; until then the GUI keeps talking to
+// whatever it had.
+func (c *Core) Attach(ctx context.Context, socket, logPath string) error {
+	c.life.Lock()
+	defer c.life.Unlock()
+	if err := c.wait(ctx, nil, logPath, socket); err != nil {
+		return err
+	}
 	c.mu.Lock()
-	c.socket, c.daemon = socket, true
-	c.logPath = filepath.Join(filepath.Dir(socket), "core.log") // the daemon logs next to its socket
+	c.socket, c.daemon, c.logPath = socket, true, logPath
 	c.mu.Unlock()
-	return c.wait(ctx, nil, socket)
+	return nil
 }
 
-func (c *Core) wait(ctx context.Context, exited <-chan struct{}, logPath string) error {
+// wait polls socket until its API answers, the process exits or 15s pass.
+func (c *Core) wait(ctx context.Context, exited <-chan struct{}, logPath, socket string) error {
 	deadline := time.After(15 * time.Second)
 	for {
-		if _, err := c.Version(ctx); err == nil {
+		if err := c.probe(ctx, socket); err == nil {
 			return nil
 		}
 		select {
 		case <-exited:
-			out, _ := os.ReadFile(logPath)
-			return fmt.Errorf("内核已退出: %s（日志 %s）", problems(string(out)), logPath)
+			return fmt.Errorf("内核已退出: %s（日志 %s）", problems(tail(logPath)), logPath)
 		case <-deadline:
-			return fmt.Errorf("connaio-core at %s did not answer within 15s", c.Socket())
+			return fmt.Errorf("connaio-core at %s did not answer within 15s", socket)
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(200 * time.Millisecond):
@@ -95,15 +106,18 @@ func Binary() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	p := filepath.Join(filepath.Dir(exe), "connaio-core")
+	p := filepath.Join(filepath.Dir(exe), coreExe)
 	if _, err := os.Stat(p); err != nil {
 		return "", fmt.Errorf("connaio-core not found next to %s (set CONNAIO_CORE): %w", exe, err)
 	}
 	return p, nil
 }
 
-// Start launches the core and waits until its API answers.
+// Start launches the core and waits until its API answers; a core that never does is stopped
+// again, and the GUI keeps whatever it was attached to.
 func (c *Core) Start(ctx context.Context) error {
+	c.life.Lock()
+	defer c.life.Unlock()
 	bin, err := Binary()
 	if err != nil {
 		return err
@@ -123,10 +137,9 @@ func (c *Core) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	socket := filepath.Join(c.Dir, "core.sock") // keep short: macOS caps socket paths at 104 bytes
-	_ = os.Remove(socket)                       // a stale socket from a crash would make the core fail to listen
+	socket := controlAddr(c.Dir)
 
-	cmd := exec.Command(bin, "-d", c.Dir, "-ext-ctl-unix", socket)
+	cmd := exec.Command(bin, append([]string{"-d", c.Dir}, controlArgs(socket)...)...)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
@@ -134,40 +147,63 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	_ = os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0o644)
 	exited := make(chan struct{})
-	c.mu.Lock()
-	c.socket, c.logPath, c.daemon, c.cmd, c.exited = socket, logPath, false, cmd, exited
-	c.mu.Unlock()
 	go func() {
 		_ = cmd.Wait()
 		logFile.Close()
 		_ = os.Remove(pidFile)
 		close(exited)
 	}()
-	return c.wait(ctx, exited, logPath)
+	if err := c.wait(ctx, exited, logPath, socket); err != nil {
+		stop(cmd, exited)
+		return err
+	}
+	c.mu.Lock()
+	c.socket, c.logPath, c.daemon, c.cmd, c.exited = socket, logPath, false, cmd, exited
+	c.mu.Unlock()
+	return nil
 }
 
-// stopStale ends the core recorded in pidFile if it is still running, waiting up to 5s.
-func stopStale(pidFile string) {
+// Exited reports whether the GUI's own child is gone (never started, stopped or crashed).
+func (c *Core) Exited() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.cmd == nil {
+		return true
+	}
+	select {
+	case <-c.exited:
+		return true
+	default:
+		return false
+	}
+}
+
+// tail is the last 256 KB of a log file: enough for the latest start, not the whole history.
+func tail(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	const n = 256 << 10
+	if st, err := f.Stat(); err == nil && st.Size() > n {
+		_, _ = f.Seek(-n, io.SeekEnd)
+	}
+	b, _ := io.ReadAll(f)
+	return string(b)
+}
+
+// stalePid is the pid a crashed or force-quit GUI left in pidFile, if any.
+func stalePid(pidFile string) (int, bool) {
 	b, err := os.ReadFile(pidFile)
 	if err != nil {
-		return
+		return 0, false
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
 	if err != nil || pid <= 1 {
-		return
+		return 0, false
 	}
-	// only signal it if the pid still belongs to a connaio-core (pids get reused)
-	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output()
-	if err != nil || filepath.Base(strings.TrimSpace(string(out))) != "connaio-core" {
-		_ = os.Remove(pidFile)
-		return
-	}
-	_ = syscall.Kill(pid, syscall.SIGTERM)
-	for i := 0; i < 50 && syscall.Kill(pid, 0) == nil; i++ {
-		time.Sleep(100 * time.Millisecond)
-	}
-	_ = syscall.Kill(pid, syscall.SIGKILL)
-	_ = os.Remove(pidFile)
+	return pid, true
 }
 
 // BindErrors returns the listeners the core failed to open in its latest config load, from its
@@ -176,11 +212,7 @@ func (c *Core) BindErrors() []string {
 	c.mu.Lock()
 	path := c.logPath
 	c.mu.Unlock()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	text := string(b)
+	text := tail(path)
 	if i := strings.LastIndex(text, "Start initial configuration in progress"); i >= 0 {
 		text = text[i:]
 	}
@@ -191,12 +223,18 @@ func (c *Core) BindErrors() []string {
 func (c *Core) ConfigPath() string { return filepath.Join(c.Dir, "config.yaml") }
 
 // Validate runs the core's config test on path, returning its message when the config is rejected.
-func (c *Core) Validate(path string) error {
+// Without a deadline it gives up after 30s: the test can download geodata.
+func (c *Core) Validate(ctx context.Context, path string) error {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
 	bin, err := Binary()
 	if err != nil {
 		return err
 	}
-	out, err := exec.Command(bin, "-t", "-d", c.Dir, "-f", path).CombinedOutput()
+	out, err := exec.CommandContext(ctx, bin, "-t", "-d", c.Dir, "-f", path).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("配置校验失败: %s", problems(string(out)))
 	}
@@ -238,19 +276,14 @@ func msgs(text string, keep func(string) bool) []string {
 // Stop ends the GUI's own child (it restores routes and listeners on SIGTERM), killing it after 5s.
 // An attached daemon keeps running.
 func (c *Core) Stop() error {
+	c.life.Lock()
+	defer c.life.Unlock()
 	c.mu.Lock()
 	cmd, exited := c.cmd, c.exited
 	c.cmd = nil
 	c.mu.Unlock()
-	if cmd == nil {
-		return nil
-	}
-	_ = cmd.Process.Signal(syscall.SIGTERM)
-	select {
-	case <-exited:
-	case <-time.After(5 * time.Second):
-		_ = cmd.Process.Kill()
-		<-exited
+	if cmd != nil {
+		stop(cmd, exited)
 	}
 	return nil
 }
@@ -271,8 +304,31 @@ func (c *Core) Version(ctx context.Context) (Info, error) {
 	return v, err
 }
 
+// probe asks the core on socket for its version, whatever socket the GUI is attached to.
+func (c *Core) probe(ctx context.Context, socket string) error {
+	client := client(func() string { return socket })
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://core/version", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
 // Do sends a JSON request; out may be nil. Non-2xx answers become errors carrying the core's message.
+// A context without a deadline gets 10s, so a hung core never hangs the GUI.
 func (c *Core) Do(ctx context.Context, method, path string, body, out any) error {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
 	var reader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)

@@ -16,10 +16,11 @@ import (
 // disables it for the calling user when run through pkexec, under a polkit action that names
 // Connaio; its data dir and socket are per user, under /var/lib/connaio.
 var (
-	uid    = strconv.Itoa(os.Getuid())
-	Dir    = "/var/lib/connaio/" + uid
-	Socket = Dir + "/core.sock"
-	unit   = "connaio-core@" + uid + ".service"
+	uid     = strconv.Itoa(os.Getuid())
+	Dir     = "/var/lib/connaio/" + uid
+	Socket  = Dir + "/core.sock"
+	LogPath = Dir + "/core.log"
+	unit    = "connaio-core@" + uid + ".service"
 )
 
 const helper = "/usr/lib/connaio/connaio-root"

@@ -1,0 +1,14 @@
+{
+	"fixed": {
+		"file_version": "1.0.0"
+	},
+	"info": {
+		"0000": {
+			"ProductVersion": "1.0.0",
+			"CompanyName": "ryanzhangtianran",
+			"FileDescription": "Rule-based proxy with reverse tunnels",
+			"LegalCopyright": "(c) 2026, ryanzhangtianran",
+			"ProductName": "Connaio"
+		}
+	}
+}

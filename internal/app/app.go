@@ -74,7 +74,8 @@ func Run(assets fs.FS, trayIcon []byte) error {
 			Backdrop:                application.MacBackdropTranslucent,
 			TitleBar:                application.MacTitleBarHiddenInset,
 		},
-		URL: "/",
+		Windows: application.WindowsWindow{BackdropType: application.Mica}, // the translucent background needs a backdrop behind it
+		URL:     "/",
 	})
 	window.OnWindowEvent(events.Common.WindowRuntimeReady, func(*application.WindowEvent) { makeVibrant(window) })
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {

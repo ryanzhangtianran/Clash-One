@@ -20,6 +20,8 @@ sudo apt install ./Connaio-<版本>-linux-amd64.deb
 
 托盘图标需要桌面支持 AppIndicator（Ubuntu 自带的 GNOME 默认开启）。
 
+**Windows**（Windows 10 1809 及以上 / Windows 11，x64）：运行 `Connaio-<版本>-windows-amd64.exe` 安装。增强模式（TUN）需要先在「通用」中授予管理员权限（一次 UAC 确认），内核会装成一个 Windows 服务；Wintun 驱动随安装包附带。
+
 ## 开发
 
 需要 Go 1.26、Node 24，以及与 `go.mod` 相同版本的 Wails CLI：
@@ -35,6 +37,7 @@ wails3 dev        # 开发模式（前端热更新）
 wails3 package    # 产出 bin/Connaio.app，内核打包在 Contents/MacOS/connaio-core
 build/darwin/make-dmg.sh bin/Connaio.app bin/Connaio-1.0.0-macos-arm64.dmg   # 发布用的拖拽安装盘
 wails3 task linux:package   # 在 Ubuntu 22.04 上：产出 bin/connaio.deb（GitHub Actions 打标签时自动构建并附到 Release）
+wails3 task windows:package # 产出 bin/Connaio-<版本>-windows-amd64.exe，需要 makensis；GUI 和内核都不用 cgo，在 macOS 上也能交叉编译（GitHub Actions 打标签时在 Windows 上构建并附到 Release）
 ```
 
 ## 结构

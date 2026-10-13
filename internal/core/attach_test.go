@@ -1,3 +1,5 @@
+//go:build unix
+
 package core
 
 import (
@@ -31,7 +33,7 @@ func TestAttach(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	c := New(t.TempDir())
-	if err := c.Attach(ctx, socket); err != nil {
+	if err := c.Attach(ctx, socket, filepath.Join(daemonDir, "core.log")); err != nil {
 		t.Fatal(err)
 	}
 	if !c.Daemon() {
