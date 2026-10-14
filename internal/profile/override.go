@@ -86,7 +86,11 @@ func (s *Store) EditProxy(name string, patch map[string]any) error {
 				return err
 			}
 			applyPatch(proxy, patch)
-			return seq.Content[i].Encode(proxy)
+			if err := seq.Content[i].Encode(proxy); err != nil {
+				return err
+			}
+			orderKeys(seq.Content[i])
+			return nil
 		}
 		patches := mapOf(root, "patch-proxies")
 		if patches.Kind != yaml.MappingNode {
@@ -283,8 +287,34 @@ func appendItem(m *yaml.Node, key string, item any) error {
 	if err := n.Encode(item); err != nil {
 		return err
 	}
+	orderKeys(&n)
 	seq.Content = append(seq.Content, &n)
 	return nil
+}
+
+// leadingKeys come first in a node or group the GUI writes; the rest follow alphabetically, as the
+// encoder sorts a map. Only readability: the core doesn't care about the order.
+var leadingKeys = []string{"name", "type", "server", "port", "username", "password"}
+
+func orderKeys(n *yaml.Node) {
+	if n.Kind != yaml.MappingNode {
+		return
+	}
+	rank := func(key string) int {
+		if i := slices.Index(leadingKeys, key); i >= 0 {
+			return i
+		}
+		return len(leadingKeys)
+	}
+	pairs := make([][2]*yaml.Node, 0, len(n.Content)/2)
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		pairs = append(pairs, [2]*yaml.Node{n.Content[i], n.Content[i+1]})
+	}
+	slices.SortStableFunc(pairs, func(a, b [2]*yaml.Node) int { return rank(a[0].Value) - rank(b[0].Value) })
+	n.Content = n.Content[:0]
+	for _, p := range pairs {
+		n.Content = append(n.Content, p[0], p[1])
+	}
 }
 
 // findNamed returns the index of the mapping with name in seq, or -1.

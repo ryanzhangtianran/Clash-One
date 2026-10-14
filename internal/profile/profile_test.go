@@ -483,3 +483,15 @@ func TestOverrideIsWrittenInBlockStyle(t *testing.T) {
 		t.Errorf("override:\n%s", text)
 	}
 }
+
+func TestGUIProxiesAreWrittenNameTypeServerFirst(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	if err := s.AddProxy(map[string]any{"username": "u", "udp": true, "type": "easyconnect", "server": "g", "port": 443, "name": "VPN", "password": "p"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	text, _ := s.Override()
+	want := "prepend-proxies:\n    - name: VPN\n      type: easyconnect\n      server: g\n      port: 443\n      username: u\n      password: p\n      udp: true\n"
+	if !strings.Contains(text, want) {
+		t.Errorf("override:\n%s", text)
+	}
+}
