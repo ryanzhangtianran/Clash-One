@@ -222,7 +222,7 @@ export default function Vpn({ status }: { status: Status }) {
           {form.type === "easyconnect" && tunnel?.state !== "up" && <button className="btn" disabled={probing || !ready || !status.running || tunnel?.state === "connecting"} onClick={probeGateway}>{probing ? "登录中…" : "测试登录"}</button>}
         </div>
         {error && <div className="error small" style={{ marginTop: 8 }}>{error}</div>}
-        {probe.map((l, i) => <div key={i} className={`detail-row ${/失败|错误|refused|rejected/i.test(l) ? "error" : ""}`}>{l}</div>)}
+        {probe.map((l, i) => <div key={i} className={`small ${/失败|错误|refused|rejected/i.test(l) ? "error" : "muted"}`} style={{ marginTop: 8 }}>{l}</div>)}
       </div>
 
       {saved && (
