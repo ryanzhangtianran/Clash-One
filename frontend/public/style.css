@@ -437,3 +437,6 @@ tr.muted td.rule-actions { text-decoration: none; }
 .pw button { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: flex; border: 0; background: none; padding: 2px; color: var(--text-2); cursor: pointer; }
 .pw svg { width: 15px; height: 15px; }
 .pw button:hover { color: var(--text); }
+
+/* a table under form rows: its cells' padding would indent it past the inputs */
+.table-wrap.tight { margin-left: -8px; margin-right: -8px; }

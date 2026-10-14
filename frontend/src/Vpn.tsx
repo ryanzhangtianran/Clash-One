@@ -75,7 +75,7 @@ function KVRow({ kinds, items, onChange, fill }: { kinds: Kind[]; items: KV[]; o
   const label = (key: string) => kinds.find((k) => k.key === key)?.label ?? key;
   return (
     <>
-      <div className="form">
+      <div className="form" style={{ marginTop: 6 }}>
         <select style={{ width: 150 }} value={t} onChange={(e) => setT(e.target.value)}>{kinds.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}</select>
         <span className="pw grow">
           <input placeholder={kind.placeholder ?? ""} value={v} disabled={kind.fixed} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add({ t, v: v.trim() })} style={fill ? { paddingRight: 72 } : undefined} />
@@ -84,7 +84,7 @@ function KVRow({ kinds, items, onChange, fill }: { kinds: Kind[]; items: KV[]; o
         <button className="btn" disabled={!kind.fixed && !v.trim()} onClick={() => add({ t, v: v.trim() })} style={{ width: 80, fontSize: 18 }}>+</button>
       </div>
       {items.length > 0 && (
-        <div className="table-wrap">
+        <div className="table-wrap tight">
           <table className="table">
             <thead><tr><th>类型</th><th>值</th><th style={{ width: 1 }} /></tr></thead>
             <tbody>
@@ -211,7 +211,7 @@ function VpnEditor({ status, initial, tunnel, onDone }: { status: Status; initia
         </>}
         {form.type === "wireguard" && <>
           <div className="form">{secret("private-key", "本机私钥")}{text("public-key", "对端公钥")}</div>
-          <div className="form">{secret("pre-shared-key", "预共享密钥，可选")}{text("ip", "本机地址，如 10.0.0.2")}{text("mtu", "MTU，可选", { style: { width: 90 } })}</div>
+          <div className="form">{secret("pre-shared-key", "预共享密钥，可选")}{text("ip", "本机地址，如 10.0.0.2")}{text("mtu", "MTU，可选", { style: { width: 80, flex: "none" } })}</div>
           <div className="form">{text("allowed-ips", "对端网段（allowed-ips），逗号分隔，如 10.0.0.0/8")}</div>
         </>}
         {form.type === "openvpn" && <>
@@ -223,9 +223,9 @@ function VpnEditor({ status, initial, tunnel, onDone }: { status: Status; initia
           <div className="form">{text("control-url", "控制服务器，Headscale 时填，可选")}{text("exit-node", "出口节点，可选")}
             <label className="radio"><input type="checkbox" checked={form["accept-routes"] === "true"} onChange={(e) => setForm({ ...form, "accept-routes": String(e.target.checked) })} /> 接受子网路由</label></div>
         </>}
-        <div className="label" style={{ marginTop: 14 }}>直连网络</div>
+        <div className="label" style={{ marginTop: 18 }}>直连网络</div>
         <KVRow kinds={bypassKinds} items={bypass} onChange={setBypass} fill={{ label: "当前网络", get: currentNetwork }} />
-        <div className="label" style={{ marginTop: 14 }}>{form.type === "easyconnect" ? "附加路由" : "VPN 路由"}</div>
+        <div className="label" style={{ marginTop: 18 }}>{form.type === "easyconnect" ? "附加路由" : "VPN 路由"}</div>
         <KVRow kinds={routeKinds} items={addrs} onChange={setAddrs} />
         <div className="form">
           <button className="btn primary" disabled={busy || !ready || !name.trim() || !status.running} onClick={save}>{saved ? "保存并重连" : "连接"}</button>
@@ -244,7 +244,7 @@ function VpnEditor({ status, initial, tunnel, onDone }: { status: Status; initia
             {routing?.dns?.length ? <span>DNS {routing.dns.join(", ")}</span> : null}
           </div>
           {routing && (routing.ip?.length || routing.domains?.length) ? (
-                <div className="table-wrap">
+                <div className="table-wrap tight">
                   <table className="table">
                     <thead><tr><th>网关下发的网段</th><th>端口</th><th>协议</th></tr></thead>
                     <tbody>
@@ -303,15 +303,13 @@ export default function Vpn({ status }: { status: Status }) {
           const state = v.state;
           return (
             <div key={name} className="tile-wrap">
-              <button className={`tile ${current?.proxy?.name === name ? "selected" : ""}`} onClick={() => setEditing(current?.proxy?.name === name ? null : v)}>
+              <div className={`tile ${current?.proxy?.name === name ? "selected" : ""}`} style={{ cursor: "pointer", position: "relative" }} onClick={() => setEditing(current?.proxy?.name === name ? null : v)}>
                 <span className="kind">{types[String(v.proxy?.type)] ?? ""}</span>
                 <span className="name">{name}</span>
                 <span className={`foot ${stateClass[state]}`}>{stateLabel[state]}</span>
-              </button>
-              <div className="form" style={{ marginTop: 6 }}>
                 {v.active
-                  ? <button className="btn small-btn" disabled={!!busy} onClick={() => run(name, ProfileService.RemoveVPN(name))}>{busy === name ? "…" : "断开"}</button>
-                  : <button className="btn small-btn primary" disabled={!!busy || !status.running} onClick={() => run(name, ProfileService.SetVPN(v, name))}>{busy === name ? "…" : "连接"}</button>}
+                  ? <button className="btn small-btn" style={{ position: "absolute", right: 10, bottom: 10 }} disabled={!!busy} onClick={(e) => { e.stopPropagation(); run(name, ProfileService.RemoveVPN(name)); }}>{busy === name ? "…" : "断开"}</button>
+                  : <button className="btn small-btn primary" style={{ position: "absolute", right: 10, bottom: 10 }} disabled={!!busy || !status.running} onClick={(e) => { e.stopPropagation(); run(name, ProfileService.SetVPN(v, name)); }}>{busy === name ? "…" : "连接"}</button>}
               </div>
             </div>
           );
