@@ -3,11 +3,13 @@ package app
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ryanzhangtianran/Connaio/internal/daemon"
 	"github.com/ryanzhangtianran/Connaio/internal/sysproxy"
@@ -84,15 +86,26 @@ func (s *ToolService) checkProxy() RepairItem {
 	if port, err := mixedPort(s.cs.core); err == nil {
 		ours = "127.0.0.1:" + strconv.Itoa(port)
 	}
-	switch {
-	case addr == ours && s.cs.Status().Running:
-		item.Detail = "指向 Connaio"
-	case addr == ours:
-		item.Found, item.Detail = true, "指向 Connaio，但内核未运行"
-	default:
-		item.Found, item.Detail = true, "指向 "+addr+"，非 Connaio 所设"
+	who := "其他程序"
+	if addr == ours {
+		who = "Connaio"
+	}
+	if listening(addr) {
+		item.Detail = addr + "，" + who + "正在监听"
+	} else {
+		item.Found, item.Detail = true, addr+" 未被监听，"+who+"已退出"
 	}
 	return item
+}
+
+// listening says something accepts connections at addr right now.
+func listening(addr string) bool {
+	c, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	c.Close()
+	return true
 }
 
 // checkOrphans finds this user's connaio-core processes other than this app's child.
