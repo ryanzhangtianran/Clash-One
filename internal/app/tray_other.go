@@ -85,9 +85,9 @@ func detailText(detail string) string {
 	if len(detail) > 1 && detail[0] == 1 { // a pill: "\x01color|text"
 		_, detail, _ = strings.Cut(detail[1:], "|")
 	}
-	for _, m := range modes {
-		if modeBadges[m.key] == detail {
-			return m.label
+	for key, letter := range modeBadges {
+		if letter == detail {
+			return modeLabel(key)
 		}
 	}
 	return detail

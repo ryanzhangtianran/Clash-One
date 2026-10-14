@@ -52,14 +52,16 @@ FunctionEnd
 
 # stopCore ends a running GUI and root core, so their files can be replaced; the service is left
 # installed and starts again on the new binary.
+# quiet runs a command without logging it: "process not found" and "service not started" are the normal case.
+!macro quiet cmd
+    nsExec::Exec '${cmd}'
+    Pop $0
+!macroend
+
 !macro stopCore
-    # silent: "process not found" and "service not started" are the normal case
-    nsExec::Exec 'taskkill /F /IM ${PRODUCT_EXECUTABLE}'
-    Pop $0
-    nsExec::Exec 'sc stop ${CORE_SERVICE}'
-    Pop $0
-    nsExec::Exec 'taskkill /F /IM connaio-core.exe'
-    Pop $0
+    !insertmacro quiet 'taskkill /F /IM ${PRODUCT_EXECUTABLE}'
+    !insertmacro quiet 'sc stop ${CORE_SERVICE}'
+    !insertmacro quiet 'taskkill /F /IM connaio-core.exe'
     Sleep 1000
 !macroend
 
@@ -79,8 +81,7 @@ Section
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
-    nsExec::Exec 'sc start ${CORE_SERVICE}' # only exists once enhanced mode installed it; silent otherwise
-    Pop $0
+    !insertmacro quiet 'sc start ${CORE_SERVICE}' # only exists once enhanced mode installed it
 
     !insertmacro wails.writeUninstaller
 SectionEnd

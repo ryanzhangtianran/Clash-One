@@ -55,10 +55,10 @@ tasks:
       - |
         got=$( (sha256sum "{{.BIN_DIR}}/wintun.zip" 2>/dev/null || shasum -a 256 "{{.BIN_DIR}}/wintun.zip") | cut -d' ' -f1)
         [ "$got" = "{{.WINTUN_SHA256}}" ] || { echo "wintun.zip sha256 $got, expected {{.WINTUN_SHA256}}"; rm -f "{{.BIN_DIR}}/wintun.zip"; exit 1; }
-      # unzip on macOS and Linux; the Windows runner's Git Bash has GNU tar, which can't read zips, so PowerShell there
+      # unzip on macOS and Linux; on Windows the Git Bash tar is GNU and can't read zips, but System32's bsdtar can
       - cmd: unzip -joq "{{.BIN_DIR}}/wintun.zip" "wintun/bin/{{.ARCH | default "amd64"}}/wintun.dll" -d "{{.BIN_DIR}}"
         platforms: [darwin, linux]
-      - cmd: powershell -NoProfile -Command "Expand-Archive -Force '{{.BIN_DIR}}/wintun.zip' '{{.BIN_DIR}}/wintun-tmp'; Copy-Item '{{.BIN_DIR}}/wintun-tmp/wintun/bin/{{.ARCH | default "amd64"}}/wintun.dll' '{{.BIN_DIR}}/'; Remove-Item -Recurse -Force '{{.BIN_DIR}}/wintun-tmp'"
+      - cmd: /c/Windows/System32/tar.exe -xf "{{.BIN_DIR}}/wintun.zip" -C "{{.BIN_DIR}}" --strip-components=3 "wintun/bin/{{.ARCH | default "amd64"}}/wintun.dll"
         platforms: [windows]
       - rm -f "{{.BIN_DIR}}/wintun.zip"
 

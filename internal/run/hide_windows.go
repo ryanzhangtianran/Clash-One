@@ -3,11 +3,11 @@ package run
 import (
 	"os/exec"
 	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
-const createNoWindow = 0x08000000
-
 func hide(c *exec.Cmd) *exec.Cmd {
-	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
+	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 	return c
 }

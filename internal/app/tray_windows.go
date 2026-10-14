@@ -12,10 +12,8 @@ import (
 func showTray(tray *application.SystemTray, icon []byte, t Traffic, mode string, capturing, showSpeed bool) {
 	setTrayIcon(tray, icon, capturing)
 	tip := "Connaio"
-	for _, m := range modes {
-		if m.key == mode {
-			tip += " · " + m.label
-		}
+	if label := modeLabel(mode); label != "" {
+		tip += " · " + label
 	}
 	if !capturing {
 		tip += " · 未接管流量"

@@ -147,7 +147,7 @@ func (t *trayMenu) locked(change func()) {
 	if next.traffic != t.drawn.traffic || next.mode != t.drawn.mode || next.capturing != t.drawn.capturing || next.speed != t.drawn.speed {
 		showTray(t.tray, t.icon, next.traffic, next.mode, next.capturing, next.speed)
 		if t.speedItem != nil {
-			t.speedItem.SetLabel(fmt.Sprintf("↑ %s    ↓ %s", rate(next.traffic.Up), rate(next.traffic.Down)))
+			t.speedItem.SetLabel(speedLabel(next.traffic))
 		}
 	}
 	if started && (!maps.Equal(next.details, t.drawn.details) || !maps.Equal(next.icons, t.drawn.icons)) {
@@ -204,6 +204,19 @@ func (t *trayMenu) measure() {
 	t.locked(func() { t.details[t.qualityItem] = pill("gray", "…") })
 	q := qualityBadge(t.svc.Latency().Internet)
 	t.locked(func() { t.details[t.qualityItem] = q })
+}
+
+// speedLabel is the live speed row on menus whose tray shows no text.
+func speedLabel(t Traffic) string { return fmt.Sprintf("↑ %s    ↓ %s", rate(t.Up), rate(t.Down)) }
+
+// modeLabel is the name of an outbound mode key ("rule" → 规则判定), or "".
+func modeLabel(key string) string {
+	for _, m := range modes {
+		if m.key == key {
+			return m.label
+		}
+	}
+	return ""
 }
 
 // pill is a coloured pill for the right of a menu item: color is accent, good, warn, bad or gray.
@@ -327,7 +340,7 @@ func (t *trayMenu) build(groups []Group, list Profiles) {
 	}
 
 	if runtime.GOOS == "windows" {
-		t.speedItem = m.Add("↑ 0 KB/s    ↓ 0 KB/s").SetEnabled(false)
+		t.speedItem = m.Add(speedLabel(Traffic{})).SetEnabled(false)
 	}
 	m.Add("显示主窗口").SetAccelerator("CmdOrCtrl+M").OnClick(func(*application.Context) { t.show() })
 	m.AddSeparator()
