@@ -144,7 +144,7 @@ function Repair({ onClose }: { onClose: () => void }) {
     <div className="modal-bg">
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-head"><div className="sheet-title">网络修复</div><div className="muted small">清理代理程序退出后留下的残留，以及常用的网络重置。</div></div>
-        <div className="sheet-body">
+        <div className="sheet-body" style={{ paddingBottom: 4 }}>
           {items.map((i) => (
             <div key={i.id} className="setting-row">
               <div>
