@@ -34,36 +34,62 @@ function parseOvpn(text: string): Record<string, any> {
   return out;
 }
 
-const isCIDR = (s: string) => /^\d+\.\d+\.\d+\.\d+(\/\d+)?$/.test(s) || /^[0-9a-f:]+(\/\d+)?$/i.test(s);
-// ruleOf turns one 走 VPN 的地址 line into a rule aimed at target.
-const ruleOf = (addr: string, target: string) => (isCIDR(addr) ? `IP-CIDR,${addr.includes("/") ? addr : addr + "/32"},${target},no-resolve` : `DOMAIN-SUFFIX,${addr},${target}`);
-// addrOf reads it back.
-const addrOf = (rule: string) => { const f = rule.split(",").map((x) => x.trim()); return f[0] === "IP-CIDR" ? f[1].replace(/\/32$/, "") : f[0] === "DOMAIN-SUFFIX" ? f[1] : ""; };
+// A KV is one typed entry: a route (rule type + value) or a bypass condition (kind + value).
+type KV = { t: string; v: string };
+type Kind = { key: string; label: string; placeholder?: string; fixed?: boolean }; // fixed: no value
+
+const routeKinds: Kind[] = [
+  { key: "IP-CIDR", label: "网段", placeholder: "10.0.0.0/8" },
+  { key: "DOMAIN-SUFFIX", label: "域名后缀", placeholder: "example.edu.cn" },
+  { key: "DOMAIN", label: "域名", placeholder: "git.example.edu.cn" },
+  { key: "DOMAIN-KEYWORD", label: "域名关键字", placeholder: "example" },
+  { key: "GEOSITE", label: "GEOSITE", placeholder: "cn" },
+  { key: "GEOIP", label: "GEOIP", placeholder: "cn" },
+];
+const bypassKinds: Kind[] = [
+  { key: "SSID", label: "Wi-Fi 名称", placeholder: "名称" },
+  { key: "BSSID", label: "Wi-Fi BSSID", placeholder: "aa:bb:cc:dd:ee:ff" },
+  { key: "ROUTER", label: "网关地址", placeholder: "192.168.1.1" },
+  { key: "CIDR", label: "本机网段", placeholder: "192.168.1.0/24" },
+  { key: "TYPE:WIFI", label: "任何 Wi-Fi", fixed: true },
+  { key: "TYPE:WIRED", label: "任何有线", fixed: true },
+];
+// ruleOf turns a route into a rule aimed at target; IP rules don't resolve names, as in the rules page.
+const ruleOf = (r: KV, target: string) => `${r.t},${r.t === "IP-CIDR" && !r.v.includes("/") ? r.v + "/32" : r.v},${target}${r.t === "IP-CIDR" || r.t === "GEOIP" ? ",no-resolve" : ""}`;
+// routeOf reads a rule back, or null for a rule the page didn't write.
+const routeOf = (rule: string): KV | null => { const f = rule.split(",").map((x) => x.trim()); return routeKinds.some((k) => k.key === f[0]) ? { t: f[0], v: f[1] } : null; };
+// condOf is the subnet group's key for a bypass entry, and bypassOf reads it back.
+const condOf = (b: KV) => (b.t === "CIDR" ? b.v : b.t.startsWith("TYPE:") ? b.t : `${b.t}:${b.v}`);
+const bypassOf = (key: string): KV => { const [t, ...rest] = key.split(":"); return key.startsWith("TYPE:") ? { t: key, v: "" } : ["SSID", "BSSID", "ROUTER"].includes(t) ? { t, v: rest.join(":") } : { t: "CIDR", v: key }; };
 // reason is an error's text without the runtime's "RuntimeError:" prefix.
 const reason = (e: unknown) => ((e as Error)?.message ?? String(e)).replace(/^RuntimeError:\s*/, "");
-const cleanBypass = (b: string[]) => b.map((x) => x.trim()).filter((x) => x && !x.endsWith(":"));
 
-// ListRow is an input with an 添加 button, as the rows above it, and a table of what was added,
-// each row with a 删除.
-function ListRow({ items, onChange, placeholder, column, fill }: { items: string[]; onChange: (v: string[]) => void; placeholder: string; column: string; fill?: { label: string; get: () => Promise<string> } }) {
-  const [text, setText] = useState("");
-  const add = () => { const v = text.trim(); if (v && !items.includes(v)) onChange([...items, v]); setText(""); };
+// KVRow is a kind selector and a value with a + button, as the rows above it, and a table of what
+// was added, each row with a 删除.
+function KVRow({ kinds, items, onChange, fill }: { kinds: Kind[]; items: KV[]; onChange: (v: KV[]) => void; fill?: { label: string; get: () => Promise<KV | null> } }) {
+  const [t, setT] = useState(kinds[0].key);
+  const [v, setV] = useState("");
+  const kind = kinds.find((k) => k.key === t) ?? kinds[0];
+  const has = (x: KV) => items.some((y) => y.t === x.t && y.v === x.v);
+  const add = (x: KV) => { if ((x.v || kind.fixed) && !has(x)) onChange([...items, x]); setV(""); };
+  const label = (key: string) => kinds.find((k) => k.key === key)?.label ?? key;
   return (
     <>
       <div className="form">
+        <select value={t} onChange={(e) => setT(e.target.value)}>{kinds.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}</select>
         <span className="pw grow">
-          <input placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} style={fill ? { paddingRight: 72 } : undefined} />
-          {fill && <button type="button" style={{ fontSize: 12, padding: "0 6px" }} onClick={() => fill.get().then((v) => v && setText(v))}>{fill.label}</button>}
+          <input placeholder={kind.placeholder ?? ""} value={v} disabled={kind.fixed} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add({ t, v: v.trim() })} style={fill ? { paddingRight: 72 } : undefined} />
+          {fill && <button type="button" style={{ fontSize: 12, padding: "0 6px" }} onClick={() => fill.get().then((x) => { if (x) { setT(x.t); setV(x.v); } })}>{fill.label}</button>}
         </span>
-        <button className="btn" disabled={!text.trim()} onClick={add} style={{ width: 40, fontSize: 18 }}>+</button>
+        <button className="btn" disabled={!kind.fixed && !v.trim()} onClick={() => add({ t, v: v.trim() })} style={{ width: 40, fontSize: 18 }}>+</button>
       </div>
       {items.length > 0 && (
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>{column}</th><th style={{ width: 1 }} /></tr></thead>
+            <thead><tr><th>类型</th><th>值</th><th style={{ width: 1 }} /></tr></thead>
             <tbody>
               {items.map((x) => (
-                <tr key={x}><td>{x}</td><td><button className="btn small-btn" onClick={() => onChange(items.filter((y) => y !== x))}>删除</button></td></tr>
+                <tr key={x.t + x.v}><td>{label(x.t)}</td><td>{x.v}</td><td><button className="btn small-btn" onClick={() => onChange(items.filter((y) => y !== x))}>删除</button></td></tr>
               ))}
             </tbody>
           </table>
@@ -75,8 +101,8 @@ function ListRow({ items, onChange, placeholder, column, fill }: { items: string
 
 export default function Vpn({ status }: { status: Status }) {
   const [form, setForm] = useState<Form>(empty);
-  const [addrs, setAddrs] = useState<string[]>([]);
-  const [bypass, setBypass] = useState<string[]>([]);
+  const [addrs, setAddrs] = useState<KV[]>([]);
+  const [bypass, setBypass] = useState<KV[]>([]);
   const [name, setName] = useState(defaultName);
   const [saved, setSaved] = useState(false);
   const [tunnel, setTunnel] = useState<EasyConnectTunnel | null>(null);
@@ -104,8 +130,8 @@ export default function Vpn({ status }: { status: Status }) {
       for (const [k, x] of Object.entries(p)) if (k !== "name" && k !== "type" && (typeof x === "string" || typeof x === "number" || typeof x === "boolean")) f[k] = String(x);
       if (Array.isArray(p["allowed-ips"])) f["allowed-ips"] = p["allowed-ips"].join(", ");
       setForm(f);
-      setAddrs(nonNull(v.rules).map(addrOf).filter(Boolean));
-      setBypass(Object.keys(v.group?.rules ?? {}));
+      setAddrs(nonNull(v.rules).map(routeOf).filter((x): x is KV => !!x));
+      setBypass(Object.keys(v.group?.rules ?? {}).map(bypassOf));
     });
   }, []);
 
@@ -123,8 +149,7 @@ export default function Vpn({ status }: { status: Status }) {
     return false;
   })();
 
-  const conds = cleanBypass(bypass);
-  const listedAddrs = addrs;
+  const conds = bypass.map(condOf);
 
   // build is the override's view of the form: the node, its rules and the bypass group.
   const build = () => {
@@ -154,7 +179,9 @@ export default function Vpn({ status }: { status: Status }) {
     }
     const policy = conds.length ? `${name} 路由` : name;
     const rules = form.type === "easyconnect" ? [`EASYCONNECT,${name},${policy}`] : [];
-    [...new Set(listedAddrs.length ? listedAddrs : auto)].filter((a) => a !== "0.0.0.0/0" && a !== "::/0").forEach((a) => rules.push(ruleOf(a, policy)));
+    const routes = addrs.length ? addrs : auto.filter((a) => a !== "0.0.0.0/0" && a !== "::/0").map((a) => ({ t: "IP-CIDR", v: a }));
+    const seen = new Set<string>();
+    for (const r of routes) { const line = ruleOf(r, policy); if (!seen.has(line)) { seen.add(line); rules.push(line); } }
     const group = conds.length ? { name: policy, type: "subnet", default: name, rules: Object.fromEntries(conds.map((b) => [b, "DIRECT"])) } : null;
     return { proxy, rules, group };
   };
@@ -174,7 +201,7 @@ export default function Vpn({ status }: { status: Status }) {
   };
   const measure = () => { setDelay("测量中…"); CoreService.TestProxy(name).then((ms) => setDelay(`${ms} ms`)).catch((e) => setDelay(String(e))); };
   // currentNetwork is the subnet-group condition for the network this machine is on now.
-  const currentNetwork = () => CoreService.CurrentNetwork().then((n) => (n.ssid ? `SSID:${n.ssid}` : n.router ? `ROUTER:${n.router}` : ""));
+  const currentNetwork = () => CoreService.CurrentNetwork().then((n): KV | null => (n.ssid ? { t: "SSID", v: n.ssid } : n.router ? { t: "ROUTER", v: n.router } : null));
 
   const routing = tunnel?.routing;
   const test = () => {
@@ -213,8 +240,10 @@ export default function Vpn({ status }: { status: Status }) {
           <div className="form">{text("control-url", "控制服务器，Headscale 时填，可选")}{text("exit-node", "出口节点，可选")}
             <label className="radio"><input type="checkbox" checked={form["accept-routes"] === "true"} onChange={(e) => setForm({ ...form, "accept-routes": String(e.target.checked) })} /> 接受子网路由</label></div>
         </>}
-        <ListRow items={addrs} onChange={setAddrs} column={form.type === "easyconnect" ? "附加路由" : "VPN 路由"} placeholder={form.type === "easyconnect" ? "附加路由：网段或域名" : "VPN 路由：网段或域名"} />
-        <ListRow items={bypass} onChange={setBypass} column="直连网络" placeholder="直连网络：SSID:名称 或 ROUTER:网关地址" fill={{ label: "当前网络", get: currentNetwork }} />
+        <div className="label" style={{ marginTop: 14 }}>直连网络</div>
+        <KVRow kinds={bypassKinds} items={bypass} onChange={setBypass} fill={{ label: "当前网络", get: currentNetwork }} />
+        <div className="label" style={{ marginTop: 14 }}>{form.type === "easyconnect" ? "附加路由" : "VPN 路由"}</div>
+        <KVRow kinds={routeKinds} items={addrs} onChange={setAddrs} />
         <div className="form">
           <button className="btn primary" disabled={busy || !ready || !status.running} onClick={save}>{saved ? "保存并重连" : "连接"}</button>
           {saved && <button className="btn" disabled={busy} onClick={disconnect}>断开</button>}
