@@ -24,7 +24,7 @@ export default function Logs() {
         </div>
         <div className="logs">
           {shown.slice().reverse().map((l) => (
-            <div key={l.id} className={`log ${l.type}`}><span className="muted" style={{ display: "inline-block", width: 76 }}>{l.time}</span><span className="lvl">{l.type}</span>{l.payload}</div>
+            <div key={l.id} className={`log ${l.type}`}><span className="muted time">{l.time}</span><span className="lvl">{l.type}</span><span className="msg">{l.payload}</span></div>
           ))}
         </div>
       </div>
