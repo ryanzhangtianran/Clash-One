@@ -15,6 +15,8 @@ type Settings struct {
 	Enhanced    bool `json:"enhanced"`
 	// HideTraySpeed hides the upload/download speed next to the menu bar icon.
 	HideTraySpeed bool `json:"hideTraySpeed"`
+	// VPN is the VPN page's last settings, kept while disconnected so 连接 brings them back.
+	VPN *VPN `json:"vpn,omitempty"`
 }
 
 type settingsFile struct {

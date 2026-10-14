@@ -53,6 +53,8 @@ export default function Vpn({ status }: { status: Status }) {
   const [error, setError] = useState("");
   const [target, setTarget] = useState("");
   const [testing, setTesting] = useState(false);
+  const [probe, setProbe] = useState<string[]>([]);
+  const [probing, setProbing] = useState(false);
   const [result, setResult] = useState<string[]>([]);
 
   const load = useCallback(() => {
@@ -62,7 +64,7 @@ export default function Vpn({ status }: { status: Status }) {
 
   useEffect(() => {
     ProfileService.VPN().then((v) => {
-      setSaved(!!v);
+      setSaved(!!v?.active);
       if (!v) return;
       const p = v.proxy ?? {};
       setName(String(p.name ?? defaultName));
@@ -131,7 +133,13 @@ export default function Vpn({ status }: { status: Status }) {
     p.catch((e) => setError(String(e))).finally(() => { setBusy(false); load(); });
   };
   const save = () => run(ProfileService.SetVPN(build() as any).then(() => setSaved(true)));
-  const remove = () => run(ProfileService.RemoveVPN().then(() => { setSaved(false); setTunnel(null); setName(defaultName); }));
+  const disconnect = () => run(ProfileService.RemoveVPN().then(() => { setSaved(false); setTunnel(null); }));
+  // probeGateway logs in with the form as it is, without saving: the core reports what the gateway handed out.
+  const probeGateway = () => {
+    setProbing(true);
+    setProbe(["登录中…"]);
+    ToolService.VPNProbe(build().proxy).then((l) => setProbe(nonNull(l))).catch((e) => setProbe([String(e)])).finally(() => setProbing(false));
+  };
   const measure = () => { setDelay("测量中…"); CoreService.TestProxy(name).then((ms) => setDelay(`${ms} ms`)).catch((e) => setDelay(String(e))); };
   const useCurrent = () => CoreService.CurrentNetwork().then((n) => {
     const cond = n.ssid ? `SSID:${n.ssid}` : n.router ? `ROUTER:${n.router}` : "";
@@ -175,9 +183,9 @@ export default function Vpn({ status }: { status: Status }) {
           <div className="form">{text("control-url", "控制服务器，Headscale 时填，可选")}{text("exit-node", "出口节点，可选")}
             <label className="radio"><input type="checkbox" checked={form["accept-routes"] === "true"} onChange={(e) => setForm({ ...form, "accept-routes": String(e.target.checked) })} /> 接受子网路由</label></div>
         </>}
-        <div className="form"><textarea className="grow" rows={3} placeholder={form.type === "easyconnect" ? "还要走 VPN 的地址，一行一个：网段或域名，可选" : "走 VPN 的地址，一行一个：网段如 10.0.0.0/8，域名如 example.com"} value={addrs} onChange={(e) => setAddrs(e.target.value)} /></div>
+        <div className="form"><textarea className="grow" rows={3} placeholder={form.type === "easyconnect" ? "除网关下发的之外，还要走 VPN 的网段或域名，每行一个（可选）" : "走 VPN 的网段或域名，每行一个，如 10.0.0.0/8、example.com"} value={addrs} onChange={(e) => setAddrs(e.target.value)} /></div>
         <div className="form" style={{ flexWrap: "wrap" }}>
-          <span className="small muted" style={{ alignSelf: "center" }}>在这些网络时直连</span>
+          <span className="small muted" style={{ alignSelf: "center" }}>在以下网络中不走 VPN</span>
           {bypass.map((b, i) => (
             <span key={i} className="pw" style={{ width: 200 }}>
               <input placeholder="SSID:我的 Wi-Fi 或 ROUTER:192.168.1.1" value={b} onChange={(e) => setBypass(bypass.map((x, j) => (j === i ? e.target.value : x)))} />
@@ -189,9 +197,11 @@ export default function Vpn({ status }: { status: Status }) {
         </div>
         <div className="form">
           <button className="btn primary" disabled={busy || !ready || !status.running} onClick={save}>{saved ? "保存并重连" : "连接"}</button>
-          {saved && <button className="btn" style={{ color: "var(--bad)" }} disabled={busy} onClick={remove}>断开并删除</button>}
+          {saved && <button className="btn" disabled={busy} onClick={disconnect}>断开</button>}
+          {form.type === "easyconnect" && <button className="btn" disabled={probing || !ready || !status.running} onClick={probeGateway}>{probing ? "登录中…" : "测试登录"}</button>}
         </div>
         {error && <div className="error small" style={{ marginTop: 8 }}>{error}</div>}
+        {probe.map((l, i) => <div key={i} className={`detail-row ${/失败|错误|refused|rejected/i.test(l) ? "error" : ""}`}>{l}</div>)}
       </div>
 
       {saved && (

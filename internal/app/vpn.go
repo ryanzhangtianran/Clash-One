@@ -14,6 +14,8 @@ type VPN struct {
 	Proxy map[string]any `json:"proxy"`
 	Rules []string       `json:"rules"` // whole rule lines, in order
 	Group map[string]any `json:"group"` // the subnet group, or nil when the VPN is always used
+	// Active says the node is in the override (connected); false for the draft kept after 断开.
+	Active bool `json:"active"`
 }
 
 // vpnTypes are the node types the VPN page manages.
@@ -22,8 +24,20 @@ var vpnTypes = []string{"easyconnect", "wireguard", "openvpn", "tailscale"}
 // groupOf names the subnet group that stands in for the node when networks bypass it.
 func groupOf(name string) string { return name + " 路由" }
 
-// VPN reads the page's state back, or nil when no VPN node exists.
+// VPN reads the page's state back: the node in the override, else the draft kept from the last
+// 断开, else nil.
 func (s *ProfileService) VPN() (*VPN, error) {
+	v, err := s.activeVPN()
+	if v != nil || err != nil {
+		return v, err
+	}
+	if s.settings != nil {
+		return s.settings.Get().VPN, nil
+	}
+	return nil, nil
+}
+
+func (s *ProfileService) activeVPN() (*VPN, error) {
 	items, err := s.store.UserItems()
 	if err != nil {
 		return nil, err
@@ -32,7 +46,7 @@ func (s *ProfileService) VPN() (*VPN, error) {
 	if i < 0 {
 		return nil, nil
 	}
-	v := &VPN{Proxy: items.Proxies[i]}
+	v := &VPN{Proxy: items.Proxies[i], Active: true}
 	name, _ := v.Proxy["name"].(string)
 	if j := slices.IndexFunc(items.Groups, func(g map[string]any) bool { return g["name"] == groupOf(name) }); j >= 0 {
 		v.Group = items.Groups[j]
@@ -45,9 +59,15 @@ func (s *ProfileService) VPN() (*VPN, error) {
 	return v, nil
 }
 
-// SetVPN replaces the VPN's node, rules and group in one edit, so the core reloads once.
+// SetVPN replaces the VPN's node, rules and group in one edit, so the core reloads once, and
+// keeps a copy as the draft.
 func (s *ProfileService) SetVPN(v VPN) error {
 	name, _ := v.Proxy["name"].(string)
+	if s.settings != nil {
+		draft := v
+		draft.Active = false
+		_ = s.settings.Update(func(st *Settings) { st.VPN = &draft })
+	}
 	return s.edit(func() error {
 		if err := s.clearVPN(); err != nil {
 			return err
@@ -70,11 +90,12 @@ func (s *ProfileService) SetVPN(v VPN) error {
 	})
 }
 
+// RemoveVPN disconnects: the node, rules and group leave the override; the draft stays.
 func (s *ProfileService) RemoveVPN() error { return s.edit(s.clearVPN) }
 
 // clearVPN removes the existing VPN node, its group and its rules, whatever the page had made.
 func (s *ProfileService) clearVPN() error {
-	old, err := s.VPN()
+	old, err := s.activeVPN()
 	if err != nil || old == nil {
 		return err
 	}

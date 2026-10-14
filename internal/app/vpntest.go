@@ -2,11 +2,13 @@ package app
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -60,6 +62,27 @@ func (s *ToolService) VPNTest(target string) ([]string, error) {
 		}
 	}
 	return nil, errors.New("连接超时：目标没有响应")
+}
+
+// VPNProbe logs in to an EasyConnect gateway with settings that aren't saved yet and reports what
+// it handed out; the core logs out again at once.
+func (s *ToolService) VPNProbe(spec map[string]any) ([]string, error) {
+	var resp struct {
+		Address string   `json:"address"`
+		Ranges  int      `json:"ranges"`
+		Domains int      `json:"domains"`
+		DNS     []string `json:"dns"`
+		Message string   `json:"message"`
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
+	defer cancel()
+	if err := s.cs.core.Do(ctx, http.MethodPost, "/easyconnect/test", spec, &resp); err != nil {
+		return nil, fmt.Errorf("登录失败：%w", err)
+	}
+	return []string{
+		fmt.Sprintf("登录成功，隧道地址 %s", resp.Address),
+		fmt.Sprintf("网关路由 %d 个网段、%d 个域名，DNS %s", resp.Ranges, resp.Domains, strings.Join(resp.DNS, ", ")),
+	}, nil
 }
 
 // connectionBySourcePort finds this process's live connection from the given local port.
