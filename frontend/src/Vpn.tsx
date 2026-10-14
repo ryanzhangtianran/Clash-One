@@ -267,11 +267,19 @@ export default function Vpn({ status }: { status: Status }) {
           </div>
           {form.type === "easyconnect" ? (
             <>
-              {routing && <div className="detail-row"><span className="muted">网关下发：{routing.ip?.length ?? 0} 个网段、{routing.domains?.length ?? 0} 个域名</span></div>}
-              {nonNull(routing?.ip).map((r, i) => (
-                <div key={i} className="detail-row"><span>{r.from === r.to ? r.from : `${r.from} ~ ${r.to}`}</span><span className="muted">{r.portMin === r.portMax ? r.portMin : `${r.portMin}-${r.portMax}`} {r.protocol}</span></div>
-              ))}
-              {nonNull(routing?.domains).map((d) => <div key={d} className="detail-row"><span>{d}</span></div>)}
+              {routing && (routing.ip?.length || routing.domains?.length) ? (
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead><tr><th>网关下发的网段</th><th>端口</th><th>协议</th></tr></thead>
+                    <tbody>
+                      {nonNull(routing.ip).map((r, i) => (
+                        <tr key={i}><td>{r.from === r.to ? r.from : `${r.from} ~ ${r.to}`}</td><td>{r.portMin === r.portMax ? r.portMin : `${r.portMin}-${r.portMax}`}</td><td>{r.protocol}</td></tr>
+                      ))}
+                      {nonNull(routing.domains).map((d) => <tr key={d}><td>{d}</td><td /><td>域名</td></tr>)}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
             </>
           ) : null}
         </div>
