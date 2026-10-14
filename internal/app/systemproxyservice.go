@@ -153,9 +153,9 @@ func (s *SystemProxyService) guard() {
 func (s *SystemProxyService) ServiceShutdown() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.port == 0 {
+	if s.port == 0 && !s.settings.Get().SystemProxy {
 		return nil
 	}
 	s.port = 0
-	return sysproxy.Clear()
+	return sysproxy.Clear() // whether this session set it or an earlier one did
 }

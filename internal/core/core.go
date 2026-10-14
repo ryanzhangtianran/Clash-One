@@ -140,7 +140,7 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	socket := controlAddr(c.Dir)
 
-	cmd := run.Command(bin, append([]string{"-d", c.Dir}, controlArgs(socket)...)...)
+	cmd := run.Command(bin, append([]string{"-d", c.Dir, "-exit-with-parent"}, controlArgs(socket)...)...) // a crashed GUI takes its core down with it
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
