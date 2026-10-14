@@ -271,6 +271,18 @@ func formatted(content []byte) []byte {
 }
 
 // Format re-indents YAML to two spaces per level, keeping comments, order and quoting.
+// FormatBlock is Format with every non-empty list and mapping one item per line, for the
+// override editor, whose content the GUI writes.
+func FormatBlock(text string) (string, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
+		return "", err
+	}
+	blockStyle(&doc)
+	b, err := yaml.Marshal(&doc)
+	return string(b), err
+}
+
 func Format(text string) (string, error) {
 	if strings.TrimSpace(text) == "" {
 		return "", nil
@@ -279,7 +291,6 @@ func Format(text string) (string, error) {
 	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
 		return "", fmt.Errorf("不是有效的 YAML: %w", err)
 	}
-	blockStyle(&doc)
 	var b strings.Builder
 	enc := yaml.NewEncoder(&b)
 	enc.SetIndent(2)

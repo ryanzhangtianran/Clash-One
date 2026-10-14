@@ -220,7 +220,7 @@ func (s *ProfileService) Override() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if f, err := profile.Format(text); err == nil {
+	if f, err := profile.FormatBlock(text); err == nil && strings.TrimSpace(text) != "" {
 		return f, nil
 	}
 	return text, nil
