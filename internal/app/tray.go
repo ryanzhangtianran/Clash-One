@@ -56,6 +56,8 @@ type trayMenu struct {
 	lastActive   map[string]time.Time  // process -> when it last moved bytes
 	speedItem    *application.MenuItem // the live speed row, where the tray itself can't show text (Windows)
 	modeItem     *application.MenuItem
+	vpnItem      *application.MenuItem // the VPN page's node: its state, click to connect or disconnect
+	vpnActive    bool
 	qualityItem  *application.MenuItem
 	proxyItem    *application.MenuItem
 	enhancedItem *application.MenuItem
@@ -235,6 +237,66 @@ func qualityBadge(ms int) string {
 	return pill("bad", fmt.Sprintf("%d ms", ms))
 }
 
+// toggleVPN connects the VPN page's draft, or disconnects the active one.
+func (t *trayMenu) toggleVPN() {
+	v, err := t.profiles.VPN()
+	if err != nil || v == nil {
+		return
+	}
+	if v.Active {
+		err = t.profiles.RemoveVPN()
+	} else {
+		err = t.profiles.SetVPN(*v)
+	}
+	if err != nil {
+		notify("error", "VPN：%v", err)
+	}
+	t.tick()
+}
+
+// vpnState reads the VPN's state off the lock: its name and 未连接 / 连接中 / 已连接, or "" when
+// there is no VPN.
+func (t *trayMenu) vpnState() (name, detail string, active bool) {
+	v, err := t.profiles.VPN()
+	if err != nil || v == nil {
+		return "", "", false
+	}
+	name, _ = v.Proxy["name"].(string)
+	state, detail := "down", pill("gray", "未连接")
+	if v.Active {
+		state = "up"
+		if v.Proxy["type"] == "easyconnect" {
+			state = "down"
+			if tunnels, err := t.svc.EasyConnects(); err == nil {
+				for _, tn := range tunnels {
+					if tn.Name == name {
+						state = tn.State
+					}
+				}
+			}
+		}
+	}
+	switch state {
+	case "up":
+		detail = pill("good", "已连接")
+	case "connecting":
+		detail = pill("warn", "连接中")
+	}
+	return name, detail, v.Active
+}
+
+// showVPN puts the state on the item; called with the lock held.
+func (t *trayMenu) showVPN(name, detail string, active bool) {
+	t.vpnActive = active
+	if name == "" {
+		t.vpnItem.SetHidden(true)
+		delete(t.details, t.vpnItem)
+		return
+	}
+	t.vpnItem.SetLabel("VPN " + name).SetHidden(false)
+	t.details[t.vpnItem] = detail
+}
+
 func (t *trayMenu) tick() {
 	all, _ := t.svc.Groups()
 	var groups []Group
@@ -244,6 +306,7 @@ func (t *trayMenu) tick() {
 		}
 	}
 	list := t.profiles.Profiles()
+	vpnName, vpnDetail, vpnActive := t.vpnState()
 	t.locked(func() {
 		if layout := menuLayout(groups, list); layout != t.layout {
 			t.layout = layout
@@ -258,6 +321,7 @@ func (t *trayMenu) tick() {
 		for id, item := range t.profileItems {
 			item.SetChecked(id == list.Current)
 		}
+		t.showVPN(vpnName, vpnDetail, vpnActive)
 		t.showRows()
 	})
 }
@@ -355,6 +419,8 @@ func (t *trayMenu) build(groups []Group, list Profiles) {
 			}
 		})
 	}
+
+	t.vpnItem = m.Add("VPN").SetHidden(true).OnClick(func(*application.Context) { t.toggleVPN() })
 
 	t.groupItems, t.memberItems = map[string]*application.MenuItem{}, map[string]map[string]*application.MenuItem{}
 	if len(groups) > 0 {
