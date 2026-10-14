@@ -218,26 +218,25 @@ export default function Vpn({ status }: { status: Status }) {
 
       {saved && (
         <div className="card" style={{ marginTop: 16 }}>
-          <div className="label">状态</div>
+          <div className="label" style={{ gap: 12 }}>状态
+            {form.type === "easyconnect" ? <>
+              <span className={stateClass[tunnel?.state ?? "down"]}>{stateLabel[tunnel?.state ?? "down"]}</span>
+              {tunnel?.address && <span>隧道地址 {tunnel.address}</span>}
+              {routing?.dns?.length ? <span>DNS {routing.dns.join(", ")}</span> : null}
+            </> : <>
+              <button className="btn small-btn" disabled={!status.running} onClick={measure}>测延迟</button>
+              {delay && <span>{delay}</span>}
+            </>}
+          </div>
           {form.type === "easyconnect" ? (
             <>
-              <div className="detail-row">
-                <span className={stateClass[tunnel?.state ?? "down"]}>{stateLabel[tunnel?.state ?? "down"]}</span>
-                {tunnel?.address && <span className="muted">隧道地址 {tunnel.address}</span>}
-                {routing?.dns?.length ? <span className="muted">DNS {routing.dns.join(", ")}</span> : null}
-              </div>
               {routing && <div className="detail-row"><span className="muted">网关下发：{routing.ip?.length ?? 0} 个网段、{routing.domains?.length ?? 0} 个域名</span></div>}
               {nonNull(routing?.ip).map((r, i) => (
                 <div key={i} className="detail-row"><span>{r.from === r.to ? r.from : `${r.from} ~ ${r.to}`}</span><span className="muted">{r.portMin === r.portMax ? r.portMin : `${r.portMin}-${r.portMax}`} {r.protocol}</span></div>
               ))}
               {nonNull(routing?.domains).map((d) => <div key={d} className="detail-row"><span>{d}</span></div>)}
             </>
-          ) : (
-            <div className="detail-row">
-              <button className="btn small-btn" disabled={!status.running} onClick={measure}>测延迟</button>
-              {delay && <span className="muted">{delay}</span>}
-            </div>
-          )}
+          ) : null}
         </div>
       )}
 
