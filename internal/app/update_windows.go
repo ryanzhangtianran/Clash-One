@@ -3,8 +3,8 @@ package app
 import (
 	"cmp"
 	"fmt"
+	"github.com/ryanzhangtianran/Connaio/internal/run"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"syscall"
@@ -19,7 +19,7 @@ const updateAsset = "-windows-" + runtime.GOARCH + ".exe"
 
 // installPackage runs the installer silently; it raises the UAC prompt itself.
 func installPackage(installer string) error {
-	out, err := exec.Command(installer, "/S").CombinedOutput()
+	out, err := run.Command(installer, "/S").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("安装更新失败：%s", cmp.Or(strings.TrimSpace(string(out)), err.Error()))
 	}
@@ -34,7 +34,7 @@ func restartCommand() []string {
 // relaunch quits and runs cmd once this process is gone, so the single-instance check doesn't
 // hand the new one back to the quitting one.
 func relaunch(cmd []string) error {
-	c := exec.Command("cmd", "/c", "timeout /t 1 /nobreak >nul & start \"\" \""+cmd[0]+"\"")
+	c := run.Command("cmd", "/c", "timeout /t 1 /nobreak >nul & start \"\" \""+cmd[0]+"\"")
 	c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS}
 	if err := c.Start(); err != nil {
 		return err

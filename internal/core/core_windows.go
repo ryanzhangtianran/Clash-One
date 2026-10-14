@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"github.com/ryanzhangtianran/Connaio/internal/run"
 	"net"
 	"os"
 	"os/exec"
@@ -38,7 +39,7 @@ func stopStale(pidFile string) {
 	}
 	defer os.Remove(pidFile)
 	// only kill it if the pid still belongs to a connaio-core (pids get reused)
-	out, err := exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(pid), "/FO", "CSV", "/NH").Output()
+	out, err := run.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(pid), "/FO", "CSV", "/NH").Output()
 	if err != nil || !strings.Contains(strings.ToLower(string(out)), `"`+coreExe+`"`) {
 		return
 	}

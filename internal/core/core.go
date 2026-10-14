@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ryanzhangtianran/Connaio/internal/run"
 	"io"
 	"net"
 	"net/http"
@@ -139,7 +140,7 @@ func (c *Core) Start(ctx context.Context) error {
 	}
 	socket := controlAddr(c.Dir)
 
-	cmd := exec.Command(bin, append([]string{"-d", c.Dir}, controlArgs(socket)...)...)
+	cmd := run.Command(bin, append([]string{"-d", c.Dir}, controlArgs(socket)...)...)
 	cmd.Stdout, cmd.Stderr = logFile, logFile
 	if err := cmd.Start(); err != nil {
 		logFile.Close()
@@ -234,7 +235,7 @@ func (c *Core) Validate(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	out, err := exec.CommandContext(ctx, bin, "-t", "-d", c.Dir, "-f", path).CombinedOutput()
+	out, err := run.CommandContext(ctx, bin, "-t", "-d", c.Dir, "-f", path).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("配置校验失败: %s", problems(string(out)))
 	}

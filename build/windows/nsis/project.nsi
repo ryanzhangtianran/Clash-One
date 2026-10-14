@@ -53,9 +53,13 @@ FunctionEnd
 # stopCore ends a running GUI and root core, so their files can be replaced; the service is left
 # installed and starts again on the new binary.
 !macro stopCore
-    nsExec::ExecToLog 'taskkill /F /IM ${PRODUCT_EXECUTABLE}'
-    nsExec::ExecToLog 'sc stop ${CORE_SERVICE}'
-    nsExec::ExecToLog 'taskkill /F /IM connaio-core.exe'
+    # silent: "process not found" and "service not started" are the normal case
+    nsExec::Exec 'taskkill /F /IM ${PRODUCT_EXECUTABLE}'
+    Pop $0
+    nsExec::Exec 'sc stop ${CORE_SERVICE}'
+    Pop $0
+    nsExec::Exec 'taskkill /F /IM connaio-core.exe'
+    Pop $0
     Sleep 1000
 !macroend
 
@@ -75,7 +79,8 @@ Section
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
-    nsExec::ExecToLog 'sc start ${CORE_SERVICE}' # only runs if enhanced mode had installed it
+    nsExec::Exec 'sc start ${CORE_SERVICE}' # only exists once enhanced mode installed it; silent otherwise
+    Pop $0
 
     !insertmacro wails.writeUninstaller
 SectionEnd

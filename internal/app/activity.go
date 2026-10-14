@@ -4,12 +4,12 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"github.com/ryanzhangtianran/Connaio/internal/run"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -121,7 +121,7 @@ func defaultRoute() map[string]string { return routeOf("-inet") }
 
 // pingMs is one ICMP round trip to host via ping (no root needed), 0 if it fails.
 func pingMs(ctx context.Context, host string) int {
-	out, err := exec.CommandContext(ctx, "ping", append(pingArgs, host)...).Output()
+	out, err := run.CommandContext(ctx, "ping", append(pingArgs, host)...).Output()
 	if err != nil {
 		return 0
 	}

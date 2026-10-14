@@ -1,8 +1,8 @@
 package app
 
 import (
+	"github.com/ryanzhangtianran/Connaio/internal/run"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -43,7 +43,7 @@ func (s *SettingsService) OpenDataDir() error {
 	if runtime.GOOS == "linux" {
 		opener = "xdg-open"
 	}
-	return exec.Command(opener, s.core.core.Dir).Run()
+	return run.Command(opener, s.core.core.Dir).Run()
 }
 
 func (s *SettingsService) LaunchAtLogin() bool {

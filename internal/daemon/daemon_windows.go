@@ -4,8 +4,8 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"github.com/ryanzhangtianran/Connaio/internal/run"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -24,7 +24,7 @@ var (
 
 // Installed reports whether the service exists.
 func Installed() bool {
-	return exec.Command("sc", "query", Service).Run() == nil
+	return run.Command("sc", "query", Service).Run() == nil
 }
 
 // installScript sets the service up (or points an existing one at the new binary) and starts it.
@@ -90,7 +90,7 @@ func asAdmin(stage, script string) error {
 		return err
 	}
 	ps := "$p = Start-Process cmd.exe -ArgumentList '/c','\"" + path + "\"' -Verb RunAs -Wait -PassThru; exit $p.ExitCode"
-	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", ps).CombinedOutput()
+	out, err := run.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", ps).CombinedOutput()
 	text := strings.TrimSpace(string(out))
 	switch {
 	case err == nil:

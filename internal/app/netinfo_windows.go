@@ -2,8 +2,8 @@ package app
 
 import (
 	"encoding/csv"
+	"github.com/ryanzhangtianran/Connaio/internal/run"
 	"net"
-	"os/exec"
 	"slices"
 	"strings"
 )
@@ -50,7 +50,7 @@ var pingArgs = []string{"-n", "1", "-w", "2000"}
 
 // arpTable maps IPv4 addresses to MAC addresses from `arp -a`.
 func arpTable() map[string]string {
-	out, _ := exec.Command("arp", "-a").Output()
+	out, _ := run.Command("arp", "-a").Output()
 	return parseWindowsARP(string(out))
 }
 
@@ -74,6 +74,6 @@ func parseWindowsARP(out string) map[string]string {
 func interfaceLabel(iface string) string { return iface }
 
 func powershell(command string) (string, error) {
-	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", command).Output()
+	out, err := run.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", command).Output()
 	return string(out), err
 }
