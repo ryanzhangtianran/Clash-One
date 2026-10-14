@@ -213,8 +213,8 @@ export default function Vpn({ status }: { status: Status }) {
           <div className="form">{text("control-url", "控制服务器，Headscale 时填，可选")}{text("exit-node", "出口节点，可选")}
             <label className="radio"><input type="checkbox" checked={form["accept-routes"] === "true"} onChange={(e) => setForm({ ...form, "accept-routes": String(e.target.checked) })} /> 接受子网路由</label></div>
         </>}
-        <ListRow items={addrs} onChange={setAddrs} column="经 VPN 的网段和域名" placeholder={form.type === "easyconnect" ? "额外经 VPN 的网段或域名" : "经 VPN 的网段或域名"} />
-        <ListRow items={bypass} onChange={setBypass} column="直连网络" placeholder="直连网络，SSID:名称 或 ROUTER:地址" fill={{ label: "当前网络", get: currentNetwork }} />
+        <ListRow items={addrs} onChange={setAddrs} column={form.type === "easyconnect" ? "附加路由" : "VPN 路由"} placeholder={form.type === "easyconnect" ? "附加路由：网段或域名" : "VPN 路由：网段或域名"} />
+        <ListRow items={bypass} onChange={setBypass} column="直连网络" placeholder="直连网络：SSID:名称 或 ROUTER:网关地址" fill={{ label: "当前网络", get: currentNetwork }} />
         <div className="form">
           <button className="btn primary" disabled={busy || !ready || !status.running} onClick={save}>{saved ? "保存并重连" : "连接"}</button>
           {saved && <button className="btn" disabled={busy} onClick={disconnect}>断开</button>}
