@@ -41,9 +41,30 @@ const ruleOf = (addr: string, target: string) => (isCIDR(addr) ? `IP-CIDR,${addr
 const addrOf = (rule: string) => { const f = rule.split(",").map((x) => x.trim()); return f[0] === "IP-CIDR" ? f[1].replace(/\/32$/, "") : f[0] === "DOMAIN-SUFFIX" ? f[1] : ""; };
 const cleanBypass = (b: string[]) => b.map((x) => x.trim()).filter((x) => x && !x.endsWith(":"));
 
+// ListRow is an input with an 添加 button, as the rows above it, with what was added as chips
+// below; clicking a chip removes it.
+function ListRow({ items, onChange, placeholder, extra }: { items: string[]; onChange: (v: string[]) => void; placeholder: string; extra?: React.ReactNode }) {
+  const [text, setText] = useState("");
+  const add = () => { const v = text.trim(); if (v && !items.includes(v)) onChange([...items, v]); setText(""); };
+  return (
+    <>
+      <div className="form">
+        <input className="grow" placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+        <button className="btn" disabled={!text.trim()} onClick={add}>添加</button>
+        {extra}
+      </div>
+      {items.length > 0 && (
+        <div className="form" style={{ flexWrap: "wrap", marginTop: 8 }}>
+          {items.map((x) => <button key={x} className="btn small-btn" title="点击移除" onClick={() => onChange(items.filter((y) => y !== x))}>{x} ×</button>)}
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function Vpn({ status }: { status: Status }) {
   const [form, setForm] = useState<Form>(empty);
-  const [addrs, setAddrs] = useState("");
+  const [addrs, setAddrs] = useState<string[]>([]);
   const [bypass, setBypass] = useState<string[]>([]);
   const [name, setName] = useState(defaultName);
   const [saved, setSaved] = useState(false);
@@ -72,7 +93,7 @@ export default function Vpn({ status }: { status: Status }) {
       for (const [k, x] of Object.entries(p)) if (k !== "name" && k !== "type" && (typeof x === "string" || typeof x === "number" || typeof x === "boolean")) f[k] = String(x);
       if (Array.isArray(p["allowed-ips"])) f["allowed-ips"] = p["allowed-ips"].join(", ");
       setForm(f);
-      setAddrs(nonNull(v.rules).map(addrOf).filter(Boolean).join("\n"));
+      setAddrs(nonNull(v.rules).map(addrOf).filter(Boolean));
       setBypass(Object.keys(v.group?.rules ?? {}));
     });
   }, []);
@@ -92,7 +113,7 @@ export default function Vpn({ status }: { status: Status }) {
   })();
 
   const conds = cleanBypass(bypass);
-  const listedAddrs = addrs.split(/\n/).map((x) => x.trim()).filter(Boolean);
+  const listedAddrs = addrs;
 
   // build is the override's view of the form: the node, its rules and the bypass group.
   const build = () => {
@@ -183,18 +204,9 @@ export default function Vpn({ status }: { status: Status }) {
           <div className="form">{text("control-url", "控制服务器，Headscale 时填，可选")}{text("exit-node", "出口节点，可选")}
             <label className="radio"><input type="checkbox" checked={form["accept-routes"] === "true"} onChange={(e) => setForm({ ...form, "accept-routes": String(e.target.checked) })} /> 接受子网路由</label></div>
         </>}
-        <div className="form"><textarea className="grow" rows={3} placeholder={form.type === "easyconnect" ? "除网关下发的之外，还要走 VPN 的网段或域名，每行一个（可选）" : "走 VPN 的网段或域名，每行一个，如 10.0.0.0/8、example.com"} value={addrs} onChange={(e) => setAddrs(e.target.value)} /></div>
-        <div className="form" style={{ flexWrap: "wrap" }}>
-          <span className="small muted" style={{ alignSelf: "center" }}>直连网络</span>
-          {bypass.map((b, i) => (
-            <span key={i} className="pw" style={{ width: 200 }}>
-              <input placeholder="SSID:我的 Wi-Fi 或 ROUTER:192.168.1.1" value={b} onChange={(e) => setBypass(bypass.map((x, j) => (j === i ? e.target.value : x)))} />
-              <button type="button" onClick={() => setBypass(bypass.filter((_, j) => j !== i))}>×</button>
-            </span>
-          ))}
-          <button className="btn" onClick={() => setBypass([...bypass, "SSID:"])}>添加</button>
-          <button className="btn" disabled={!status.running} onClick={useCurrent}>添加当前网络</button>
-        </div>
+        <ListRow items={addrs} onChange={setAddrs} placeholder={form.type === "easyconnect" ? "额外经 VPN 的网段或域名，如 10.0.0.0/8、example.com（可选）" : "经 VPN 的网段或域名，如 10.0.0.0/8、example.com"} />
+        <ListRow items={bypass} onChange={setBypass} placeholder="直连网络：SSID:我的 Wi-Fi 或 ROUTER:192.168.1.1（可选）"
+          extra={<button className="btn" disabled={!status.running} onClick={useCurrent}>添加当前网络</button>} />
         <div className="form">
           <button className="btn primary" disabled={busy || !ready || !status.running} onClick={save}>{saved ? "保存并重连" : "连接"}</button>
           {saved && <button className="btn" disabled={busy} onClick={disconnect}>断开</button>}
@@ -213,8 +225,8 @@ export default function Vpn({ status }: { status: Status }) {
                 <span className={stateClass[tunnel?.state ?? "down"]}>{stateLabel[tunnel?.state ?? "down"]}</span>
                 {tunnel?.address && <span className="muted">隧道地址 {tunnel.address}</span>}
                 {routing?.dns?.length ? <span className="muted">DNS {routing.dns.join(", ")}</span> : null}
+                {tunnel?.error && <span className="muted small">{tunnel.error}</span>}
               </div>
-              {tunnel?.error && <div className="error small detail-row">{tunnel.error}</div>}
               {routing && <div className="detail-row"><span className="muted">网关下发：{routing.ip?.length ?? 0} 个网段、{routing.domains?.length ?? 0} 个域名</span></div>}
               {nonNull(routing?.ip).map((r, i) => (
                 <div key={i} className="detail-row"><span>{r.from === r.to ? r.from : `${r.from} ~ ${r.to}`}</span><span className="muted">{r.portMin === r.portMax ? r.portMin : `${r.portMin}-${r.portMax}`} {r.protocol}</span></div>
@@ -227,8 +239,6 @@ export default function Vpn({ status }: { status: Status }) {
               {delay && <span className="muted">{delay}</span>}
             </div>
           )}
-          {listedAddrs.length > 0 && <div className="detail-row"><span className="muted">走 VPN 的地址：{listedAddrs.join("、")}</span></div>}
-          {conds.length > 0 && <div className="detail-row"><span className="muted">直连的网络：{conds.join("、")}</span></div>}
         </div>
       )}
 
