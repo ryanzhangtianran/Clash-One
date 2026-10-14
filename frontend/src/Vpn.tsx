@@ -185,15 +185,15 @@ export default function Vpn({ status }: { status: Status }) {
         </>}
         <div className="form"><textarea className="grow" rows={3} placeholder={form.type === "easyconnect" ? "除网关下发的之外，还要走 VPN 的网段或域名，每行一个（可选）" : "走 VPN 的网段或域名，每行一个，如 10.0.0.0/8、example.com"} value={addrs} onChange={(e) => setAddrs(e.target.value)} /></div>
         <div className="form" style={{ flexWrap: "wrap" }}>
-          <span className="small muted" style={{ alignSelf: "center" }}>在以下网络中不走 VPN</span>
+          <span className="small muted" style={{ alignSelf: "center" }}>直连网络</span>
           {bypass.map((b, i) => (
             <span key={i} className="pw" style={{ width: 200 }}>
               <input placeholder="SSID:我的 Wi-Fi 或 ROUTER:192.168.1.1" value={b} onChange={(e) => setBypass(bypass.map((x, j) => (j === i ? e.target.value : x)))} />
               <button type="button" onClick={() => setBypass(bypass.filter((_, j) => j !== i))}>×</button>
             </span>
           ))}
-          <button className="btn" onClick={() => setBypass([...bypass, "SSID:"])}>增加</button>
-          <button className="btn" disabled={!status.running} onClick={useCurrent}>用当前网络</button>
+          <button className="btn" onClick={() => setBypass([...bypass, "SSID:"])}>添加</button>
+          <button className="btn" disabled={!status.running} onClick={useCurrent}>添加当前网络</button>
         </div>
         <div className="form">
           <button className="btn primary" disabled={busy || !ready || !status.running} onClick={save}>{saved ? "保存并重连" : "连接"}</button>
