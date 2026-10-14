@@ -58,7 +58,7 @@ tasks:
       # unzip on macOS and Linux; on Windows the Git Bash tar is GNU and can't read zips, but System32's bsdtar can
       - cmd: unzip -joq "{{.BIN_DIR}}/wintun.zip" "wintun/bin/{{.ARCH | default "amd64"}}/wintun.dll" -d "{{.BIN_DIR}}"
         platforms: [darwin, linux]
-      - cmd: /c/Windows/System32/tar.exe -xf "{{.BIN_DIR}}/wintun.zip" -C "{{.BIN_DIR}}" --strip-components=3 "wintun/bin/{{.ARCH | default "amd64"}}/wintun.dll"
+      - cmd: C:/Windows/System32/tar.exe -xf "{{.BIN_DIR}}/wintun.zip" -C "{{.BIN_DIR}}" --strip-components=3 "wintun/bin/{{.ARCH | default "amd64"}}/wintun.dll"
         platforms: [windows]
       - rm -f "{{.BIN_DIR}}/wintun.zip"
 
