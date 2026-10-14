@@ -213,8 +213,17 @@ func (s *ProfileService) Select(id string) error {
 	return nil
 }
 
+// Override is the override as the editor shows it: formatted one item per line, whatever
+// style the file on disk has.
 func (s *ProfileService) Override() (string, error) {
-	return s.store.Override()
+	text, err := s.store.Override()
+	if err != nil {
+		return "", err
+	}
+	if f, err := profile.Format(text); err == nil {
+		return f, nil
+	}
+	return text, nil
 }
 
 // SetOverride saves and applies the override, restoring the old one if the core rejects the result.

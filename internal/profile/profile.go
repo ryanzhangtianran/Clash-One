@@ -279,6 +279,7 @@ func Format(text string) (string, error) {
 	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
 		return "", fmt.Errorf("不是有效的 YAML: %w", err)
 	}
+	blockStyle(&doc)
 	var b strings.Builder
 	enc := yaml.NewEncoder(&b)
 	enc.SetIndent(2)
