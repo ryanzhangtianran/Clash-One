@@ -218,7 +218,7 @@ export default function Vpn({ status }: { status: Status }) {
 
       {saved && (
         <div className="card" style={{ marginTop: 16 }}>
-          <div className="label" style={{ gap: 12 }}>状态
+          <div className="label" style={{ gap: 12, alignItems: "baseline", fontSize: 13 }}>状态
             {form.type === "easyconnect" ? <>
               <span className={stateClass[tunnel?.state ?? "down"]}>{stateLabel[tunnel?.state ?? "down"]}</span>
               {tunnel?.address && <span>隧道地址 {tunnel.address}</span>}
