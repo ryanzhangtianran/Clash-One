@@ -300,21 +300,20 @@ func orderKeys(n *yaml.Node) {
 	if n.Kind != yaml.MappingNode {
 		return
 	}
-	rank := func(key string) int {
-		if i := slices.Index(leadingKeys, key); i >= 0 {
-			return i
+	out := make([]*yaml.Node, 0, len(n.Content))
+	for _, key := range leadingKeys { // leading keys first, in that order
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			if n.Content[i].Value == key {
+				out = append(out, n.Content[i], n.Content[i+1])
+			}
 		}
-		return len(leadingKeys)
 	}
-	pairs := make([][2]*yaml.Node, 0, len(n.Content)/2)
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		pairs = append(pairs, [2]*yaml.Node{n.Content[i], n.Content[i+1]})
+	for i := 0; i+1 < len(n.Content); i += 2 { // then the rest, as encoded (alphabetical)
+		if !slices.Contains(leadingKeys, n.Content[i].Value) {
+			out = append(out, n.Content[i], n.Content[i+1])
+		}
 	}
-	slices.SortStableFunc(pairs, func(a, b [2]*yaml.Node) int { return rank(a[0].Value) - rank(b[0].Value) })
-	n.Content = n.Content[:0]
-	for _, p := range pairs {
-		n.Content = append(n.Content, p[0], p[1])
-	}
+	n.Content = out
 }
 
 // findNamed returns the index of the mapping with name in seq, or -1.
