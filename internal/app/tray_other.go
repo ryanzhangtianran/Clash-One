@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -59,4 +60,35 @@ func trayPNG(data []byte, a float64) []byte {
 		return data
 	}
 	return buf.Bytes()
+}
+
+// detailSep sits between a menu item's label and its detail, and is how a label is told from
+// what decorate appended to it last time.
+const detailSep = " · "
+
+// decorate folds each detail into its item's label ("Proxy · 香港", "网络质量 · 86 ms"), since
+// Linux and Windows menus show plain text: a pill keeps its text, the mode badge becomes the mode's
+// name, and icons are skipped.
+func decorate(details, _ map[*application.MenuItem]string) {
+	for item, detail := range details {
+		base, _, _ := strings.Cut(item.Label(), detailSep)
+		if text := detailText(detail); text != "" {
+			base += detailSep + text
+		}
+		if base != item.Label() {
+			item.SetLabel(base)
+		}
+	}
+}
+
+func detailText(detail string) string {
+	if len(detail) > 1 && detail[0] == 1 { // a pill: "\x01color|text"
+		_, detail, _ = strings.Cut(detail[1:], "|")
+	}
+	for _, m := range modes {
+		if modeBadges[m.key] == detail {
+			return m.label
+		}
+	}
+	return detail
 }

@@ -7,15 +7,21 @@ import (
 )
 
 // showTray sets the cat, pink and faded while nothing is captured, only when that changes. The
-// notification area shows no text, so the speed goes in the tooltip.
-func showTray(tray *application.SystemTray, icon []byte, t Traffic, _ string, capturing, showSpeed bool) {
+// notification area shows no text, so the tooltip carries the mode, whether anything is captured
+// and the speed; the menu's first row shows the speed live.
+func showTray(tray *application.SystemTray, icon []byte, t Traffic, mode string, capturing, showSpeed bool) {
 	setTrayIcon(tray, icon, capturing)
 	tip := "Connaio"
+	for _, m := range modes {
+		if m.key == mode {
+			tip += " · " + m.label
+		}
+	}
+	if !capturing {
+		tip += " · 未接管流量"
+	}
 	if showSpeed {
-		tip = fmt.Sprintf("Connaio  ↑%s ↓%s", rate(t.Up), rate(t.Down))
+		tip += fmt.Sprintf("\n↑ %s\n↓ %s", rate(t.Up), rate(t.Down))
 	}
 	tray.SetTooltip(tip)
 }
-
-// decorate draws details and icons beside macOS menu items; Windows menus show plain items.
-func decorate(_, _ map[*application.MenuItem]string) {}

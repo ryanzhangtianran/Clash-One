@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"maps"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -52,7 +53,8 @@ type trayMenu struct {
 	proxy, enhOn bool
 	layout       string // groups and profiles the menu was built for
 	rows         []procRow
-	lastActive   map[string]time.Time // process -> when it last moved bytes
+	lastActive   map[string]time.Time  // process -> when it last moved bytes
+	speedItem    *application.MenuItem // the live speed row, where the tray itself can't show text (Windows)
 	modeItem     *application.MenuItem
 	qualityItem  *application.MenuItem
 	proxyItem    *application.MenuItem
@@ -144,6 +146,9 @@ func (t *trayMenu) locked(change func()) {
 	defer t.drawMu.Unlock()
 	if next.traffic != t.drawn.traffic || next.mode != t.drawn.mode || next.capturing != t.drawn.capturing || next.speed != t.drawn.speed {
 		showTray(t.tray, t.icon, next.traffic, next.mode, next.capturing, next.speed)
+		if t.speedItem != nil {
+			t.speedItem.SetLabel(fmt.Sprintf("↑ %s    ↓ %s", rate(next.traffic.Up), rate(next.traffic.Down)))
+		}
 	}
 	if started && (!maps.Equal(next.details, t.drawn.details) || !maps.Equal(next.icons, t.drawn.icons)) {
 		decorate(next.details, next.icons)
@@ -321,6 +326,9 @@ func (t *trayMenu) build(groups []Group, list Profiles) {
 		return sub, item
 	}
 
+	if runtime.GOOS == "windows" {
+		t.speedItem = m.Add("↑ 0 KB/s    ↓ 0 KB/s").SetEnabled(false)
+	}
 	m.Add("显示主窗口").SetAccelerator("CmdOrCtrl+M").OnClick(func(*application.Context) { t.show() })
 	m.AddSeparator()
 	sub, item := submenu("出站模式")
