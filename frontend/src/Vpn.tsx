@@ -45,15 +45,17 @@ const cleanBypass = (b: string[]) => b.map((x) => x.trim()).filter((x) => x && !
 
 // ListRow is an input with an 添加 button, as the rows above it, and a table of what was added,
 // each row with a 删除.
-function ListRow({ items, onChange, placeholder, column, extra }: { items: string[]; onChange: (v: string[]) => void; placeholder: string; column: string; extra?: React.ReactNode }) {
+function ListRow({ items, onChange, placeholder, column, fill }: { items: string[]; onChange: (v: string[]) => void; placeholder: string; column: string; fill?: { label: string; get: () => Promise<string> } }) {
   const [text, setText] = useState("");
   const add = () => { const v = text.trim(); if (v && !items.includes(v)) onChange([...items, v]); setText(""); };
   return (
     <>
       <div className="form">
-        <input className="grow" placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
-        <button className="btn" disabled={!text.trim()} onClick={add}>添加</button>
-        {extra}
+        <span className="pw grow">
+          <input placeholder={placeholder} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} style={fill ? { paddingRight: 72 } : undefined} />
+          {fill && <button type="button" style={{ fontSize: 12, padding: "0 6px" }} onClick={() => fill.get().then((v) => v && setText(v))}>{fill.label}</button>}
+        </span>
+        <button className="btn" disabled={!text.trim()} onClick={add} style={{ width: 40, fontSize: 18 }}>+</button>
       </div>
       {items.length > 0 && (
         <div className="table-wrap">
@@ -171,10 +173,8 @@ export default function Vpn({ status }: { status: Status }) {
     ToolService.VPNProbe(build().proxy).then((l) => setProbe(nonNull(l))).catch((e) => setProbe([reason(e)])).finally(() => setProbing(false));
   };
   const measure = () => { setDelay("测量中…"); CoreService.TestProxy(name).then((ms) => setDelay(`${ms} ms`)).catch((e) => setDelay(String(e))); };
-  const useCurrent = () => CoreService.CurrentNetwork().then((n) => {
-    const cond = n.ssid ? `SSID:${n.ssid}` : n.router ? `ROUTER:${n.router}` : "";
-    if (cond && !conds.includes(cond)) setBypass([...conds, cond]);
-  });
+  // currentNetwork is the subnet-group condition for the network this machine is on now.
+  const currentNetwork = () => CoreService.CurrentNetwork().then((n) => (n.ssid ? `SSID:${n.ssid}` : n.router ? `ROUTER:${n.router}` : ""));
 
   const routing = tunnel?.routing;
   const test = () => {
@@ -213,9 +213,8 @@ export default function Vpn({ status }: { status: Status }) {
           <div className="form">{text("control-url", "控制服务器，Headscale 时填，可选")}{text("exit-node", "出口节点，可选")}
             <label className="radio"><input type="checkbox" checked={form["accept-routes"] === "true"} onChange={(e) => setForm({ ...form, "accept-routes": String(e.target.checked) })} /> 接受子网路由</label></div>
         </>}
-        <ListRow items={addrs} onChange={setAddrs} column="经 VPN 的网段和域名" placeholder={form.type === "easyconnect" ? "额外经 VPN 的网段或域名，如 10.0.0.0/8、example.com（可选）" : "经 VPN 的网段或域名，如 10.0.0.0/8、example.com"} />
-        <ListRow items={bypass} onChange={setBypass} column="直连网络" placeholder="直连网络：SSID:我的 Wi-Fi 或 ROUTER:192.168.1.1（可选）"
-          extra={<button className="btn" disabled={!status.running} onClick={useCurrent}>添加当前网络</button>} />
+        <ListRow items={addrs} onChange={setAddrs} column="经 VPN 的网段和域名" placeholder={form.type === "easyconnect" ? "额外经 VPN 的网段或域名" : "经 VPN 的网段或域名"} />
+        <ListRow items={bypass} onChange={setBypass} column="直连网络" placeholder="直连网络，SSID:名称 或 ROUTER:地址" fill={{ label: "当前网络", get: currentNetwork }} />
         <div className="form">
           <button className="btn primary" disabled={busy || !ready || !status.running} onClick={save}>{saved ? "保存并重连" : "连接"}</button>
           {saved && <button className="btn" disabled={busy} onClick={disconnect}>断开</button>}
