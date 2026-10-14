@@ -25,7 +25,9 @@ tasks:
       - task: build:core
       - task: fetch:wintun
     vars:
-      BUILD_FLAGS: '{{if eq .DEV "true"}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui"{{end}}'
+      VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 0.0.0
+      BUILD_FLAGS: '{{if eq .DEV "true"}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X github.com/ryanzhangtianran/Connaio/internal/app.appVersion={{.VERSION}}"{{end}}'
     env:
       GOOS: windows
       CGO_ENABLED: 0
@@ -67,7 +69,11 @@ tasks:
     internal: true
     dir: build
     cmds:
-      - wails3 generate syso -arch {{.ARCH | default "amd64"}} -icon windows/icon.ico -manifest windows/wails.exe.manifest -info windows/info.json -out ../wails_windows_{{.ARCH | default "amd64"}}.syso
+      - sed "s/__VERSION__/{{.VERSION}}/g" windows/info.json > windows/info.gen.json # the version is the git tag
+      - wails3 generate syso -arch {{.ARCH | default "amd64"}} -icon windows/icon.ico -manifest windows/wails.exe.manifest -info windows/info.gen.json -out ../wails_windows_{{.ARCH | default "amd64"}}.syso
+    vars:
+      VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 0.0.0
 
   package:
     summary: Packages a production build as an NSIS installer, bin/Connaio-<version>-windows-amd64.exe (needs makensis)

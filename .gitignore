@@ -8,3 +8,4 @@ frontend/bindings
 # fetched by wails3 task windows:package; the syso by every Windows build
 build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 *.syso
+build/windows/info.gen.json

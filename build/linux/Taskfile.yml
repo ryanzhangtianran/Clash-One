@@ -18,7 +18,9 @@ tasks:
       - go build {{.BUILD_FLAGS}} -o "{{.BIN_DIR}}/{{.APP_NAME}}"
       - task: build:core
     vars:
-      BUILD_FLAGS: '{{if eq .DEV "true"}}-tags gtk3 -buildvcs=false -gcflags=all="-l"{{else}}-tags production,gtk3 -trimpath -buildvcs=false -ldflags="-w -s"{{end}}'
+      VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 0.0.0
+      BUILD_FLAGS: '{{if eq .DEV "true"}}-tags gtk3 -buildvcs=false -gcflags=all="-l"{{else}}-tags production,gtk3 -trimpath -buildvcs=false -ldflags="-w -s -X github.com/ryanzhangtianran/Connaio/internal/app.appVersion={{.VERSION}}"{{end}}'
     env:
       GOOS: linux
       CGO_ENABLED: 1

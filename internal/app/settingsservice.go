@@ -11,7 +11,8 @@ import (
 	"github.com/ryanzhangtianran/Connaio/internal/daemon"
 )
 
-const appVersion = "0.1.0"
+// appVersion is set at build time from the git tag (-ldflags -X); "dev" in a plain go build.
+var appVersion = "dev"
 
 // SettingsService covers the GUI-side settings: launch at login and the about page.
 type SettingsService struct {
