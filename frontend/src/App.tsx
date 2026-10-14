@@ -9,6 +9,7 @@ import Logs from "./Logs";
 import Rules from "./Rules";
 import Tunnels from "./Tunnels";
 import Vpn from "./Vpn";
+import Guide from "./Guide";
 import Devices from "./Devices";
 import { AboutPage, Dns, General } from "./Settings";
 import Profiles from "./Profiles";
@@ -37,6 +38,7 @@ const pages: Page[] = [
   { key: "dashboard", title: "连接" },
   { key: "logs", title: "日志" },
   { key: "general", title: "通用" },
+  { key: "guide", title: "说明" },
   { key: "about", title: "关于" },
 ];
 
@@ -149,6 +151,7 @@ export default function App() {
           {current === "rules" && <Rules status={status} />}
           {current === "tunnels" && <Tunnels status={status} />}
           {current === "vpn" && <Vpn status={status} />}
+          {current === "guide" && <Guide />}
           {current === "general" && <div className="grouped"><General /></div>}
           {current === "dns" && <div className="grouped"><Dns /></div>}
           {current === "profiles" && <div className="grouped profiles-page"><Profiles /></div>}
