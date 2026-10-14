@@ -257,16 +257,17 @@ func (t *trayMenu) toggleVPN(name string) {
 	t.tick()
 }
 
+var vpnPills = map[string]string{"up": pill("good", "已连接"), "connecting": pill("warn", "连接中"), "down": pill("gray", "未连接")}
+
 // vpnStates reads every VPN's state off the lock: name -> 未连接 / 连接中 / 已连接 as a pill.
 func (t *trayMenu) vpnStates() map[string]string {
 	list, err := t.profiles.VPNs()
 	if err != nil {
 		return nil
 	}
-	pills := map[string]string{"up": pill("good", "已连接"), "connecting": pill("warn", "连接中"), "down": pill("gray", "未连接")}
 	states := map[string]string{}
 	for _, v := range list {
-		states[v.name()] = pills[v.State]
+		states[v.name()] = vpnPills[v.State]
 	}
 	return states
 }

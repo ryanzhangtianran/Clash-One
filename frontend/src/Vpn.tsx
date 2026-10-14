@@ -281,6 +281,7 @@ export default function Vpn({ status }: { status: Status }) {
   ]), []);
   usePoll(load, 5000, status.running);
 
+  const current = editing === "new" ? null : editing; // the VPN being edited, if an existing one
   const run = (key: string, p: Promise<unknown>) => {
     setBusy(key);
     setError("");
@@ -299,10 +300,10 @@ export default function Vpn({ status }: { status: Status }) {
       <div className="tiles">
         {vpns.map((v) => {
           const name = String(v.proxy?.name ?? "");
-          const state = v.state ?? "down";
+          const state = v.state;
           return (
             <div key={name} className="tile-wrap">
-              <button className={`tile ${editing !== "new" && editing?.proxy?.name === name ? "selected" : ""}`} onClick={() => setEditing(editing !== "new" && editing?.proxy?.name === name ? null : v)}>
+              <button className={`tile ${current?.proxy?.name === name ? "selected" : ""}`} onClick={() => setEditing(current?.proxy?.name === name ? null : v)}>
                 <span className="kind">{types[String(v.proxy?.type)] ?? ""}</span>
                 <span className="name">{name}</span>
                 <span className={`foot ${stateClass[state]}`}>{stateLabel[state]}</span>
@@ -319,7 +320,7 @@ export default function Vpn({ status }: { status: Status }) {
       </div>
       {error && <div className="error small" style={{ marginTop: 8 }}>{error}</div>}
 
-      {editing && <VpnEditor key={editing === "new" ? "new" : String(editing.proxy?.name)} status={status} initial={editing === "new" ? null : editing} tunnel={editing === "new" ? null : tunnels.find((t) => t.name === editing.proxy?.name) ?? null} onDone={() => { setEditing(null); load(); }} />}
+      {editing && <VpnEditor key={String(current?.proxy?.name ?? "new")} status={status} initial={current} tunnel={tunnels.find((t) => t.name === current?.proxy?.name) ?? null} onDone={() => { setEditing(null); load(); }} />}
 
       {vpns.some((v) => v.active) && (
         <div className="card" style={{ marginTop: 16 }}>
