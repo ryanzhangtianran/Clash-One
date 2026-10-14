@@ -469,3 +469,17 @@ func TestTornIndexAndUpdateBackoff(t *testing.T) {
 		t.Error("temp file left behind")
 	}
 }
+
+func TestOverrideIsWrittenInBlockStyle(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	if err := s.SetOverride("prepend-proxies: [{name: VPN, type: easyconnect}]\nprepend-rules: ['EASYCONNECT,VPN,VPN']\ngroup-members: {}\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddProxy(map[string]any{"name": "b", "type": "ss"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	text, _ := s.Override()
+	if !strings.Contains(text, "prepend-proxies:\n    - name: VPN\n") || !strings.Contains(text, "prepend-rules:\n    - 'EASYCONNECT,VPN,VPN'\n") || !strings.Contains(text, "group-members: {}") {
+		t.Errorf("override:\n%s", text)
+	}
+}

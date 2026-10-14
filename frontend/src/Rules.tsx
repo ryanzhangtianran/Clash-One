@@ -67,7 +67,7 @@ export default function Rules({ status }: { status: Status }) {
                 <tr key={r.index} className={r.disabled ? "muted" : ""}>
                   <td>{r.index}</td>
                   <td>{r.type}</td>
-                  <td title={r.payload}>{r.type === "EasyConnect" ? `${r.payload} 网关下发的网段和域名` : r.payload}</td>
+                  <td title={r.payload}>{r.payload}</td>
                   <td>{r.proxy}</td>
                   <td>{r.hits}</td>
                   <td className="rule-actions">

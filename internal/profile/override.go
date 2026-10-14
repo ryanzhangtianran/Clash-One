@@ -25,11 +25,23 @@ func (s *Store) PrependRule(rule string) error {
 }
 
 func (s *Store) writeOverride(doc *yaml.Node) error {
+	blockStyle(doc)
 	b, err := yaml.Marshal(doc)
 	if err != nil {
 		return err
 	}
 	return s.SetOverride(string(b))
+}
+
+// blockStyle writes every non-empty list and mapping one item per line: a flow-style
+// `prepend-proxies: [{name: VPN, ...}]` (as an edit once left it) is unreadable in the editor.
+func blockStyle(n *yaml.Node) {
+	if (n.Kind == yaml.SequenceNode || n.Kind == yaml.MappingNode) && len(n.Content) > 0 {
+		n.Style &^= yaml.FlowStyle
+	}
+	for _, c := range n.Content {
+		blockStyle(c)
+	}
 }
 
 // User items are what the GUI adds into the override: they survive subscription updates.
