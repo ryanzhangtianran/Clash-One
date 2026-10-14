@@ -14,13 +14,14 @@ func TestVPNRoundTrip(t *testing.T) {
 		Rules: []string{"EASYCONNECT,VPN,VPN 路由", "IP-CIDR,10.0.0.0/8,VPN 路由,no-resolve", "DOMAIN-SUFFIX,example.edu.cn,VPN 路由"},
 		Group: map[string]any{"type": "subnet", "default": "VPN", "rules": map[string]any{"SSID:Campus": "DIRECT"}},
 	}
-	if err := s.SetVPN(v); err != nil {
+	if err := s.SetVPN(v, ""); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.VPN()
-	if err != nil || got == nil {
-		t.Fatal(err, got)
+	list, err := s.VPNs()
+	if err != nil || len(list) != 1 || !list[0].Active {
+		t.Fatal(err, list)
 	}
+	got := &list[0]
 	if !reflect.DeepEqual(got.Rules, v.Rules) || got.Group["name"] != "VPN 路由" || got.Proxy["server"] != "vpn.example.edu.cn" {
 		t.Errorf("read back %+v", got)
 	}
@@ -34,10 +35,11 @@ func TestVPNRoundTrip(t *testing.T) {
 
 	v.Group = nil
 	v.Rules = []string{"EASYCONNECT,VPN,VPN"}
-	if err := s.SetVPN(v); err != nil {
+	if err := s.SetVPN(v, "VPN"); err != nil {
 		t.Fatal(err)
 	}
-	got, _ = s.VPN()
+	list, _ = s.VPNs()
+	got = &list[0]
 	if got.Group != nil || !reflect.DeepEqual(got.Rules, v.Rules) {
 		t.Errorf("after resave %+v", got)
 	}
@@ -46,11 +48,11 @@ func TestVPNRoundTrip(t *testing.T) {
 		t.Errorf("leftovers: groups %v proxies %v", items.Groups, items.Proxies)
 	}
 
-	if err := s.RemoveVPN(); err != nil {
+	if err := s.RemoveVPN("VPN"); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ = s.VPN(); got != nil {
-		t.Errorf("still there: %+v", got)
+	if list, _ = s.VPNs(); len(list) != 0 {
+		t.Errorf("still there: %+v", list)
 	}
 	items, _ = s.UserItems()
 	if len(items.Rules) != 1 || len(items.Proxies) != 0 {

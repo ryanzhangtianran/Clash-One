@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { CoreService, ProfileService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
-import type { EasyConnectTunnel, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { EasyConnectTunnel, Status, VPN } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { nonNull } from "./format";
 import { usePoll } from "./hooks";
 import PasswordInput from "./PasswordInput";
@@ -99,21 +99,20 @@ function KVRow({ kinds, items, onChange, fill }: { kinds: Kind[]; items: KV[]; o
   );
 }
 
-export default function Vpn({ status }: { status: Status }) {
+// VpnEditor edits one VPN (initial null: a new one) and connects, disconnects or deletes it.
+function VpnEditor({ status, initial, onDone }: { status: Status; initial: VPN | null; onDone: () => void }) {
+  const prevName = String(initial?.proxy?.name ?? "");
   const [form, setForm] = useState<Form>(empty);
   const [addrs, setAddrs] = useState<KV[]>([]);
   const [bypass, setBypass] = useState<KV[]>([]);
-  const [name, setName] = useState(defaultName);
-  const [saved, setSaved] = useState(false);
+  const [name, setName] = useState(prevName || defaultName);
+  const [saved, setSaved] = useState(!!initial?.active);
   const [tunnel, setTunnel] = useState<EasyConnectTunnel | null>(null);
   const [delay, setDelay] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [target, setTarget] = useState("");
-  const [testing, setTesting] = useState(false);
   const [probe, setProbe] = useState<string[]>([]);
   const [probing, setProbing] = useState(false);
-  const [result, setResult] = useState<string[]>([]);
 
   const load = useCallback(() => {
     CoreService.EasyConnects().then((t) => setTunnel(nonNull(t).find((x) => x.name === name) ?? null)).catch(() => setTunnel(null));
@@ -121,19 +120,16 @@ export default function Vpn({ status }: { status: Status }) {
   usePoll(load, 5000, status.running && saved && form.type === "easyconnect");
 
   useEffect(() => {
-    ProfileService.VPN().then((v) => {
-      setSaved(!!v?.active);
-      if (!v) return;
-      const p = v.proxy ?? {};
-      setName(String(p.name ?? defaultName));
-      const f: Form = { type: String(p.type ?? "easyconnect") };
-      for (const [k, x] of Object.entries(p)) if (k !== "name" && k !== "type" && (typeof x === "string" || typeof x === "number" || typeof x === "boolean")) f[k] = String(x);
-      if (Array.isArray(p["allowed-ips"])) f["allowed-ips"] = p["allowed-ips"].join(", ");
-      setForm(f);
-      setAddrs(nonNull(v.rules).map(routeOf).filter((x): x is KV => !!x));
-      setBypass(Object.keys(v.group?.rules ?? {}).map(bypassOf));
-    });
-  }, []);
+    const v = initial;
+    if (!v) return;
+    const p = v.proxy ?? {};
+    const f: Form = { type: String(p.type ?? "easyconnect") };
+    for (const [k, x] of Object.entries(p)) if (k !== "name" && k !== "type" && (typeof x === "string" || typeof x === "number" || typeof x === "boolean")) f[k] = String(x);
+    if (Array.isArray(p["allowed-ips"])) f["allowed-ips"] = p["allowed-ips"].join(", ");
+    setForm(f);
+    setAddrs(nonNull(v.rules).map(routeOf).filter((x): x is KV => !!x));
+    setBypass(Object.keys(v.group?.rules ?? {}).map(bypassOf));
+  }, [initial]);
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value });
   const text = (k: string, placeholder: string, extra: React.InputHTMLAttributes<HTMLInputElement> = {}) => <input className="grow" placeholder={placeholder} value={form[k] ?? ""} onChange={set(k)} {...extra} />;
@@ -189,10 +185,11 @@ export default function Vpn({ status }: { status: Status }) {
   const run = (p: Promise<unknown>) => {
     setBusy(true);
     setError("");
-    p.catch((e) => setError(reason(e))).finally(() => { setBusy(false); load(); });
+    p.catch((e) => setError(reason(e))).finally(() => setBusy(false));
   };
-  const save = () => run(ProfileService.SetVPN(build() as any).then(() => setSaved(true)));
-  const disconnect = () => run(ProfileService.RemoveVPN().then(() => { setSaved(false); setTunnel(null); }));
+  const save = () => run(ProfileService.SetVPN(build() as any, prevName).then(() => { setSaved(true); onDone(); }));
+  const disconnect = () => run(ProfileService.RemoveVPN(name).then(() => { setSaved(false); setTunnel(null); onDone(); }));
+  const remove = () => run(ProfileService.DeleteVPN(prevName || name).then(onDone));
   // probeGateway logs in with the form as it is, without saving: the core reports what the gateway handed out.
   const probeGateway = () => {
     setProbing(true);
@@ -204,18 +201,13 @@ export default function Vpn({ status }: { status: Status }) {
   const currentNetwork = () => CoreService.CurrentNetwork().then((n): KV | null => (n.ssid ? { t: "SSID", v: n.ssid } : n.router ? { t: "ROUTER", v: n.router } : null));
 
   const routing = tunnel?.routing;
-  const test = () => {
-    setTesting(true);
-    setResult([]);
-    ToolService.VPNTest(target.trim()).then((l) => setResult(nonNull(l))).catch((e) => setResult([String(e)])).finally(() => setTesting(false));
-  };
 
   return (
     <>
-      <div className="hint">VPN 那边的网段和域名走 VPN，其余流量不受影响。</div>
       <div className="card" style={{ marginTop: 16 }}>
-        <div className="label">VPN</div>
+        <div className="label">{initial ? "编辑 VPN" : "添加 VPN"}</div>
         <div className="form">
+          <input style={{ width: 150 }} placeholder="名称" value={name} onChange={(e) => setName(e.target.value)} />
           <select style={{ width: 150 }} value={form.type} disabled={saved} onChange={(e) => setForm({ ...empty, type: e.target.value, port: e.target.value === "easyconnect" ? "443" : "" })}>
             {Object.entries(types).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
@@ -245,8 +237,10 @@ export default function Vpn({ status }: { status: Status }) {
         <div className="label" style={{ marginTop: 14 }}>{form.type === "easyconnect" ? "附加路由" : "VPN 路由"}</div>
         <KVRow kinds={routeKinds} items={addrs} onChange={setAddrs} />
         <div className="form">
-          <button className="btn primary" disabled={busy || !ready || !status.running} onClick={save}>{saved ? "保存并重连" : "连接"}</button>
+          <button className="btn primary" disabled={busy || !ready || !name.trim() || !status.running} onClick={save}>{saved ? "保存并重连" : "连接"}</button>
           {saved && <button className="btn" disabled={busy} onClick={disconnect}>断开</button>}
+          {initial && <button className="btn" style={{ color: "var(--bad)" }} disabled={busy} onClick={remove}>删除</button>}
+          <button className="btn" disabled={busy} onClick={onDone}>取消</button>
           {form.type === "easyconnect" && tunnel?.state !== "up" && <button className="btn" disabled={probing || !ready || !status.running || tunnel?.state === "connecting"} onClick={probeGateway}>{probing ? "登录中…" : "测试登录"}</button>}
           {probe.length > 0 && <span className={`small ${/失败|错误|refused|rejected/i.test(probe[0]) ? "error" : "muted"}`} style={{ alignSelf: "center" }}>{probe.join("；")}</span>}
         </div>
@@ -285,7 +279,76 @@ export default function Vpn({ status }: { status: Status }) {
         </div>
       )}
 
-      {saved && (
+    </>
+  );
+}
+
+const typeLabel = (t: unknown) => types[String(t)] ?? String(t);
+
+// Vpn lists the VPNs with their state, each with 连接 / 断开 and 编辑, an editor for the one being
+// edited (or a new one), and a reachability test that goes through the rules.
+export default function Vpn({ status }: { status: Status }) {
+  const [vpns, setVpns] = useState<VPN[]>([]);
+  const [tunnels, setTunnels] = useState<EasyConnectTunnel[]>([]);
+  const [editing, setEditing] = useState<{ initial: VPN | null } | null>(null);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [target, setTarget] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<string[]>([]);
+
+  const load = useCallback(() => Promise.all([
+    ProfileService.VPNs().then((v) => setVpns(nonNull(v))),
+    CoreService.EasyConnects().then((t) => setTunnels(nonNull(t))).catch(() => setTunnels([])),
+  ]), []);
+  usePoll(load, 5000, status.running);
+
+  const stateOf = (v: VPN) => {
+    if (!v.active) return "down";
+    if (v.proxy?.type !== "easyconnect") return "up";
+    return tunnels.find((t) => t.name === v.proxy?.name)?.state ?? "down";
+  };
+  const run = (key: string, p: Promise<unknown>) => {
+    setBusy(key);
+    setError("");
+    p.catch((e) => setError(reason(e))).finally(() => { setBusy(""); load(); });
+  };
+  const test = () => {
+    setTesting(true);
+    setResult([]);
+    ToolService.VPNTest(target.trim()).then((l) => setResult(nonNull(l))).catch((e) => setResult([reason(e)])).finally(() => setTesting(false));
+  };
+
+  return (
+    <>
+      <div className="hint">VPN 那边的网段和域名走 VPN，其余流量不受影响。</div>
+      <div className="tile-head"><span className="tile-title groups">VPN</span></div>
+      <div className="tiles">
+        {vpns.map((v) => {
+          const name = String(v.proxy?.name ?? "");
+          const state = stateOf(v);
+          return (
+            <div key={name} className="tile-wrap">
+              <button className={`tile ${editing?.initial?.proxy?.name === name ? "selected" : ""}`} onClick={() => setEditing(editing?.initial?.proxy?.name === name ? null : { initial: v })}>
+                <span className="kind">{typeLabel(v.proxy?.type)}</span>
+                <span className="name">{name}</span>
+                <span className={`foot ${stateClass[state]}`}>{stateLabel[state]}</span>
+              </button>
+              <div className="form" style={{ marginTop: 6 }}>
+                {v.active
+                  ? <button className="btn small-btn" disabled={!!busy} onClick={() => run(name, ProfileService.RemoveVPN(name))}>{busy === name ? "…" : "断开"}</button>
+                  : <button className="btn small-btn primary" disabled={!!busy || !status.running} onClick={() => run(name, ProfileService.SetVPN(v, name))}>{busy === name ? "…" : "连接"}</button>}
+              </div>
+            </div>
+          );
+        })}
+        <button className="tile add" onClick={() => setEditing({ initial: null })} title="添加 VPN">＋</button>
+      </div>
+      {error && <div className="error small" style={{ marginTop: 8 }}>{error}</div>}
+
+      {editing && <VpnEditor key={String(editing.initial?.proxy?.name ?? "new")} status={status} initial={editing.initial} onDone={() => { setEditing(null); load(); }} />}
+
+      {vpns.some((v) => v.active) && (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="label">测试</div>
           <div className="form">

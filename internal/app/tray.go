@@ -56,8 +56,7 @@ type trayMenu struct {
 	lastActive   map[string]time.Time  // process -> when it last moved bytes
 	speedItem    *application.MenuItem // the live speed row, where the tray itself can't show text (Windows)
 	modeItem     *application.MenuItem
-	vpnItem      *application.MenuItem // the VPN page's node: its state, click to connect or disconnect
-	vpnActive    bool
+	vpnItems     map[string]*application.MenuItem // the VPN page's entries: state shown, click connects or disconnects
 	qualityItem  *application.MenuItem
 	proxyItem    *application.MenuItem
 	enhancedItem *application.MenuItem
@@ -90,7 +89,7 @@ func newTrayMenu(t *trayMenu) {
 	t.lastActive = map[string]time.Time{}
 	t.updates = make(chan func(), 1)
 	t.menu = application.NewMenu()
-	t.build(nil, Profiles{})
+	t.build(nil, Profiles{}, nil)
 	t.tray.SetMenu(t.menu)
 	t.svc.onMode = t.setMode
 	// the data path (ledger count, traffic stream) must never wait on the main thread, which the
@@ -237,16 +236,20 @@ func qualityBadge(ms int) string {
 	return pill("bad", fmt.Sprintf("%d ms", ms))
 }
 
-// toggleVPN connects the VPN page's draft, or disconnects the active one.
-func (t *trayMenu) toggleVPN() {
-	v, err := t.profiles.VPN()
-	if err != nil || v == nil {
+// toggleVPN connects the named VPN's draft, or disconnects it when active.
+func (t *trayMenu) toggleVPN(name string) {
+	list, err := t.profiles.VPNs()
+	if err != nil {
 		return
 	}
-	if v.Active {
-		err = t.profiles.RemoveVPN()
+	i := slices.IndexFunc(list, func(v VPN) bool { return v.name() == name })
+	if i < 0 {
+		return
+	}
+	if list[i].Active {
+		err = t.profiles.RemoveVPN(name)
 	} else {
-		err = t.profiles.SetVPN(*v)
+		err = t.profiles.SetVPN(list[i], name)
 	}
 	if err != nil {
 		notify("error", "VPN：%v", err)
@@ -254,47 +257,40 @@ func (t *trayMenu) toggleVPN() {
 	t.tick()
 }
 
-// vpnState reads the VPN's state off the lock: its name and 未连接 / 连接中 / 已连接, or "" when
-// there is no VPN.
-func (t *trayMenu) vpnState() (name, detail string, active bool) {
-	v, err := t.profiles.VPN()
-	if err != nil || v == nil {
-		return "", "", false
+// vpnStates reads every VPN's state off the lock: name -> 未连接 / 连接中 / 已连接 as a pill.
+func (t *trayMenu) vpnStates() map[string]string {
+	list, err := t.profiles.VPNs()
+	if err != nil {
+		return nil
 	}
-	name, _ = v.Proxy["name"].(string)
-	state, detail := "down", pill("gray", "未连接")
-	if v.Active {
-		state = "up"
-		if v.Proxy["type"] == "easyconnect" {
-			state = "down"
-			if tunnels, err := t.svc.EasyConnects(); err == nil {
+	var tunnels []EasyConnectTunnel
+	if slices.ContainsFunc(list, func(v VPN) bool { return v.Active && v.Proxy["type"] == "easyconnect" }) {
+		tunnels, _ = t.svc.EasyConnects()
+	}
+	states := map[string]string{}
+	for _, v := range list {
+		state := "down"
+		if v.Active {
+			state = "up"
+			if v.Proxy["type"] == "easyconnect" {
+				state = "down"
 				for _, tn := range tunnels {
-					if tn.Name == name {
+					if tn.Name == v.name() {
 						state = tn.State
 					}
 				}
 			}
 		}
+		switch state {
+		case "up":
+			states[v.name()] = pill("good", "已连接")
+		case "connecting":
+			states[v.name()] = pill("warn", "连接中")
+		default:
+			states[v.name()] = pill("gray", "未连接")
+		}
 	}
-	switch state {
-	case "up":
-		detail = pill("good", "已连接")
-	case "connecting":
-		detail = pill("warn", "连接中")
-	}
-	return name, detail, v.Active
-}
-
-// showVPN puts the state on the item; called with the lock held.
-func (t *trayMenu) showVPN(name, detail string, active bool) {
-	t.vpnActive = active
-	if name == "" {
-		t.vpnItem.SetHidden(true)
-		delete(t.details, t.vpnItem)
-		return
-	}
-	t.vpnItem.SetLabel("VPN " + name).SetHidden(false)
-	t.details[t.vpnItem] = detail
+	return states
 }
 
 func (t *trayMenu) tick() {
@@ -306,11 +302,11 @@ func (t *trayMenu) tick() {
 		}
 	}
 	list := t.profiles.Profiles()
-	vpnName, vpnDetail, vpnActive := t.vpnState()
+	vpns := t.vpnStates()
 	t.locked(func() {
-		if layout := menuLayout(groups, list); layout != t.layout {
+		if layout := menuLayout(groups, list, vpns); layout != t.layout {
 			t.layout = layout
-			t.build(groups, list)
+			t.build(groups, list, vpns)
 		}
 		for _, g := range groups {
 			t.details[t.groupItems[g.Name]] = g.Now
@@ -321,13 +317,18 @@ func (t *trayMenu) tick() {
 		for id, item := range t.profileItems {
 			item.SetChecked(id == list.Current)
 		}
-		t.showVPN(vpnName, vpnDetail, vpnActive)
+		for name, item := range t.vpnItems {
+			t.details[item] = vpns[name]
+		}
 		t.showRows()
 	})
 }
 
-func menuLayout(groups []Group, list Profiles) string {
+func menuLayout(groups []Group, list Profiles, vpns map[string]string) string {
 	var b strings.Builder
+	for _, name := range slices.Sorted(maps.Keys(vpns)) {
+		b.WriteString("vpn:" + name + "\x00")
+	}
 	for _, g := range groups {
 		b.WriteString(g.Name + "\x00")
 		for _, p := range g.All {
@@ -391,7 +392,7 @@ func (t *trayMenu) showRows() {
 }
 
 // build lays the menu out afresh; called with the lock held, or before the app runs.
-func (t *trayMenu) build(groups []Group, list Profiles) {
+func (t *trayMenu) build(groups []Group, list Profiles, vpns map[string]string) {
 	m := t.menu
 	m.Clear()
 	quality := t.details[t.qualityItem] // kept across the rebuild
@@ -420,7 +421,10 @@ func (t *trayMenu) build(groups []Group, list Profiles) {
 		})
 	}
 
-	t.vpnItem = m.Add("VPN").SetHidden(true).OnClick(func(*application.Context) { t.toggleVPN() })
+	t.vpnItems = map[string]*application.MenuItem{}
+	for _, name := range slices.Sorted(maps.Keys(vpns)) {
+		t.vpnItems[name] = m.Add("VPN " + name).OnClick(func(*application.Context) { t.toggleVPN(name) })
+	}
 
 	t.groupItems, t.memberItems = map[string]*application.MenuItem{}, map[string]map[string]*application.MenuItem{}
 	if len(groups) > 0 {
