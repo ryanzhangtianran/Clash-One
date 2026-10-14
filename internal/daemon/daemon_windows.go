@@ -101,3 +101,13 @@ func asAdmin(stage, script string) error {
 		return fmt.Errorf("授权失败：%s", cmp.Or(text, err.Error()))
 	}
 }
+
+// RunAsAdmin runs a batch script elevated through the UAC prompt, for network repairs.
+func RunAsAdmin(script, _ string) error {
+	stage, err := os.MkdirTemp("", "connaio-repair")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	return asAdmin(stage, script)
+}

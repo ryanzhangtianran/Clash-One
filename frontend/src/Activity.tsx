@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { CoreService, ProfileService, SettingsService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
-import type { Activity as ActivityData, DiagSection, Latency, Status, Usage } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { Activity as ActivityData, DiagSection, Latency, RepairItem, Status, Usage } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { size, sizeText, speed } from "./format";
 import { DiagLog } from "./ProxyDiagnose";
 import { on, usePoll, useCachedURL } from "./hooks";
@@ -127,6 +127,46 @@ function Diagnose({ onClose }: { onClose: () => void }) {
   );
 }
 
+// Repair lists the network checks (a system proxy leading nowhere, stray cores, a leftover TUN)
+// and the usual resets, each with its fix.
+function Repair({ onClose }: { onClose: () => void }) {
+  const [items, setItems] = useState<RepairItem[]>([]);
+  const [busy, setBusy] = useState("");
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const load = () => ToolService.RepairChecks().then((r) => setItems(r ?? []));
+  useEffect(() => { load(); }, []);
+  const fix = (id: string) => {
+    setBusy(id);
+    ToolService.Repair(id).then((m) => setNotes((n) => ({ ...n, [id]: m }))).catch((e) => setNotes((n) => ({ ...n, [id]: String(e).replace(/^RuntimeError:\s*/, "") }))).finally(() => { setBusy(""); load(); });
+  };
+  const found = items.filter((i) => i.found);
+  return (
+    <div className="modal-bg">
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-head"><div className="sheet-title">网络修复</div><div className="muted small">清理代理程序退出后留下的残留，以及常用的网络重置。</div></div>
+        <div className="sheet-body">
+          {items.map((i) => (
+            <div key={i.id} className="setting-row">
+              <div>
+                <div className="setting-title">{i.title} {i.found ? <span className="delay-bad small">发现问题</span> : ["proxy", "orphan", "tun"].includes(i.id) ? <span className="delay-good small">正常</span> : null}</div>
+                <div className="muted small">{i.detail}{i.admin ? "（需要管理员权限）" : ""}{i.reboot ? "，重启后生效" : ""}</div>
+                {notes[i.id] && <div className="small" style={{ marginTop: 4 }}>{notes[i.id]}</div>}
+              </div>
+              <div className="setting-control">{i.fix && <button className="btn ctl" disabled={!!busy} onClick={() => fix(i.id)}>{busy === i.id ? "处理中…" : i.fix}</button>}</div>
+            </div>
+          ))}
+          {items.length === 0 && <div className="muted small" style={{ padding: 16 }}>检查中…</div>}
+        </div>
+        <div className="sheet-foot">
+          {found.length > 0 && <button className="btn" disabled={!!busy} onClick={() => found.forEach((i) => fix(i.id))}>全部修复</button>}
+          <span className="grow" />
+          <button className="btn primary" onClick={onClose}>完成</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // niceScale rounds a peak up to 1, 2 or 5 × 10ⁿ bytes, so the gridlines land on round values.
 function niceScale(v: number) {
   const p = 10 ** Math.floor(Math.log10(Math.max(v, 1)));
@@ -228,6 +268,7 @@ export default function Activity({ status, activity }: { status: Status; activit
     return on("profiles", (d) => show(d));
   }, []);
   const [diagnosing, setDiagnosing] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const [ip, setIP] = useState("");
 
   const measure = useCallback(() => {
@@ -269,7 +310,10 @@ export default function Activity({ status, activity }: { status: Status; activit
               INTERNET 延迟
               <button className="icon-btn" onClick={measure} disabled={measuring} title="重新测试">↻</button>
             </div>
-            <button className="btn small-btn" onClick={() => setDiagnosing(true)}>网络诊断</button>
+            <span style={{ display: "flex", gap: 6 }}>
+              <button className="btn small-btn" onClick={() => setRepairing(true)}>网络修复</button>
+              <button className="btn small-btn" onClick={() => setDiagnosing(true)}>网络诊断</button>
+            </span>
           </div>
           {latency && latency.internet > 0 ? <Num value={String(latency.internet)} unit="ms" /> : <div className="big muted">—</div>}
           <div className="stats">
@@ -302,6 +346,7 @@ export default function Activity({ status, activity }: { status: Status; activit
         <TotalCard activity={activity} />
       </div>
       {diagnosing && <Diagnose onClose={() => setDiagnosing(false)} />}
+      {repairing && <Repair onClose={() => setRepairing(false)} />}
     </div>
   );
 }

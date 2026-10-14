@@ -53,3 +53,17 @@ func asRoot(op string) error {
 		return fmt.Errorf("授权失败：%s", cmp.Or(strings.TrimSpace(string(out)), err.Error()))
 	}
 }
+
+// RunAsAdmin runs a shell script through pkexec, for network repairs.
+func RunAsAdmin(script, _ string) error {
+	out, err := exec.Command("pkexec", "sh", "-c", script).CombinedOutput()
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, &exit) && (exit.ExitCode() == 126 || exit.ExitCode() == 127):
+		return errors.New("已取消授权")
+	default:
+		return fmt.Errorf("修复失败：%s", cmp.Or(strings.TrimSpace(string(out)), err.Error()))
+	}
+}

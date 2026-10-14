@@ -48,3 +48,12 @@ func run(cmds [][]string) error {
 	}
 	return nil
 }
+
+// Current is GNOME's HTTP proxy ("127.0.0.1:7899") and whether the mode is manual.
+func Current() (string, bool) {
+	get := func(schema, key string) string {
+		out, _ := exec.Command("gsettings", "get", schema, key).Output()
+		return strings.Trim(strings.TrimSpace(string(out)), "'")
+	}
+	return get(schema+".http", "host") + ":" + get(schema+".http", "port"), get(schema, "mode") == "manual"
+}

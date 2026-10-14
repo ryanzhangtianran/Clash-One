@@ -109,3 +109,23 @@ func run(cmds [][]string) error {
 	}
 	return nil
 }
+
+// Current is the HTTP proxy the first enabled service points at ("127.0.0.1:7899") and whether
+// it is on; "" when there is none.
+func Current() (string, bool) {
+	services, err := services()
+	if err != nil || len(services) == 0 {
+		return "", false
+	}
+	out, err := exec.Command("networksetup", "-getwebproxy", services[0]).Output()
+	if err != nil {
+		return "", false
+	}
+	fields := map[string]string{}
+	for _, line := range strings.Split(string(out), "\n") {
+		if k, v, ok := strings.Cut(line, ":"); ok {
+			fields[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	return fields["Server"] + ":" + fields["Port"], fields["Enabled"] == "Yes"
+}

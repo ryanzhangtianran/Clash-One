@@ -134,3 +134,6 @@ func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''
 func appleQuote(s string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
 }
+
+// RunAsAdmin runs a shell script after the administrator prompt, for network repairs.
+func RunAsAdmin(script, prompt string) error { return asAdmin(script, prompt) }

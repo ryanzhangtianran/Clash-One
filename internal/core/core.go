@@ -165,6 +165,16 @@ func (c *Core) Start(ctx context.Context) error {
 }
 
 // Exited reports whether the GUI's own child is gone (never started, stopped or crashed).
+// Pid is the child core's process id, 0 for none (or the daemon).
+func (c *Core) Pid() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.cmd == nil || c.cmd.Process == nil {
+		return 0
+	}
+	return c.cmd.Process.Pid
+}
+
 func (c *Core) Exited() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()

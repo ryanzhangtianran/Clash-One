@@ -72,3 +72,15 @@ func refresh() {
 		_, _, _ = setOption.Call(0, option, 0, 0)
 	}
 }
+
+// Current is the Internet Settings proxy ("127.0.0.1:7899") and whether it is enabled.
+func Current() (string, bool) {
+	k, err := registry.OpenKey(registry.CURRENT_USER, key, registry.QUERY_VALUE)
+	if err != nil {
+		return "", false
+	}
+	defer k.Close()
+	enabled, _, _ := k.GetIntegerValue("ProxyEnable")
+	got, _, _ := k.GetStringValue("ProxyServer")
+	return got, enabled == 1
+}
