@@ -77,7 +77,12 @@ func (s *ToolService) VPNProbe(spec map[string]any) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
 	defer cancel()
 	if err := s.cs.core.Do(ctx, http.MethodPost, "/easyconnect/test", spec, &resp); err != nil {
-		return nil, fmt.Errorf("登录失败：%w", err)
+		// the core's answer is "POST /easyconnect/test: 502 Bad Gateway <reason>": the reason is what matters
+		msg := err.Error()
+		if _, after, ok := strings.Cut(msg, "Bad Gateway "); ok {
+			msg = after
+		}
+		return nil, fmt.Errorf("登录失败：%s", msg)
 	}
 	return []string{
 		fmt.Sprintf("登录成功，隧道地址 %s", resp.Address),

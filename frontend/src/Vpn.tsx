@@ -39,11 +39,13 @@ const isCIDR = (s: string) => /^\d+\.\d+\.\d+\.\d+(\/\d+)?$/.test(s) || /^[0-9a-
 const ruleOf = (addr: string, target: string) => (isCIDR(addr) ? `IP-CIDR,${addr.includes("/") ? addr : addr + "/32"},${target},no-resolve` : `DOMAIN-SUFFIX,${addr},${target}`);
 // addrOf reads it back.
 const addrOf = (rule: string) => { const f = rule.split(",").map((x) => x.trim()); return f[0] === "IP-CIDR" ? f[1].replace(/\/32$/, "") : f[0] === "DOMAIN-SUFFIX" ? f[1] : ""; };
+// reason is an error's text without the runtime's "RuntimeError:" prefix.
+const reason = (e: unknown) => ((e as Error)?.message ?? String(e)).replace(/^RuntimeError:\s*/, "");
 const cleanBypass = (b: string[]) => b.map((x) => x.trim()).filter((x) => x && !x.endsWith(":"));
 
-// ListRow is an input with an 添加 button, as the rows above it, with what was added as chips
-// below; clicking a chip removes it.
-function ListRow({ items, onChange, placeholder, extra }: { items: string[]; onChange: (v: string[]) => void; placeholder: string; extra?: React.ReactNode }) {
+// ListRow is an input with an 添加 button, as the rows above it, and a table of what was added,
+// each row with a 删除.
+function ListRow({ items, onChange, placeholder, column, extra }: { items: string[]; onChange: (v: string[]) => void; placeholder: string; column: string; extra?: React.ReactNode }) {
   const [text, setText] = useState("");
   const add = () => { const v = text.trim(); if (v && !items.includes(v)) onChange([...items, v]); setText(""); };
   return (
@@ -54,8 +56,15 @@ function ListRow({ items, onChange, placeholder, extra }: { items: string[]; onC
         {extra}
       </div>
       {items.length > 0 && (
-        <div className="form" style={{ flexWrap: "wrap", marginTop: 8 }}>
-          {items.map((x) => <button key={x} className="btn small-btn" title="点击移除" onClick={() => onChange(items.filter((y) => y !== x))}>{x} ×</button>)}
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>{column}</th><th style={{ width: 1 }} /></tr></thead>
+            <tbody>
+              {items.map((x) => (
+                <tr key={x}><td>{x}</td><td><button className="btn small-btn" onClick={() => onChange(items.filter((y) => y !== x))}>删除</button></td></tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </>
@@ -151,7 +160,7 @@ export default function Vpn({ status }: { status: Status }) {
   const run = (p: Promise<unknown>) => {
     setBusy(true);
     setError("");
-    p.catch((e) => setError(String(e))).finally(() => { setBusy(false); load(); });
+    p.catch((e) => setError(reason(e))).finally(() => { setBusy(false); load(); });
   };
   const save = () => run(ProfileService.SetVPN(build() as any).then(() => setSaved(true)));
   const disconnect = () => run(ProfileService.RemoveVPN().then(() => { setSaved(false); setTunnel(null); }));
@@ -159,7 +168,7 @@ export default function Vpn({ status }: { status: Status }) {
   const probeGateway = () => {
     setProbing(true);
     setProbe(["登录中…"]);
-    ToolService.VPNProbe(build().proxy).then((l) => setProbe(nonNull(l))).catch((e) => setProbe([String(e)])).finally(() => setProbing(false));
+    ToolService.VPNProbe(build().proxy).then((l) => setProbe(nonNull(l))).catch((e) => setProbe([reason(e)])).finally(() => setProbing(false));
   };
   const measure = () => { setDelay("测量中…"); CoreService.TestProxy(name).then((ms) => setDelay(`${ms} ms`)).catch((e) => setDelay(String(e))); };
   const useCurrent = () => CoreService.CurrentNetwork().then((n) => {
@@ -204,13 +213,13 @@ export default function Vpn({ status }: { status: Status }) {
           <div className="form">{text("control-url", "控制服务器，Headscale 时填，可选")}{text("exit-node", "出口节点，可选")}
             <label className="radio"><input type="checkbox" checked={form["accept-routes"] === "true"} onChange={(e) => setForm({ ...form, "accept-routes": String(e.target.checked) })} /> 接受子网路由</label></div>
         </>}
-        <ListRow items={addrs} onChange={setAddrs} placeholder={form.type === "easyconnect" ? "额外经 VPN 的网段或域名，如 10.0.0.0/8、example.com（可选）" : "经 VPN 的网段或域名，如 10.0.0.0/8、example.com"} />
-        <ListRow items={bypass} onChange={setBypass} placeholder="直连网络：SSID:我的 Wi-Fi 或 ROUTER:192.168.1.1（可选）"
+        <ListRow items={addrs} onChange={setAddrs} column="经 VPN 的网段和域名" placeholder={form.type === "easyconnect" ? "额外经 VPN 的网段或域名，如 10.0.0.0/8、example.com（可选）" : "经 VPN 的网段或域名，如 10.0.0.0/8、example.com"} />
+        <ListRow items={bypass} onChange={setBypass} column="直连网络" placeholder="直连网络：SSID:我的 Wi-Fi 或 ROUTER:192.168.1.1（可选）"
           extra={<button className="btn" disabled={!status.running} onClick={useCurrent}>添加当前网络</button>} />
         <div className="form">
           <button className="btn primary" disabled={busy || !ready || !status.running} onClick={save}>{saved ? "保存并重连" : "连接"}</button>
           {saved && <button className="btn" disabled={busy} onClick={disconnect}>断开</button>}
-          {form.type === "easyconnect" && <button className="btn" disabled={probing || !ready || !status.running} onClick={probeGateway}>{probing ? "登录中…" : "测试登录"}</button>}
+          {form.type === "easyconnect" && tunnel?.state !== "up" && <button className="btn" disabled={probing || !ready || !status.running || tunnel?.state === "connecting"} onClick={probeGateway}>{probing ? "登录中…" : "测试登录"}</button>}
         </div>
         {error && <div className="error small" style={{ marginTop: 8 }}>{error}</div>}
         {probe.map((l, i) => <div key={i} className={`detail-row ${/失败|错误|refused|rejected/i.test(l) ? "error" : ""}`}>{l}</div>)}
