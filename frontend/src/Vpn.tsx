@@ -76,12 +76,12 @@ function KVRow({ kinds, items, onChange, fill }: { kinds: Kind[]; items: KV[]; o
   return (
     <>
       <div className="form">
-        <select value={t} onChange={(e) => setT(e.target.value)}>{kinds.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}</select>
+        <select style={{ width: 150 }} value={t} onChange={(e) => setT(e.target.value)}>{kinds.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}</select>
         <span className="pw grow">
           <input placeholder={kind.placeholder ?? ""} value={v} disabled={kind.fixed} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add({ t, v: v.trim() })} style={fill ? { paddingRight: 72 } : undefined} />
           {fill && <button type="button" style={{ fontSize: 12, padding: "0 6px" }} onClick={() => fill.get().then((x) => { if (x) { setT(x.t); setV(x.v); } })}>{fill.label}</button>}
         </span>
-        <button className="btn" disabled={!kind.fixed && !v.trim()} onClick={() => add({ t, v: v.trim() })} style={{ width: 40, fontSize: 18 }}>+</button>
+        <button className="btn" disabled={!kind.fixed && !v.trim()} onClick={() => add({ t, v: v.trim() })} style={{ width: 80, fontSize: 18 }}>+</button>
       </div>
       {items.length > 0 && (
         <div className="table-wrap">
@@ -216,7 +216,7 @@ export default function Vpn({ status }: { status: Status }) {
       <div className="card" style={{ marginTop: 16 }}>
         <div className="label">VPN</div>
         <div className="form">
-          <select value={form.type} disabled={saved} onChange={(e) => setForm({ ...empty, type: e.target.value, port: e.target.value === "easyconnect" ? "443" : "" })}>
+          <select style={{ width: 150 }} value={form.type} disabled={saved} onChange={(e) => setForm({ ...empty, type: e.target.value, port: e.target.value === "easyconnect" ? "443" : "" })}>
             {Object.entries(types).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
           {!noServer.has(form.type) && text("server", form.type === "easyconnect" ? "网关地址，如 vpn.example.edu.cn" : "服务器地址")}
