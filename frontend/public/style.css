@@ -440,3 +440,4 @@ tr.muted td.rule-actions { text-decoration: none; }
 
 /* a table under form rows: its cells' padding would indent it past the inputs */
 .table-wrap.tight { margin-left: -8px; margin-right: -8px; }
+.card .label.section-label { margin: 18px 0 -8px; } /* a section inside a card: the row below keeps its own top margin */
