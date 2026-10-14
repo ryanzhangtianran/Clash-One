@@ -235,10 +235,9 @@ function VpnEditor({ status, initial, tunnel, onDone }: { status: Status; initia
           {probe.length > 0 && <span className={`small ${/失败|错误|refused|rejected/i.test(probe[0]) ? "error" : "muted"}`} style={{ alignSelf: "center" }}>{probe.join("；")}</span>}
         </div>
         {error && <div className="error small" style={{ marginTop: 8 }}>{error}</div>}
-      </div>
 
       {saved && form.type === "easyconnect" && (
-        <div className="card" style={{ marginTop: 16 }}>
+        <div style={{ marginTop: 14 }}>
           <div className="label" style={{ gap: 12, alignItems: "baseline", fontSize: 13 }}>状态
             <span className={stateClass[tunnel?.state ?? "down"]}>{stateLabel[tunnel?.state ?? "down"]}</span>
             {tunnel?.address && <span>隧道地址 {tunnel.address}</span>}
@@ -259,6 +258,7 @@ function VpnEditor({ status, initial, tunnel, onDone }: { status: Status; initia
           ) : null}
         </div>
       )}
+      </div>
     </>
   );
 }
