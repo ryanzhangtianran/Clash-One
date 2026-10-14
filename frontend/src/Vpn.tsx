@@ -225,7 +225,6 @@ export default function Vpn({ status }: { status: Status }) {
                 <span className={stateClass[tunnel?.state ?? "down"]}>{stateLabel[tunnel?.state ?? "down"]}</span>
                 {tunnel?.address && <span className="muted">隧道地址 {tunnel.address}</span>}
                 {routing?.dns?.length ? <span className="muted">DNS {routing.dns.join(", ")}</span> : null}
-                {tunnel?.error && <span className="muted small">{tunnel.error}</span>}
               </div>
               {routing && <div className="detail-row"><span className="muted">网关下发：{routing.ip?.length ?? 0} 个网段、{routing.domains?.length ?? 0} 个域名</span></div>}
               {nonNull(routing?.ip).map((r, i) => (
