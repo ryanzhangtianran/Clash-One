@@ -11,7 +11,7 @@ import (
 	"github.com/ryanzhangtianran/Connaio/internal/daemon"
 )
 
-const appVersion = "1.0.0"
+const appVersion = "0.1.0"
 
 // SettingsService covers the GUI-side settings: launch at login and the about page.
 type SettingsService struct {
