@@ -149,10 +149,10 @@ function Repair({ onClose }: { onClose: () => void }) {
             <div key={i.id} className="setting-row">
               <div>
                 <div className="setting-title">{i.title} {i.found ? <span className="delay-bad small">发现问题</span> : ["proxy", "orphan", "tun"].includes(i.id) ? <span className="delay-good small">正常</span> : null}</div>
-                <div className="muted small">{i.detail}{i.admin ? "（需要管理员权限）" : ""}{i.reboot ? "，重启后生效" : ""}</div>
+                <div className="muted small">{i.detail}{i.reboot ? "，重启后生效" : ""}</div>
                 {notes[i.id] && <div className="small" style={{ marginTop: 4 }}>{notes[i.id]}</div>}
               </div>
-              <div className="setting-control">{i.fix && <button className="btn ctl" disabled={!!busy} onClick={() => fix(i.id)}>{busy === i.id ? "处理中…" : i.fix}</button>}</div>
+              <div className="setting-control">{i.fix && (i.found || !["proxy", "orphan", "tun"].includes(i.id)) && <button className="btn ctl" disabled={!!busy} onClick={() => fix(i.id)}>{busy === i.id ? "处理中…" : i.fix}</button>}</div>
             </div>
           ))}
           {items.length === 0 && <div className="muted small" style={{ padding: 16 }}>检查中…</div>}

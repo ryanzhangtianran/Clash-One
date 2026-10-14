@@ -28,9 +28,9 @@ func flushDNS() (string, error) {
 
 // platformChecks looks for the Meta TUN interface a dead core left behind.
 func platformChecks() []RepairItem {
-	item := RepairItem{ID: "tun", Title: "残留的 TUN 接口", Detail: "没有残留", Fix: "移除", Admin: true}
+	item := RepairItem{ID: "tun", Title: "残留 TUN", Detail: "无", Fix: "移除", Admin: true}
 	if _, err := os.Stat("/sys/class/net/Meta"); err == nil && len(orphanCores(-1)) == 0 {
-		item.Found, item.Detail = true, "接口 Meta 还在，但没有内核在用它；它的路由会把流量引向黑洞"
+		item.Found, item.Detail = true, "接口 Meta 无人使用"
 	}
 	return []RepairItem{item}
 }

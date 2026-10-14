@@ -29,7 +29,7 @@ type RepairItem struct {
 func (s *ToolService) RepairChecks() []RepairItem {
 	items := []RepairItem{s.checkProxy(), s.checkOrphans()}
 	items = append(items, platformChecks()...)
-	items = append(items, RepairItem{ID: "dns", Title: "DNS 缓存", Detail: "刷新系统的 DNS 缓存，解决改过代理或 DNS 后域名解析仍旧的问题", Fix: "刷新", Admin: runtime.GOOS == "darwin"})
+	items = append(items, RepairItem{ID: "dns", Title: "DNS 缓存", Detail: "刷新系统 DNS 缓存", Fix: "刷新", Admin: runtime.GOOS == "darwin"})
 	slices.SortStableFunc(items, func(a, b RepairItem) int {
 		if a.Found != b.Found {
 			if a.Found {
@@ -75,7 +75,7 @@ func (s *ToolService) Repair(id string) (string, error) {
 
 // checkProxy finds a system proxy that leads nowhere: not ours, or ours while the proxy is off.
 func (s *ToolService) checkProxy() RepairItem {
-	item := RepairItem{ID: "proxy", Title: "系统代理", Fix: "清除", Detail: "系统代理未设置"}
+	item := RepairItem{ID: "proxy", Title: "系统代理", Fix: "清除", Detail: "未设置"}
 	addr, on := sysproxy.Current()
 	if !on {
 		return item
@@ -86,24 +86,24 @@ func (s *ToolService) checkProxy() RepairItem {
 	}
 	switch {
 	case addr == ours && s.cs.Status().Running:
-		item.Detail = "系统代理指向 Connaio（" + addr + "），正常"
+		item.Detail = "指向 Connaio"
 	case addr == ours:
-		item.Found, item.Detail = true, "系统代理指向 Connaio（"+addr+"），但内核没有运行"
+		item.Found, item.Detail = true, "指向 Connaio，但内核未运行"
 	default:
-		item.Found, item.Detail = true, "系统代理指向 "+addr+"，不是 Connaio 设置的；若那个程序已退出，网络会不通"
+		item.Found, item.Detail = true, "指向 "+addr+"，非 Connaio 所设"
 	}
 	return item
 }
 
 // checkOrphans finds this user's connaio-core processes other than this app's child.
 func (s *ToolService) checkOrphans() RepairItem {
-	item := RepairItem{ID: "orphan", Title: "残留的内核进程", Fix: "结束", Detail: "没有残留"}
+	item := RepairItem{ID: "orphan", Title: "残留内核", Fix: "结束", Detail: "无"}
 	if pids := orphanCores(s.ownCorePid()); len(pids) > 0 {
 		var list []string
 		for _, p := range pids {
 			list = append(list, strconv.Itoa(p))
 		}
-		item.Found, item.Detail = true, fmt.Sprintf("%d 个不属于本应用的 connaio-core 在运行（PID %s），可能占着端口或 TUN", len(pids), strings.Join(list, ", "))
+		item.Found, item.Detail = true, fmt.Sprintf("%d 个，PID %s", len(pids), strings.Join(list, ", "))
 	}
 	return item
 }
