@@ -66,6 +66,7 @@ type EasyConnectRange struct {
 type LogLine struct {
 	Level   string `json:"type"`
 	Payload string `json:"payload"`
+	Time    string `json:"time"` // when the GUI received it, HH:MM:SS; the core's stream carries none
 }
 
 func init() {
@@ -125,6 +126,7 @@ func (s *CoreService) streamLogs(ctx context.Context) {
 	s.retryStream(ctx, "log stream", "/logs?level=info", func(line []byte) {
 		var l LogLine
 		if json.Unmarshal(line, &l) == nil {
+			l.Time = time.Now().Format("15:04:05")
 			emit("log", l)
 			if (l.Level == "warning" || l.Level == "error") && strings.Contains(l.Payload, "[EasyConnect]") {
 				if _, after, ok := strings.Cut(l.Payload, ")"); ok {
