@@ -100,24 +100,17 @@ function KVRow({ kinds, items, onChange, fill }: { kinds: Kind[]; items: KV[]; o
 }
 
 // VpnEditor edits one VPN (initial null: a new one) and connects, disconnects or deletes it.
-function VpnEditor({ status, initial, onDone }: { status: Status; initial: VPN | null; onDone: () => void }) {
+function VpnEditor({ status, initial, tunnel, onDone }: { status: Status; initial: VPN | null; tunnel: EasyConnectTunnel | null; onDone: () => void }) {
   const prevName = String(initial?.proxy?.name ?? "");
   const [form, setForm] = useState<Form>(empty);
   const [addrs, setAddrs] = useState<KV[]>([]);
   const [bypass, setBypass] = useState<KV[]>([]);
   const [name, setName] = useState(prevName || defaultName);
   const [saved, setSaved] = useState(!!initial?.active);
-  const [tunnel, setTunnel] = useState<EasyConnectTunnel | null>(null);
-  const [delay, setDelay] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [probe, setProbe] = useState<string[]>([]);
   const [probing, setProbing] = useState(false);
-
-  const load = useCallback(() => {
-    CoreService.EasyConnects().then((t) => setTunnel(nonNull(t).find((x) => x.name === name) ?? null)).catch(() => setTunnel(null));
-  }, [name]);
-  usePoll(load, 5000, status.running && saved && form.type === "easyconnect");
 
   useEffect(() => {
     const v = initial;
@@ -188,7 +181,6 @@ function VpnEditor({ status, initial, onDone }: { status: Status; initial: VPN |
     p.catch((e) => setError(reason(e))).finally(() => setBusy(false));
   };
   const save = () => run(ProfileService.SetVPN(build() as any, prevName).then(() => { setSaved(true); onDone(); }));
-  const disconnect = () => run(ProfileService.RemoveVPN(name).then(() => { setSaved(false); setTunnel(null); onDone(); }));
   const remove = () => run(ProfileService.DeleteVPN(prevName || name).then(onDone));
   // probeGateway logs in with the form as it is, without saving: the core reports what the gateway handed out.
   const probeGateway = () => {
@@ -196,7 +188,6 @@ function VpnEditor({ status, initial, onDone }: { status: Status; initial: VPN |
     setProbe(["登录中…"]);
     ToolService.VPNProbe(build().proxy).then((l) => setProbe(nonNull(l))).catch((e) => setProbe([reason(e)])).finally(() => setProbing(false));
   };
-  const measure = () => { setDelay("测量中…"); CoreService.TestProxy(name).then((ms) => setDelay(`${ms} ms`)).catch((e) => setDelay(String(e))); };
   // currentNetwork is the subnet-group condition for the network this machine is on now.
   const currentNetwork = () => CoreService.CurrentNetwork().then((n): KV | null => (n.ssid ? { t: "SSID", v: n.ssid } : n.router ? { t: "ROUTER", v: n.router } : null));
 
@@ -238,7 +229,6 @@ function VpnEditor({ status, initial, onDone }: { status: Status; initial: VPN |
         <KVRow kinds={routeKinds} items={addrs} onChange={setAddrs} />
         <div className="form">
           <button className="btn primary" disabled={busy || !ready || !name.trim() || !status.running} onClick={save}>{saved ? "保存并重连" : "连接"}</button>
-          {saved && <button className="btn" disabled={busy} onClick={disconnect}>断开</button>}
           {initial && <button className="btn" style={{ color: "var(--bad)" }} disabled={busy} onClick={remove}>删除</button>}
           <button className="btn" disabled={busy} onClick={onDone}>取消</button>
           {form.type === "easyconnect" && tunnel?.state !== "up" && <button className="btn" disabled={probing || !ready || !status.running || tunnel?.state === "connecting"} onClick={probeGateway}>{probing ? "登录中…" : "测试登录"}</button>}
@@ -247,21 +237,14 @@ function VpnEditor({ status, initial, onDone }: { status: Status; initial: VPN |
         {error && <div className="error small" style={{ marginTop: 8 }}>{error}</div>}
       </div>
 
-      {saved && (
+      {saved && form.type === "easyconnect" && (
         <div className="card" style={{ marginTop: 16 }}>
           <div className="label" style={{ gap: 12, alignItems: "baseline", fontSize: 13 }}>状态
-            {form.type === "easyconnect" ? <>
-              <span className={stateClass[tunnel?.state ?? "down"]}>{stateLabel[tunnel?.state ?? "down"]}</span>
-              {tunnel?.address && <span>隧道地址 {tunnel.address}</span>}
-              {routing?.dns?.length ? <span>DNS {routing.dns.join(", ")}</span> : null}
-            </> : <>
-              <button className="btn small-btn" disabled={!status.running} onClick={measure}>测延迟</button>
-              {delay && <span>{delay}</span>}
-            </>}
+            <span className={stateClass[tunnel?.state ?? "down"]}>{stateLabel[tunnel?.state ?? "down"]}</span>
+            {tunnel?.address && <span>隧道地址 {tunnel.address}</span>}
+            {routing?.dns?.length ? <span>DNS {routing.dns.join(", ")}</span> : null}
           </div>
-          {form.type === "easyconnect" ? (
-            <>
-              {routing && (routing.ip?.length || routing.domains?.length) ? (
+          {routing && (routing.ip?.length || routing.domains?.length) ? (
                 <div className="table-wrap">
                   <table className="table">
                     <thead><tr><th>网关下发的网段</th><th>端口</th><th>协议</th></tr></thead>
@@ -273,24 +256,19 @@ function VpnEditor({ status, initial, onDone }: { status: Status; initial: VPN |
                     </tbody>
                   </table>
                 </div>
-              ) : null}
-            </>
           ) : null}
         </div>
       )}
-
     </>
   );
 }
-
-const typeLabel = (t: unknown) => types[String(t)] ?? String(t);
 
 // Vpn lists the VPNs with their state, each with 连接 / 断开 and 编辑, an editor for the one being
 // edited (or a new one), and a reachability test that goes through the rules.
 export default function Vpn({ status }: { status: Status }) {
   const [vpns, setVpns] = useState<VPN[]>([]);
   const [tunnels, setTunnels] = useState<EasyConnectTunnel[]>([]);
-  const [editing, setEditing] = useState<{ initial: VPN | null } | null>(null);
+  const [editing, setEditing] = useState<VPN | "new" | null>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [target, setTarget] = useState("");
@@ -303,11 +281,6 @@ export default function Vpn({ status }: { status: Status }) {
   ]), []);
   usePoll(load, 5000, status.running);
 
-  const stateOf = (v: VPN) => {
-    if (!v.active) return "down";
-    if (v.proxy?.type !== "easyconnect") return "up";
-    return tunnels.find((t) => t.name === v.proxy?.name)?.state ?? "down";
-  };
   const run = (key: string, p: Promise<unknown>) => {
     setBusy(key);
     setError("");
@@ -326,11 +299,11 @@ export default function Vpn({ status }: { status: Status }) {
       <div className="tiles">
         {vpns.map((v) => {
           const name = String(v.proxy?.name ?? "");
-          const state = stateOf(v);
+          const state = v.state ?? "down";
           return (
             <div key={name} className="tile-wrap">
-              <button className={`tile ${editing?.initial?.proxy?.name === name ? "selected" : ""}`} onClick={() => setEditing(editing?.initial?.proxy?.name === name ? null : { initial: v })}>
-                <span className="kind">{typeLabel(v.proxy?.type)}</span>
+              <button className={`tile ${editing !== "new" && editing?.proxy?.name === name ? "selected" : ""}`} onClick={() => setEditing(editing !== "new" && editing?.proxy?.name === name ? null : v)}>
+                <span className="kind">{types[String(v.proxy?.type)] ?? ""}</span>
                 <span className="name">{name}</span>
                 <span className={`foot ${stateClass[state]}`}>{stateLabel[state]}</span>
               </button>
@@ -342,11 +315,11 @@ export default function Vpn({ status }: { status: Status }) {
             </div>
           );
         })}
-        <button className="tile add" onClick={() => setEditing({ initial: null })} title="添加 VPN">＋</button>
+        <button className="tile add" onClick={() => setEditing("new")} title="添加 VPN">＋</button>
       </div>
       {error && <div className="error small" style={{ marginTop: 8 }}>{error}</div>}
 
-      {editing && <VpnEditor key={String(editing.initial?.proxy?.name ?? "new")} status={status} initial={editing.initial} onDone={() => { setEditing(null); load(); }} />}
+      {editing && <VpnEditor key={editing === "new" ? "new" : String(editing.proxy?.name)} status={status} initial={editing === "new" ? null : editing} tunnel={editing === "new" ? null : tunnels.find((t) => t.name === editing.proxy?.name) ?? null} onDone={() => { setEditing(null); load(); }} />}
 
       {vpns.some((v) => v.active) && (
         <div className="card" style={{ marginTop: 16 }}>

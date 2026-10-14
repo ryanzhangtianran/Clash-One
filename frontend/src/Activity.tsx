@@ -140,6 +140,7 @@ function Repair({ onClose }: { onClose: () => void }) {
     ToolService.Repair(id).then((m) => setNotes((n) => ({ ...n, [id]: m }))).catch((e) => setNotes((n) => ({ ...n, [id]: String(e).replace(/^RuntimeError:\s*/, "") }))).finally(() => { setBusy(""); load(); });
   };
   const found = items.filter((i) => i.found);
+  const isCheck = (i: RepairItem) => ["proxy", "orphan", "tun"].includes(i.id); // a check, as opposed to a reset
   return (
     <div className="modal-bg">
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
@@ -152,8 +153,8 @@ function Repair({ onClose }: { onClose: () => void }) {
                 <div className={`small ${notes[i.id] ? "" : "muted"}`}>{notes[i.id] ?? `${i.detail}${i.reboot ? "，重启后生效" : ""}`}</div>
               </div>
               <div className="setting-control">
-                {i.found ? <span className="delay-bad small">发现问题</span> : ["proxy", "orphan", "tun"].includes(i.id) ? <span className="delay-good small">正常</span> : null}
-                {i.fix && (i.found || !["proxy", "orphan", "tun"].includes(i.id)) && <button className="btn ctl" disabled={!!busy} onClick={() => fix(i.id)}>{busy === i.id ? "处理中…" : i.fix}</button>}
+                {i.found ? <span className="delay-bad small">发现问题</span> : isCheck(i) ? <span className="delay-good small">正常</span> : null}
+                {i.fix && (i.found || !isCheck(i)) && <button className="btn ctl" disabled={!!busy} onClick={() => fix(i.id)}>{busy === i.id ? "处理中…" : i.fix}</button>}
               </div>
             </div>
           ))}

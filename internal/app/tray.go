@@ -263,32 +263,10 @@ func (t *trayMenu) vpnStates() map[string]string {
 	if err != nil {
 		return nil
 	}
-	var tunnels []EasyConnectTunnel
-	if slices.ContainsFunc(list, func(v VPN) bool { return v.Active && v.Proxy["type"] == "easyconnect" }) {
-		tunnels, _ = t.svc.EasyConnects()
-	}
+	pills := map[string]string{"up": pill("good", "已连接"), "connecting": pill("warn", "连接中"), "down": pill("gray", "未连接")}
 	states := map[string]string{}
 	for _, v := range list {
-		state := "down"
-		if v.Active {
-			state = "up"
-			if v.Proxy["type"] == "easyconnect" {
-				state = "down"
-				for _, tn := range tunnels {
-					if tn.Name == v.name() {
-						state = tn.State
-					}
-				}
-			}
-		}
-		switch state {
-		case "up":
-			states[v.name()] = pill("good", "已连接")
-		case "connecting":
-			states[v.name()] = pill("warn", "连接中")
-		default:
-			states[v.name()] = pill("gray", "未连接")
-		}
+		states[v.name()] = pills[v.State]
 	}
 	return states
 }

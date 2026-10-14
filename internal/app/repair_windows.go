@@ -33,14 +33,14 @@ func flushDNS() (string, error) {
 
 // platformChecks: the wintun adapter a dead core left, and the resets Windows users reach for.
 func platformChecks() []RepairItem {
-	tun := RepairItem{ID: "tun", Title: "残留 TUN", Detail: "无", Fix: "移除", Admin: true}
+	tun := RepairItem{ID: "tun", Title: "残留 TUN", Detail: "无", Fix: "移除"}
 	if out, err := powershell("Get-NetAdapter -Name Meta -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name"); err == nil && strings.TrimSpace(out) == "Meta" && len(orphanCores(-1)) == 0 {
 		tun.Found, tun.Detail = true, "适配器 Meta 无人使用"
 	}
 	return []RepairItem{
 		tun,
-		{ID: "winsock", Title: "Winsock", Detail: "重置 Winsock", Fix: "重置", Admin: true, Reboot: true},
-		{ID: "ipstack", Title: "TCP/IP", Detail: "重置 TCP/IP", Fix: "重置", Admin: true, Reboot: true},
+		{ID: "winsock", Title: "Winsock", Detail: "重置 Winsock", Fix: "重置", Reboot: true},
+		{ID: "ipstack", Title: "TCP/IP", Detail: "重置 TCP/IP", Fix: "重置", Reboot: true},
 	}
 }
 

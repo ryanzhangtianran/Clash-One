@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +21,6 @@ type RepairItem struct {
 	Detail string `json:"detail"`
 	Fix    string `json:"fix"`    // the button; "" for a check with nothing to run
 	Found  bool   `json:"found"`  // a problem was found, as opposed to an optional reset
-	Admin  bool   `json:"admin"`  // the fix needs the administrator prompt
 	Reboot bool   `json:"reboot"` // the fix takes effect after a restart
 }
 
@@ -31,17 +28,16 @@ type RepairItem struct {
 func (s *ToolService) RepairChecks() []RepairItem {
 	items := []RepairItem{s.checkProxy(), s.checkOrphans()}
 	items = append(items, platformChecks()...)
-	items = append(items, RepairItem{ID: "dns", Title: "DNS 缓存", Detail: "刷新系统 DNS 缓存", Fix: "刷新", Admin: runtime.GOOS == "darwin"})
-	slices.SortStableFunc(items, func(a, b RepairItem) int {
-		if a.Found != b.Found {
-			if a.Found {
-				return -1
-			}
-			return 1
+	items = append(items, RepairItem{ID: "dns", Title: "DNS 缓存", Detail: "刷新系统 DNS 缓存", Fix: "刷新"})
+	var found, rest []RepairItem
+	for _, i := range items {
+		if i.Found {
+			found = append(found, i)
+		} else {
+			rest = append(rest, i)
 		}
-		return 0
-	})
-	return items
+	}
+	return append(found, rest...)
 }
 
 // Repair runs one item's fix and says what it did.
@@ -53,22 +49,18 @@ func (s *ToolService) Repair(id string) (string, error) {
 		}
 		return "系统代理已清除", nil
 	case "orphan":
-		var killed, failed []string
-		for _, pid := range orphanCores(s.ownCorePid()) {
-			p, err := os.FindProcess(pid)
-			if err == nil {
-				err = p.Kill()
-			}
-			if err != nil {
-				failed = append(failed, strconv.Itoa(pid))
+		killed, failed := 0, 0
+		for _, pid := range orphanCores(s.cs.core.Pid()) {
+			if p, err := os.FindProcess(pid); err != nil || p.Kill() != nil {
+				failed++
 			} else {
-				killed = append(killed, strconv.Itoa(pid))
+				killed++
 			}
 		}
-		if len(failed) > 0 {
-			return "", fmt.Errorf("结束了 %d 个，另外 %s 没能结束", len(killed), strings.Join(failed, ", "))
+		if failed > 0 {
+			return "", fmt.Errorf("结束了 %d 个，%d 个没能结束", killed, failed)
 		}
-		return fmt.Sprintf("结束了 %d 个残留内核", len(killed)), nil
+		return fmt.Sprintf("结束了 %d 个残留内核", killed), nil
 	case "dns":
 		return flushDNS()
 	}
@@ -111,7 +103,7 @@ func listening(addr string) bool {
 // checkOrphans finds this user's connaio-core processes other than this app's child.
 func (s *ToolService) checkOrphans() RepairItem {
 	item := RepairItem{ID: "orphan", Title: "残留内核", Fix: "结束", Detail: "无"}
-	if pids := orphanCores(s.ownCorePid()); len(pids) > 0 {
+	if pids := orphanCores(s.cs.core.Pid()); len(pids) > 0 {
 		var list []string
 		for _, p := range pids {
 			list = append(list, strconv.Itoa(p))
@@ -120,8 +112,6 @@ func (s *ToolService) checkOrphans() RepairItem {
 	}
 	return item
 }
-
-func (s *ToolService) ownCorePid() int { return s.cs.core.Pid() }
 
 // runAdmin runs a repair script after the administrator prompt and reports it done.
 func runAdmin(script, prompt, done string) (string, error) {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ryanzhangtianran/Connaio/internal/core"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -113,11 +114,13 @@ func (s *CoreService) ReverseTunnels() ([]Tunnel, error) {
 	return resp.Tunnels, err
 }
 
-func (s *CoreService) EasyConnects() ([]EasyConnectTunnel, error) {
+func (s *CoreService) EasyConnects() ([]EasyConnectTunnel, error) { return easyConnects(s.core) }
+
+func easyConnects(c *core.Core) ([]EasyConnectTunnel, error) {
 	var resp struct {
 		Tunnels []EasyConnectTunnel `json:"tunnels"`
 	}
-	err := s.core.Do(context.Background(), http.MethodGet, "/easyconnect", nil, &resp)
+	err := c.Do(context.Background(), http.MethodGet, "/easyconnect", nil, &resp)
 	return resp.Tunnels, err
 }
 

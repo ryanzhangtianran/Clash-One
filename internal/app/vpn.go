@@ -18,6 +18,8 @@ type VPN struct {
 	Group map[string]any `json:"group"` // the subnet group, or nil when the VPN is always used
 	// Active says the node is in the override (connected); false for a draft.
 	Active bool `json:"active"`
+	// State is up, connecting or down: for EasyConnect the tunnel's, else whether it is active.
+	State string `json:"state"`
 }
 
 func (v VPN) name() string { n, _ := v.Proxy["name"].(string); return n }
@@ -35,6 +37,21 @@ func (s *ProfileService) VPNs() ([]VPN, error) {
 		return nil, err
 	}
 	list := active
+	var tunnels []EasyConnectTunnel
+	if slices.ContainsFunc(active, func(v VPN) bool { return v.Proxy["type"] == "easyconnect" }) {
+		tunnels, _ = easyConnects(s.core)
+	}
+	for i := range list {
+		list[i].State = "up"
+		if list[i].Proxy["type"] == "easyconnect" {
+			list[i].State = "down"
+			for _, tn := range tunnels {
+				if tn.Name == list[i].name() {
+					list[i].State = tn.State
+				}
+			}
+		}
+	}
 	if s.settings != nil {
 		drafts := s.settings.Get().VPNs
 		names := make([]string, 0, len(drafts))
@@ -45,7 +62,7 @@ func (s *ProfileService) VPNs() ([]VPN, error) {
 		for _, name := range names {
 			if !slices.ContainsFunc(active, func(v VPN) bool { return v.name() == name }) {
 				d := drafts[name]
-				d.Active = false
+				d.Active, d.State = false, "down"
 				list = append(list, d)
 			}
 		}
