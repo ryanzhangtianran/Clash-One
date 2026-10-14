@@ -220,9 +220,9 @@ export default function Vpn({ status }: { status: Status }) {
           <button className="btn primary" disabled={busy || !ready || !status.running} onClick={save}>{saved ? "保存并重连" : "连接"}</button>
           {saved && <button className="btn" disabled={busy} onClick={disconnect}>断开</button>}
           {form.type === "easyconnect" && tunnel?.state !== "up" && <button className="btn" disabled={probing || !ready || !status.running || tunnel?.state === "connecting"} onClick={probeGateway}>{probing ? "登录中…" : "测试登录"}</button>}
+          {probe.length > 0 && <span className={`small ${/失败|错误|refused|rejected/i.test(probe[0]) ? "error" : "muted"}`} style={{ alignSelf: "center" }}>{probe.join("；")}</span>}
         </div>
         {error && <div className="error small" style={{ marginTop: 8 }}>{error}</div>}
-        {probe.map((l, i) => <div key={i} className={`small ${/失败|错误|refused|rejected/i.test(l) ? "error" : "muted"}`} style={{ marginTop: 8 }}>{l}</div>)}
       </div>
 
       {saved && (
