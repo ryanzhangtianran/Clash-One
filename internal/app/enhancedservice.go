@@ -37,11 +37,19 @@ func (s *EnhancedService) Mode() string {
 	return "tun"
 }
 
-// SetMode switches between the two, or turns TUN off with "".
+// SetMode switches between the two, or turns TUN off with "": off from enhanced mode goes back
+// to partial enhancement when that was on underneath.
 func (s *EnhancedService) SetMode(mode string) error {
+	was := s.Mode()
 	switch mode {
 	case "":
-		return s.SetEnabled(false)
+		if was == "tun" && s.settings.Get().Partial {
+			return s.SetMode("process-tun")
+		}
+		if err := s.SetEnabled(false); err != nil {
+			return err
+		}
+		return s.settings.Update(func(st *Settings) { st.Partial = false })
 	case "tun", "process-tun":
 		// capture.mode goes into the override without applying; SetEnabled applies once and
 		// rolls both back if the core refuses
@@ -56,7 +64,7 @@ func (s *EnhancedService) SetMode(mode string) error {
 			return err
 		}
 		emit("setting", "capture.mode")
-		return nil
+		return s.settings.Update(func(st *Settings) { st.Partial = mode == "process-tun" || was == "process-tun" })
 	}
 	return fmt.Errorf("unknown enhanced mode %q", mode)
 }

@@ -56,6 +56,7 @@ type trayMenu struct {
 	lastActive   map[string]time.Time  // process -> when it last moved bytes
 	speedItem    *application.MenuItem // the live speed row, where the tray itself can't show text (Windows)
 	modeItem     *application.MenuItem
+	vpnItem      *application.MenuItem            // the VPN submenu: the connected ones as its detail
 	vpnItems     map[string]*application.MenuItem // the VPN page's entries: state shown, click connects or disconnects
 	qualityItem  *application.MenuItem
 	proxyItem    *application.MenuItem
@@ -193,7 +194,7 @@ func (t *trayMenu) toggleEnhanced(mode string) {
 // ponytail: polls /proxies even while the menu is closed; hook menuWillOpen if it shows up in a profile.
 func (t *trayMenu) loop() {
 	for i := 0; ; i += 5 {
-		if i%60 == 0 {
+		if i%60 == 10 { // the first one 10s in, once the startup apply has rebuilt the TUN under it
 			go t.measure()
 		}
 		t.tick()
@@ -202,7 +203,7 @@ func (t *trayMenu) loop() {
 }
 
 func (t *trayMenu) measure() {
-	t.locked(func() { t.details[t.qualityItem] = pill("gray", "…") })
+	t.locked(func() { t.details[t.qualityItem] = dot("gray", "…") })
 	q := qualityBadge(t.svc.Latency().Internet)
 	t.locked(func() { t.details[t.qualityItem] = q })
 }
@@ -223,17 +224,20 @@ func modeLabel(key string) string {
 // pill is a coloured pill for the right of a menu item: color is accent, good, warn, bad or gray.
 func pill(color, text string) string { return "\x01" + color + "|" + text }
 
+// dot is a detail drawn as a coloured dot before grey text: a state.
+func dot(color, text string) string { return "\x02" + color + "|" + text }
+
 // qualityBadge colours a latency like the proxies page does: green, orange, then red.
 func qualityBadge(ms int) string {
 	switch {
 	case ms <= 0:
-		return pill("bad", "超时")
+		return dot("bad", "超时")
 	case ms < 300:
-		return pill("good", fmt.Sprintf("%d ms", ms))
+		return dot("good", fmt.Sprintf("%d ms", ms))
 	case ms < 800:
-		return pill("warn", fmt.Sprintf("%d ms", ms))
+		return dot("warn", fmt.Sprintf("%d ms", ms))
 	}
-	return pill("bad", fmt.Sprintf("%d ms", ms))
+	return dot("bad", fmt.Sprintf("%d ms", ms))
 }
 
 // toggleVPN connects the named VPN's draft, or disconnects it when active.
@@ -257,7 +261,7 @@ func (t *trayMenu) toggleVPN(name string) {
 	t.tick()
 }
 
-var vpnPills = map[string]string{"up": pill("good", "已连接"), "connecting": pill("warn", "连接中"), "down": pill("gray", "未连接")}
+var vpnPills = map[string]string{"up": dot("good", "已连接"), "connecting": dot("warn", "连接中"), "down": dot("gray", "未连接")}
 
 // vpnStates reads every VPN's state off the lock: name -> 未连接 / 连接中 / 已连接 as a pill.
 func (t *trayMenu) vpnStates() map[string]string {
@@ -296,9 +300,15 @@ func (t *trayMenu) tick() {
 		for id, item := range t.profileItems {
 			item.SetChecked(id == list.Current)
 		}
+		var up []string
 		for name, item := range t.vpnItems {
 			t.details[item] = vpns[name]
+			if vpns[name] == vpnPills["up"] {
+				up = append(up, name)
+			}
 		}
+		slices.Sort(up)
+		t.details[t.vpnItem] = cmp.Or(strings.Join(up, "、"), "未连接")
 		t.showRows()
 	})
 }
@@ -387,7 +397,9 @@ func (t *trayMenu) build(groups []Group, list Profiles, vpns map[string]string) 
 		t.speedItem = m.Add(speedLabel(Traffic{})).SetEnabled(false)
 	}
 	m.Add("显示主窗口").SetAccelerator("CmdOrCtrl+M").OnClick(func(*application.Context) { t.show() })
-	m.AddSeparator()
+	var headers []*application.MenuItem
+	header := func(title string) { headers = append(headers, m.Add(title).SetEnabled(false)) }
+	header("路由")
 	sub, item := submenu("出站模式")
 	t.modeItem, t.modeItems = item, map[string]*application.MenuItem{}
 	for _, md := range modes {
@@ -400,15 +412,7 @@ func (t *trayMenu) build(groups []Group, list Profiles, vpns map[string]string) 
 		})
 	}
 
-	t.vpnItems = map[string]*application.MenuItem{}
-	for _, name := range slices.Sorted(maps.Keys(vpns)) {
-		t.vpnItems[name] = m.Add("VPN " + name).OnClick(func(*application.Context) { t.toggleVPN(name) })
-	}
-
 	t.groupItems, t.memberItems = map[string]*application.MenuItem{}, map[string]map[string]*application.MenuItem{}
-	if len(groups) > 0 {
-		m.AddSeparator()
-	}
 	for _, g := range groups {
 		sub, item := submenu(g.Name)
 		t.groupItems[g.Name], t.memberItems[g.Name] = item, map[string]*application.MenuItem{}
@@ -423,17 +427,29 @@ func (t *trayMenu) build(groups []Group, list Profiles, vpns map[string]string) 
 		}
 	}
 
-	m.AddSeparator()
+	// the VPNs: a submenu of every one with its state (click connects or disconnects), and the way to add more
+	sub, item = submenu("VPN")
+	t.vpnItem, t.vpnItems = item, map[string]*application.MenuItem{}
+	for _, name := range slices.Sorted(maps.Keys(vpns)) {
+		t.vpnItems[name] = sub.Add(name).OnClick(func(*application.Context) { t.toggleVPN(name) })
+	}
+	if len(vpns) > 0 {
+		sub.AddSeparator()
+	}
+	sub.Add("添加 VPN…").OnClick(func(*application.Context) {
+		t.show()
+		emit("navigate", "vpn")
+	})
+	header("网络")
 	t.qualityItem = m.Add("网络质量").OnClick(func(*application.Context) { t.measure() })
 	t.details[t.qualityItem] = quality
-	m.AddSeparator()
-	m.Add("进程与客户端").SetEnabled(false)
+	header("流量")
 	t.procItems = nil
 	for range trayProcesses {
 		t.procItems = append(t.procItems, m.Add("").SetHidden(true).OnClick(func(*application.Context) { t.show() }))
 	}
 
-	m.AddSeparator()
+	header("接管")
 	t.proxyItem = m.AddCheckbox("设置为系统代理", t.proxy).SetAccelerator("CmdOrCtrl+S").OnClick(func(ctx *application.Context) {
 		if err := t.sysProxy.SetEnabled(ctx.ClickedMenuItem().Checked()); err != nil {
 			notify("error", "设置系统代理失败：%v", err)
@@ -474,5 +490,6 @@ func (t *trayMenu) build(groups []Group, list Profiles, vpns map[string]string) 
 	m.AddSeparator()
 	m.Add("退出").SetAccelerator("CmdOrCtrl+Q").OnClick(func(*application.Context) { t.app.Quit() })
 	m.Update()
+	sectionHeaders(headers)
 	t.showRows()
 }

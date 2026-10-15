@@ -69,6 +69,8 @@ const detailSep = " · "
 // decorate folds each detail into its item's label ("Proxy · 香港", "网络质量 · 86 ms"), since
 // Linux and Windows menus show plain text: a pill keeps its text, the mode badge becomes the mode's
 // name, and icons are skipped.
+func sectionHeaders([]*application.MenuItem) {} // a plain disabled item stands for the title
+
 func decorate(details, _ map[*application.MenuItem]string) {
 	for item, detail := range details {
 		base, _, _ := strings.Cut(item.Label(), detailSep)

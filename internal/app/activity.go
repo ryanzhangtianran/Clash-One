@@ -54,6 +54,10 @@ type Latency struct {
 
 const testURL = "https://www.gstatic.com/generate_204"
 
+// directURL is what the direct Internet probe fetches: reachable without a proxy from anywhere,
+// China included, where Google's is reset.
+const directURL = "http://captive.apple.com/hotspot-detect.html"
+
 // Activity summarizes the live connections for the activity page; polled by the frontend.
 func (s *CoreService) Activity() (Activity, error) {
 	ctx := context.Background()
@@ -140,7 +144,7 @@ func pingMs(ctx context.Context, host string) int {
 func (s *CoreService) Latency() Latency {
 	s.latMu.Lock()
 	defer s.latMu.Unlock()
-	if time.Since(s.latAt) < time.Minute {
+	if time.Since(s.latAt) < time.Minute && s.lat.Internet > 0 { // a failure isn't kept: the next ask measures again
 		return s.lat
 	}
 	s.lat, s.latAt = s.measureLatency(), time.Now()
@@ -161,9 +165,11 @@ func (s *CoreService) measureLatency() Latency {
 	}
 	direct := oneShotClient(0, 5*time.Second)
 	start = time.Now()
-	if resp, err := direct.Head(testURL); err == nil {
+	if resp, err := direct.Head(directURL); err == nil {
 		resp.Body.Close()
 		l.Internet = ms(start)
+	} else {
+		log.Printf("网络质量探测失败: %v", err)
 	}
 	if node := s.exitOf(l.Group); node != "DIRECT" && node != "REJECT" {
 		l.Proxy, _ = s.TestProxy(node)
@@ -218,15 +224,21 @@ type Split struct {
 
 // clientOf names a connection's client, an app folded into its bundle, the LAN device's address,
 // or Connaio for the core's own connections (rule sets, health checks), with the file whose
-// Finder icon stands for it (none for a device).
+// Finder icon stands for it: a command keeps its name but wears the icon of the app it was
+// started from (Ghostty for claude); the system's own daemons (trustd's certificate checks,
+// nsurlsessiond's background downloads for other apps) fold into macOS; none for a device.
 func clientOf(c Conn) (name, icon string) {
 	if c.Inbound == "Inner" {
 		return "Connaio", ownBundle
 	}
+	if systemDaemon(c.Path) {
+		return "macOS", "/System/Applications/System Settings.app"
+	}
 	name, icon = c.Process, c.Path
-	if i := strings.Index(c.Path, ".app/"); i >= 0 {
-		icon = c.Path[:i+len(".app")]
-		name = strings.TrimSuffix(filepath.Base(icon), ".app")
+	if b := bundleOf(c.Path); b != "" {
+		icon, name = b, strings.TrimSuffix(filepath.Base(b), ".app")
+	} else if p := parentOf(name); p != "" {
+		icon = cmp.Or(bundleOf(p), p)
 	}
 	return cmp.Or(name, c.Source, "-"), icon
 }
@@ -234,10 +246,7 @@ func clientOf(c Conn) (name, icon string) {
 // ownBundle is this app's bundle, for its icon; empty when not run from one.
 var ownBundle = func() string {
 	exe, _ := os.Executable()
-	if i := strings.Index(exe, ".app/"); i >= 0 {
-		return exe[:i+len(".app")]
-	}
-	return ""
+	return bundleOf(exe)
 }()
 
 func (s *Split) add(direct bool, n int64) {

@@ -28,7 +28,7 @@ func Run(assets fs.FS, trayIcon []byte) error {
 	svc := &CoreService{core: core.New(dataDir), ledger: openLedger(filepath.Join(dataDir, "traffic.json"))}
 	profiles := &ProfileService{store: store, core: svc.core, settings: settings}
 	svc.onReady = profiles.apply
-	sysProxy := &SystemProxyService{core: svc.core, settings: settings}
+	sysProxy := &SystemProxyService{core: svc.core, settings: settings, enabled: settings.Get().SystemProxy} // known before the menu is built; applied by the guard once the core answers
 	enhanced := &EnhancedService{core: svc.core, profiles: profiles, settings: settings}
 	devices := &DeviceService{core: svc, profiles: profiles}
 	settingsSvc := &SettingsService{core: svc, settings: settings}
@@ -64,9 +64,9 @@ func Run(assets fs.FS, trayIcon []byte) error {
 
 	window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:          "Connaio",
-		Width:          960,
+		Width:          1070,
 		Height:         700,
-		MinWidth:       960, // the activity and dashboard layouts fit completely from here
+		MinWidth:       1070, // the activity and dashboard layouts fit completely from here: every connections column shows whole
 		MinHeight:      700,
 		BackgroundType: application.BackgroundTypeTranslucent,
 		Mac: application.MacWindow{

@@ -191,6 +191,7 @@ export function Dns() {
   const [enable, setEnable] = useSetting<boolean>("dns.enable", false);
   const [mode, setMode] = useSetting<string>("dns.enhanced-mode", "redir-host");
   const [ipv6, setIPv6] = useSetting<boolean>("dns.ipv6", false);
+  const [dual, setDual] = useSetting<boolean>("ipv6", true); // the core's ipv6: off, TUN carries no IPv6 and outbound resolves IPv4 only
   const [h3, setH3] = useSetting<boolean>("dns.prefer-h3", false);
   const [split, setSplit] = useSetting<boolean>("dns.use-system-resolvers", false);
   const [hosts, setHosts] = useSetting<boolean>("dns.use-system-hosts", true);
@@ -206,6 +207,12 @@ export function Dns() {
         <Row title="模式">
           <div className="seg">
             {["fake-ip", "redir-host"].map((m) => <button key={m} className={mode === m ? "on" : ""} onClick={() => setMode(m)}>{m.toUpperCase()}</button>)}
+          </div>
+        </Row>
+        <Row title="IP 版本" desc="仅 IPv4 时增强模式不再接管 IPv6 流量；若本机网络有 IPv6，应用会绕过代理直接走 IPv6，需同时在系统网络设置里关闭 IPv6。">
+          <div className="seg">
+            <button className={dual ? "on" : ""} onClick={() => setDual(true)}>双栈</button>
+            <button className={!dual ? "on" : ""} onClick={() => setDual(false)}>仅 IPv4</button>
           </div>
         </Row>
         <Row title="解析 IPv6"><Switch on={ipv6} onChange={setIPv6} /></Row>

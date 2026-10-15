@@ -5,12 +5,13 @@ import { Switch, useSetting } from "./Settings";
 import { usePoll } from "./hooks";
 import { words } from "./format";
 
-const sources: Record<string, string> = { app: "正在运行", network: "有网络连接", tool: "命令行工具" };
+const sources: Record<string, string> = { app: "正在运行", network: "有网络连接" };
 
 // tools are command-line programs that ignore the system proxy; picking one captures it and what it
-// spawns (git's ssh and git-remote-https, pip's and npm's downloads) by PROCESS-ANCESTOR.
-const tools: ProcessChoice[] = ["ssh", "scp", "sftp", "rsync", "git", "curl", "wget", "pip3", "python3", "npm", "node", "go", "brew", "kubectl", "conda"]
-  .map((exec) => ({ name: exec, exec, source: "tool" }));
+// spawns (git's ssh and git-remote-https, pip's and npm's downloads) by PROCESS-ANCESTOR, which
+// matches the executable's name anywhere up the chain: claude and codex installed natively are
+// these names, installed through npm they run as node.
+const defaultTools = ["ssh", "scp", "sftp", "rsync", "git", "curl", "wget", "pip3", "python3", "npm", "node", "go", "brew", "kubectl", "conda", "claude", "codex"];
 
 // Processes is the enhanced page: enhanced mode routes all traffic through TUN, partial enhancement
 // only the selected apps (and their child processes). The two exclude each other (EnhancedService.Mode).
@@ -19,6 +20,7 @@ export default function Processes({ status, mode, rooted }: { status: Status; mo
   const [processes, setProcesses] = useSetting<string[]>("capture.processes", []);
   const [choices, setChoices] = useState<ProcessChoice[]>([]);
   const [query, setQuery] = useState("");
+  const [newTool, setNewTool] = useState("");
 
   const load = useCallback(() => SettingsService.ProcessChoices().then((c) => setChoices(c ?? [])), []);
   const partial = mode === "process-tun";
@@ -34,13 +36,23 @@ export default function Processes({ status, mode, rooted }: { status: Status; mo
   const pick = () => SettingsService.PickApp().then((c) => { if (c.exec && !has(c.exec)) toggle(c.exec, true); });
 
   const known = new Map(choices.map((c) => [c.exec.toLowerCase(), c]));
+  // the tools: the defaults plus whatever was picked by name, minus those running now, which show
+  // in the tree under the app they were started from
+  const toolNames = [...new Set([...defaultTools, ...picked].map((t) => t.toLowerCase()))].filter((t) => !known.has(t)).sort();
+  const isTool = (exec: string) => toolNames.includes(exec.toLowerCase());
+  const pickedTools = toolNames.filter(has);
+  const setTools = (on: boolean) => setProcesses(on ? [...picked, ...toolNames.filter((t) => !has(t))] : picked.filter((p) => !isTool(p)));
+  // the tree: apps and processes under no app on top, networked processes nested under the app
+  // they were started from (claude under Ghostty), which is what capturing that app covers
+  const kids = (exec: string) => choices.filter((c) => c.parent?.toLowerCase() === exec.toLowerCase());
   const rows = [
-    ...picked.map((exec) => known.get(exec.toLowerCase()) ?? { name: exec, exec, source: "" }),
-    ...choices.filter((c) => !has(c.exec)),
-    ...tools.filter((t) => !has(t.exec) && !known.has(t.exec)),
+    ...picked.filter((p) => !isTool(p) && !known.get(p.toLowerCase())?.parent).map((exec) => known.get(exec.toLowerCase()) ?? { name: exec, exec, source: "" }),
+    ...choices.filter((c) => !has(c.exec) && !c.parent),
   ];
   const q = query.toLowerCase();
-  const shown = rows.filter((r) => !q || `${r.name} ${r.exec}`.toLowerCase().includes(q));
+  const matches = (r: ProcessChoice) => `${r.name} ${r.exec}`.toLowerCase().includes(q);
+  const shown = rows.filter((r) => !q || matches(r) || kids(r.exec).some(matches));
+  const showTools = !q || "shell tools".includes(q) || toolNames.some((t) => t.includes(q));
   const off = !status.running || !!busy || !rooted;
   const partialState = busy === "partial" ? "切换中…" : !rooted ? "需先在「通用」中授予 root 权限" : !partial ? "选中的应用及其子进程经 TUN 按规则分流，其他应用照常遵循系统代理" : picked.length === 0 ? "还没有选择应用，暂不接管" : `已增强 ${picked.length} 个应用`;
 
@@ -63,23 +75,57 @@ export default function Processes({ status, mode, rooted }: { status: Status; mo
       </div>
 
       {partial && <>
-        <div className="plist" style={{ marginTop: 12 }}>
+        <div className="plist tree" style={{ marginTop: 12 }}>
           <div className="plist-tools">
             <input className="dash-search" placeholder="搜索" value={query} onChange={(e) => setQuery(e.target.value)} />
             <span className="grow" />
             <button className="btn" onClick={pick}>{words.pickApp}</button>
             <button className="btn" onClick={load}>刷新</button>
           </div>
-          {shown.length === 0 && <div className="plist-empty muted">没有找到应用或进程</div>}
-          {shown.map((r) => (
-            <div key={r.exec} className="plist-row static">
+          {showTools && <details className="plist-group">
+            <summary className="plist-row static">
+              <div className="plist-main">
+                <div className="plist-name">Shell Tools</div>
+                <div className="muted small">{pickedTools.length ? pickedTools.join("、") : "ssh、git、curl、npm、claude 等不遵循系统代理的命令，及其启动的子进程"}</div>
+              </div>
+              <Switch on={pickedTools.length > 0} onChange={setTools} />
+            </summary>
+            {toolNames.map((t) => (
+              <div key={t} className="plist-row static sub">
+                <div className="plist-main"><div className="plist-name">{t}</div></div>
+                <Switch on={has(t)} onChange={(v) => toggle(t, v)} />
+              </div>
+            ))}
+            <form className="plist-row static sub" onSubmit={(e) => { e.preventDefault(); const t = newTool.trim(); if (!has(t)) toggle(t, true); setNewTool(""); }}>
+              <input className="grow" placeholder="添加命令名，如 codex、uv；也可直接勾选终端应用接管其中启动的一切" value={newTool} onChange={(e) => setNewTool(e.target.value)} />
+              <button className="btn" type="submit" disabled={!newTool.trim()}>添加</button>
+            </form>
+          </details>}
+          {shown.length === 0 && !showTools && <div className="plist-empty muted">没有找到应用或进程</div>}
+          {shown.map((r) => {
+            const ks = kids(r.exec);
+            const row = <>
               <div className="plist-main">
                 <div className="plist-name">{r.name}</div>
-                <div className="muted small">{r.exec !== r.name ? `${r.exec} · ` : ""}{sources[r.source] ?? "未运行"}</div>
+                <div className="muted small">{r.exec}</div>
               </div>
+              <span className="muted small">{sources[r.source] ?? "未运行"}</span>
               <Switch on={has(r.exec)} onChange={(v) => toggle(r.exec, v)} />
-            </div>
-          ))}
+            </>;
+            if (ks.length === 0) return <div key={r.exec} className="plist-row static">{row}</div>;
+            return (
+              <details key={r.exec} className="plist-group">
+                <summary className="plist-row static">{row}</summary>
+                {ks.map((k) => (
+                  <div key={k.exec} className="plist-row static sub">
+                    <div className="plist-main"><div className="plist-name">{k.name}</div></div>
+                    <span className="muted small">{has(r.exec) ? `随 ${r.name} 接管` : "有网络连接"}</span>
+                    <Switch on={has(k.exec) || has(r.exec)} disabled={has(r.exec)} onChange={(v) => toggle(k.exec, v)} />
+                  </div>
+                ))}
+              </details>
+            );
+          })}
         </div>
       </>}
     </>

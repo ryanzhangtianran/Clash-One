@@ -60,8 +60,10 @@ static void setTray(void *item, const void *icon, int iconLen, const char *badge
 		p.alignment = NSTextAlignmentRight;
 		p.minimumLineHeight = p.maximumLineHeight = 9;
 		button.attributedTitle = [[[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%@\n%@", u, d] attributes:@{
+			// no colour: an explicit one is resolved in the app's appearance (black), not the menu
+			// bar's, and can't follow an inactive screen; left alone the title is drawn like any
+			// other menu bar text, and appearsDisabled greys it with the cat
 			NSFontAttributeName: [NSFont monospacedDigitSystemFontOfSize:9 weight:NSFontWeightMedium],
-			NSForegroundColorAttributeName: [NSColor.labelColor colorWithAlphaComponent:dim ? 0.4 : 1], // appearsDisabled greys the cat, not the title
 			NSParagraphStyleAttributeName: p,
 			NSBaselineOffsetAttributeName: @(-4), // the button sits a two-line title high; centre it on the bar
 		}] autorelease];
@@ -75,14 +77,19 @@ static void setTray(void *item, const void *icon, int iconLen, const char *badge
 // NSMenu can't lay that out itself (a title's text stops short of the arrow by the key-equivalent
 // column), so these items are drawn whole; the rest of the menu stays native.
 @interface DetailItemView : NSView
-@property (copy) NSString *label, *detail; // detail: "text", or "\x01color|text" for a pill
+@property (copy) NSString *label, *detail; // detail: "text", "\x01color|text" for a pill, "\x02color|text" for a dot and text
 @property (retain) NSImage *icon;
+@property BOOL header; // a section title: small, grey, with room above
 @end
 
 static const CGFloat kInset = 5;      // the highlight's inset from the menu edge
-static const CGFloat kTitleX = 16;    // where native titles start in this menu (no state column)
+static const CGFloat kTitleX = 16;    // where native titles start in this menu with no state column
+static const CGFloat kStateW = 14;    // the state column AppKit adds once any item is checked (measured)
 static const CGFloat kArrowW = 24;    // room for the submenu arrow at the right
+static const CGFloat kMinW = 280;     // the menu no narrower than this: room for the details
 static const CGFloat kItemH = 22;
+static const CGFloat kHeaderH = 32;   // a section title, with its breathing room above
+static const CGFloat kDotW = 13;      // a state dot and its gap before the text
 
 static NSFont *menuFont(void) { return [NSFont menuFontOfSize:0]; }
 static NSFont *monoFont(void) { return [NSFont monospacedDigitSystemFontOfSize:menuFont().pointSize - 1 weight:NSFontWeightRegular]; } // a node, a speed: a step below titles
@@ -93,6 +100,7 @@ static NSFont *pillFont(void) { return [NSFont monospacedDigitSystemFontOfSize:1
 - (BOOL)acceptsFirstMouse:(NSEvent *)e { return YES; }
 
 - (BOOL)pill { return [self.detail hasPrefix:@"\x01"]; }
+- (BOOL)dot { return [self.detail hasPrefix:@"\x02"]; }
 - (NSString *)pillText { return [[self.detail componentsSeparatedByString:@"|"] lastObject]; }
 - (NSColor *)pillColor {
 	NSString *c = [[self.detail substringFromIndex:1] componentsSeparatedByString:@"|"].firstObject;
@@ -103,24 +111,36 @@ static NSFont *pillFont(void) { return [NSFont monospacedDigitSystemFontOfSize:1
 - (CGFloat)detailWidth {
 	if (!self.detail.length) return 0;
 	if (self.pill) return MAX(ceil([self.pillText sizeWithAttributes:@{NSFontAttributeName: pillFont()}].width) + 10, 18);
+	if (self.dot) return ceil([self.pillText sizeWithAttributes:@{NSFontAttributeName: monoFont()}].width) + kDotW;
 	return ceil([self.detail sizeWithAttributes:@{NSFontAttributeName: monoFont()}].width);
 }
+// titleX follows the native titles: AppKit shows the state column only while some item is checked
+- (CGFloat)titleX {
+	for (NSMenuItem *i in self.enclosingMenuItem.menu.itemArray)
+		if (i.state != NSControlStateValueOff) return kTitleX + kStateW;
+	return kTitleX;
+}
 - (CGFloat)fittingWidth {
-	CGFloat x = kTitleX + (self.icon ? 22 : 0);
+	CGFloat x = self.titleX + (self.icon ? 22 : 0);
 	return x + ceil([self.label sizeWithAttributes:@{NSFontAttributeName: menuFont()}].width) + 24 + self.detailWidth + kArrowW + kInset;
 }
 
 - (void)drawRect:(NSRect)dirty {
 	NSMenuItem *item = self.enclosingMenuItem;
-	BOOL hi = item.isHighlighted && item.isEnabled;
 	NSRect b = self.bounds;
+	if (self.header) { // small grey title at the bottom of its row, on the title column like everything else
+		NSDictionary *ha = @{NSFontAttributeName: [NSFont systemFontOfSize:11 weight:NSFontWeightSemibold], NSForegroundColorAttributeName: NSColor.secondaryLabelColor};
+		[self.label drawAtPoint:NSMakePoint(self.titleX, kHeaderH - 17) withAttributes:ha];
+		return;
+	}
+	BOOL hi = item.isHighlighted && item.isEnabled;
 	if (hi) {
 		[NSColor.selectedContentBackgroundColor setFill];
 		[[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(b, kInset, 0) xRadius:5 yRadius:5] fill];
 	}
 	NSColor *fg = !item.isEnabled ? NSColor.disabledControlTextColor : hi ? NSColor.selectedMenuItemTextColor : NSColor.labelColor;
 	NSColor *dim = hi ? NSColor.selectedMenuItemTextColor : NSColor.secondaryLabelColor;
-	CGFloat x = kTitleX;
+	CGFloat x = self.titleX;
 	if (self.icon) {
 		[self.icon drawInRect:NSMakeRect(x, (kItemH - 16) / 2, 16, 16) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1 respectFlipped:YES hints:nil];
 		x += 22;
@@ -139,9 +159,14 @@ static NSFont *pillFont(void) { return [NSFont monospacedDigitSystemFontOfSize:1
 		NSSize ps = [self.pillText sizeWithAttributes:pa];
 		[self.pillText drawAtPoint:NSMakePoint(NSMidX(r) - ps.width / 2, NSMidY(r) - ps.height / 2) withAttributes:pa];
 	} else if (self.detail.length) {
+		NSString *text = self.dot ? self.pillText : self.detail;
 		NSDictionary *da = @{NSFontAttributeName: monoFont(), NSForegroundColorAttributeName: dim};
-		NSSize ds = [self.detail sizeWithAttributes:da];
-		[self.detail drawAtPoint:NSMakePoint(right - ds.width, (kItemH - ds.height) / 2) withAttributes:da];
+		NSSize ds = [text sizeWithAttributes:da];
+		[text drawAtPoint:NSMakePoint(right - ds.width, (kItemH - ds.height) / 2) withAttributes:da];
+		if (self.dot) { // the state as a coloured dot before the text
+			[(hi ? NSColor.selectedMenuItemTextColor : self.pillColor) setFill];
+			[[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(right - ds.width - kDotW, (kItemH - 7) / 2, 7, 7)] fill];
+		}
 	}
 	if (item.hasSubmenu) {
 		NSImage *chev = [NSImage imageWithSystemSymbolName:@"chevron.right" accessibilityDescription:nil];
@@ -162,6 +187,16 @@ static NSFont *pillFont(void) { return [NSFont monospacedDigitSystemFontOfSize:1
 	[m performActionForItemAtIndex:[m indexOfItem:item]];
 }
 @end
+
+// setSectionHeader draws a disabled item as a section title. Runs on the main thread.
+static void setSectionHeader(void *p) {
+	NSMenuItem *item = p;
+	DetailItemView *v = [[[DetailItemView alloc] initWithFrame:NSMakeRect(0, 0, 100, kHeaderH)] autorelease];
+	v.autoresizingMask = NSViewWidthSizable;
+	v.header = YES;
+	v.label = item.title;
+	item.view = v;
+}
 
 // setMenuDecor draws an item with a right-side detail (grey text, or a "\x01color|text" pill)
 // and the Finder icon of path, through DetailItemView; with neither it stays a native item.
@@ -195,7 +230,8 @@ static void setMenuDecor(void *p, const char *label, const char *detail, const c
 	NSString *l = @(label);
 	if (![v.label isEqualToString:l] || ![v.detail ?: @"" isEqualToString:d ?: @""] || v.icon != img) {
 		v.label = l; v.detail = d; v.icon = img;
-		[v setFrameSize:NSMakeSize(MAX(v.frame.size.width, v.fittingWidth), kItemH)];
+		CGFloat minW = item.menu.supermenu ? 0 : kMinW; // submenus stay as narrow as their rows
+		[v setFrameSize:NSMakeSize(MAX(MAX(v.frame.size.width, v.fittingWidth), minW), kItemH)];
 		v.needsDisplay = YES;
 	}
 }
@@ -227,6 +263,25 @@ func native(v any, field string) unsafe.Pointer {
 		return nil
 	}
 	return unsafe.Pointer(f.Pointer())
+}
+
+// sectionHeaders turns the items into section titles. Before the app runs there are no native
+// items (and no main thread to call): the next build, once the groups arrive, styles them.
+func sectionHeaders(items []*application.MenuItem) {
+	var ps []unsafe.Pointer
+	for _, item := range items {
+		if p := native(item, "nsMenuItem"); p != nil {
+			ps = append(ps, p)
+		}
+	}
+	if len(ps) == 0 {
+		return
+	}
+	application.InvokeSync(func() {
+		for _, p := range ps {
+			C.setSectionHeader(p)
+		}
+	})
 }
 
 // decorate draws the badges and icons Wails menus can't. On the main thread, which is also where

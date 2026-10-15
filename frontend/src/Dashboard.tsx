@@ -10,7 +10,7 @@ function method(c: Conn) {
   if (c.network === "udp") return c.port === "443" ? "QUIC" : "UDP";
   return c.port === "443" ? "HTTPS" : c.port === "80" ? "HTTP" : "TCP";
 }
-const client = (c: Conn) => c.process || c.source;
+const client = (c: Conn) => (c.inbound === "Inner" ? "Connaio" : c.process || c.source || "未知"); // as the activity page names them
 
 function Detail({ c, onRule, onClose }: { c: Conn; onRule: () => void; onClose: () => void }) {
   const rows: [string, string][] = [
@@ -56,7 +56,7 @@ export default function Dashboard({ status }: { status: Status }) {
   const groups = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of conns) m.set(keyOf(c), (m.get(keyOf(c)) ?? 0) + 1);
-    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: "base" }));
   }, [conns, groupBy]);
   const q = query.toLowerCase();
   const shown = useMemo(() => conns.filter((c) => (!selected || keyOf(c) === selected) && (!q || `${client(c)} ${c.host} ${c.rule} ${c.chain}`.toLowerCase().includes(q))), [conns, groupBy, selected, q]);
@@ -107,7 +107,7 @@ export default function Dashboard({ status }: { status: Status }) {
           </div>
           <div className="dash-table">
             <table className="table">
-              <colgroup><col style={{ width: "13%" }} /><col /><col style={{ width: "19%" }} /><col style={{ width: 74 }} /><col style={{ width: 74 }} /><col style={{ width: 52 }} /></colgroup>
+              <colgroup><col /><col /><col style={{ width: 88 }} /><col style={{ width: 74 }} /><col style={{ width: 74 }} /><col style={{ width: 52 }} /></colgroup>
               <thead><tr><th>客户端</th><th className="addr">地址</th><th>策略</th><th className="num">上传</th><th className="num">下载</th><th className="num">时长</th></tr></thead>
               <tbody>
                 {shown.slice(0, MAX_ROWS).map((c) => (

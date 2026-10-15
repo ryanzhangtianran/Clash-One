@@ -102,7 +102,6 @@ func oneShotClient(port int, timeout time.Duration) *http.Client {
 }
 
 func (s *SystemProxyService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
-	s.enabled = s.settings.Get().SystemProxy // applied by the guard once the core answers
 	go func() {
 		t := time.NewTicker(15 * time.Second)
 		defer t.Stop()

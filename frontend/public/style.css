@@ -99,7 +99,7 @@ button { font: inherit; color: inherit; }
 .topbar .events { margin-right: auto; position: relative; --wails-draggable: no-drag; }
 .pill.small { min-width: 0; color: var(--text-2); }
 .pill .dot { width: 6px; height: 6px; }
-.page { flex: 1; overflow: auto; padding: 6px var(--gap) var(--gap); }
+.page { flex: 1; overflow: auto; padding: 6px 20px var(--gap); } /* a wider margin beside the sidebar than between cards */
 .hint { margin-top: 10px; max-width: 640px; font-size: 12px; line-height: 1.5; color: var(--text-2); text-wrap: pretty; }
 .hint b { color: var(--text); font-weight: 600; }
 
@@ -276,12 +276,12 @@ tr.muted td { color: var(--text-2); text-decoration: line-through; }
 .dash-actions .btn:hover:not(:disabled) { background: var(--hover); color: var(--text); }
 .menu.drop { top: calc(100% + 4px); left: auto; right: 0; }
 .dash-body { flex: 1; min-height: 0; display: flex; overflow: hidden; background: var(--card); border-radius: 12px; border: 1px solid var(--card-line); }
-.dash-side { width: 172px; flex: none; overflow: auto; display: flex; flex-direction: column; gap: 2px; padding: 10px; border-right: 1px solid var(--line); }
+.dash-side { width: max-content; min-width: 200px; /* as wide as the longest name: no ellipsis, no wrap */ flex: none; overflow: auto; display: flex; flex-direction: column; gap: 2px; padding: 10px; border-right: 1px solid var(--line); }
 .dash-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .dash-item { display: flex; justify-content: space-between; gap: 8px; padding: 5px 8px; border: 0; border-radius: 6px; background: none; text-align: left; font-size: 12px; }
 .dash-item:hover { background: var(--hover); }
 .dash-item.active { background: var(--active); font-weight: 600; }
-.dash-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-item .name { white-space: nowrap; }
 .dash-table { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
 .dash-empty { flex: 1; display: grid; place-items: center; }
 .dash-table .table th { position: sticky; top: 0; background: var(--card); }
@@ -289,7 +289,7 @@ tr.muted td { color: var(--text-2); text-decoration: line-through; }
 .dash-table .table :is(th, td):first-child { padding-left: 14px; }
 .dash-table .table :is(th, td):last-child { padding-right: 14px; }
 .dash-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-.dash-table .table { table-layout: fixed; } /* column widths from the colgroup; 地址 takes the rest */
+.dash-table .table { table-layout: auto; } /* columns fit their content, the slack spread over 客户端 and 地址; too wide scrolls sideways */
 .dash-table .table td { max-width: none; }
 .dash-table .addr .method { margin-right: 8px; }
 .dash-table tr:hover td { background: var(--hover); }
@@ -325,6 +325,15 @@ tr.muted td { color: var(--text-2); text-decoration: line-through; }
 .plist-row + .plist-row, .plist-add, .plist-tools { border-top: 1px solid var(--line); }
 .plist-row:not(.static):hover { background: var(--hover); }
 .plist-row.selected { background: var(--active); }
+/* the tree: every row keeps a column for the disclosure triangle, so titles line up with or without one */
+.tree .plist-main { position: relative; padding-left: 18px; }
+.tree .plist-row.sub { margin-left: 34px; padding-left: 0; padding-block: 8px; } /* under the parent's title, dividers inset with it */
+.tree .plist-row.sub .plist-main { padding-left: 12px; } /* a step in from the parent's title */
+.plist-group > summary { list-style: none; cursor: pointer; } /* a native disclosure: the row is the summary, the nested rows follow */
+.plist-group > summary::-webkit-details-marker { display: none; }
+.plist-group + *, .plist-row + .plist-group { border-top: 1px solid var(--line); }
+.plist-group > summary .plist-main::before { content: ""; position: absolute; left: 2px; top: 6px; border: 4px solid transparent; border-left: 5px solid var(--text-2); transition: transform 0.15s; }
+.plist-group[open] > summary .plist-main::before { transform: rotate(90deg); }
 .plist-check { width: 14px; flex: none; color: var(--accent); font-weight: 700; }
 .plist-main { flex: 1; min-width: 0; }
 .plist-main > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -443,5 +452,3 @@ tr.muted td.rule-actions { text-decoration: none; }
 /* a table under form rows: its cells' padding would indent it past the inputs */
 .table-wrap.tight { margin-left: -8px; margin-right: -8px; }
 .card .label.section-label { margin: 18px 0 -8px; } /* a section inside a card: the row below keeps its own top margin */
-.table.guide td { white-space: normal; max-width: none; line-height: 1.5; vertical-align: top; }
-.table.guide td:first-child { white-space: nowrap; color: var(--text); font-weight: 500; }

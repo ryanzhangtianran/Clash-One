@@ -3,6 +3,7 @@ package app
 import (
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -43,3 +44,26 @@ func (s *SettingsService) PickApp() (ProcessChoice, error) {
 // AppIcon is empty on Windows: the window shows the client's glyph instead.
 // ponytail: no icon extraction; add ExtractIconEx through x/sys/windows if the list looks bare.
 func (s *SettingsService) AppIcon(string) string { return "" }
+
+// procTable reads the process table: the windowed processes are the apps, as runningApps lists
+// them; one script, so the table is read once.
+func procTable() map[int]proc {
+	out, _ := powershell(`$w = @{}; Get-Process | Where-Object MainWindowTitle | ForEach-Object { $w[($_.ProcessName + '.exe').ToLower()] = 1 }; ` +
+		`Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $(if ($w[$_.Name.ToLower()]) {1} else {0}) $($_.Name)" }`)
+	return windowsProcs(out)
+}
+
+// windowsProcs reads "pid ppid isapp name" lines.
+func windowsProcs(out string) map[int]proc {
+	procs := map[int]proc{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 4 {
+			continue
+		}
+		pid, _ := strconv.Atoi(f[0])
+		ppid, _ := strconv.Atoi(f[1])
+		procs[pid] = proc{ppid: ppid, comm: strings.Join(f[3:], " "), app: f[2] == "1"}
+	}
+	return procs
+}

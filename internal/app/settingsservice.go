@@ -87,9 +87,10 @@ func (s *SettingsService) SetLaunchAtLogin(on bool) error {
 
 // ProcessChoice is something the enhanced-mode scope can name: an app or a networked process.
 type ProcessChoice struct {
-	Name   string `json:"name"`   // shown to the user, e.g. "Lark"
-	Exec   string `json:"exec"`   // executable name the PROCESS-ANCESTOR match uses, e.g. "Feishu"
-	Source string `json:"source"` // "app": running app, "network": has live connections
+	Name   string `json:"name"`             // shown to the user, e.g. "Lark"
+	Exec   string `json:"exec"`             // executable name the PROCESS-ANCESTOR match uses, e.g. "Feishu"
+	Source string `json:"source"`           // "app": running app, "network": has live connections
+	Parent string `json:"parent,omitempty"` // the app it runs under, whose capture covers it (network only)
 }
 
 // ProcessChoices lists running apps and processes with live connections, apps first.
@@ -102,12 +103,20 @@ func (s *SettingsService) ProcessChoices() []ProcessChoice {
 	if conns, err := s.core.connections(true); err == nil { // processes outside the scope are the ones to add
 		var network []ProcessChoice
 		for _, c := range conns {
+			if systemDaemon(c.Path) {
+				continue
+			}
 			if c.Process != "" && !seen[strings.ToLower(c.Process)] {
 				seen[strings.ToLower(c.Process)] = true
 				network = append(network, ProcessChoice{Name: c.Process, Exec: c.Process, Source: "network"})
 			}
 		}
 		slices.SortFunc(network, func(a, b ProcessChoice) int { return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)) })
+		for i, c := range network {
+			if p := parentOf(c.Exec); p != "" {
+				network[i].Parent = filepath.Base(p)
+			}
+		}
 		choices = append(choices, network...)
 	}
 	return choices

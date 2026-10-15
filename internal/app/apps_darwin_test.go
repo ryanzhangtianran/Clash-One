@@ -27,9 +27,35 @@ func TestParseApps(t *testing.T) {
 /Applications/Surge.app/Contents/Applications/Surge Dashboard.app/Contents/MacOS/Surge Dashboard
 /Applications/Ghostty.app/Contents/MacOS/ghostty
 /usr/sbin/mDNSResponder
+/System/Library/CoreServices/Dock.app/Contents/MacOS/Dock
+/Library/Apple/System/Library/CoreServices/MRT.app/Contents/MacOS/MRT
 `)
 	if len(apps) != 2 || apps[0].Name != "Ghostty" || apps[0].Exec != "ghostty" || apps[1].Name != "Lark" || apps[1].Exec != "Feishu" {
 		t.Fatalf("apps %+v", apps)
+	}
+}
+
+func TestDarwinProcs(t *testing.T) {
+	ps := `  100     1 /Applications/Ghostty.app/Contents/MacOS/ghostty
+  101   100 /usr/bin/login
+  102   101 -/bin/zsh
+  103   102 /Users/me/.local/bin/claude
+  200     1 /usr/sbin/mDNSResponder
+  300     1 /System/Library/CoreServices/Dock.app/Contents/MacOS/Dock
+  301   300 /usr/bin/ssh
+`
+	table := darwinProcs(ps)
+	if p, _ := parentIn(table, "claude"); p != "/Applications/Ghostty.app/Contents/MacOS/ghostty" {
+		t.Fatalf("claude's parent %q", p)
+	}
+	if p, found := parentIn(table, "mDNSResponder"); p != "" || !found {
+		t.Fatalf("mDNSResponder's parent %q, found %v", p, found)
+	}
+	if p, _ := parentIn(table, "ssh"); p != "" { // under Dock, which nobody routes
+		t.Fatalf("ssh's parent %q", p)
+	}
+	if _, found := parentIn(table, "curl"); found {
+		t.Fatal("curl isn't running")
 	}
 }
 

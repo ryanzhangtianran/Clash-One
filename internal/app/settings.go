@@ -13,6 +13,9 @@ import (
 type Settings struct {
 	SystemProxy bool `json:"systemProxy"`
 	Enhanced    bool `json:"enhanced"`
+	// Partial remembers that partial enhancement was on when enhanced mode went on over it, so
+	// turning enhanced mode off returns to it rather than to nothing.
+	Partial bool `json:"partial,omitempty"`
 	// HideTraySpeed hides the upload/download speed next to the menu bar icon.
 	HideTraySpeed bool `json:"hideTraySpeed"`
 	// VPNs are the VPN page's entries by name, kept while disconnected so 连接 needs no retyping.

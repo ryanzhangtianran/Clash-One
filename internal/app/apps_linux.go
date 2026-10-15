@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -181,4 +182,43 @@ func iconURL(icon string) string {
 		return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(b)
 	}
 	return ""
+}
+
+// procTable reads the process table from /proc.
+func procTable() map[int]proc {
+	apps := map[string]bool{}
+	for _, a := range desktopApps() {
+		apps[a.exec] = true
+	}
+	procs := map[int]proc{}
+	dirs, _ := filepath.Glob("/proc/[0-9]*")
+	for _, d := range dirs {
+		stat, err := os.ReadFile(d + "/stat")
+		if err != nil {
+			continue
+		}
+		exe, _ := os.Readlink(d + "/exe") // another user's: unreadable, the stat comm (15 chars) stands in
+		pid, _ := strconv.Atoi(filepath.Base(d))
+		p := linuxProc(string(stat), strings.TrimSuffix(exe, " (deleted)"))
+		p.app = apps[filepath.Base(p.comm)]
+		procs[pid] = p
+	}
+	return procs
+}
+
+// linuxProc reads a /proc/<pid>/stat line, "pid (comm) S ppid …", comm holding any character.
+func linuxProc(stat, exe string) proc {
+	i := strings.LastIndex(stat, ")")
+	if i < 0 {
+		return proc{}
+	}
+	f := strings.Fields(stat[i+1:])
+	p := proc{comm: exe}
+	if len(f) > 1 {
+		p.ppid, _ = strconv.Atoi(f[1])
+	}
+	if p.comm == "" {
+		p.comm = stat[strings.Index(stat, "(")+1 : i]
+	}
+	return p
 }
