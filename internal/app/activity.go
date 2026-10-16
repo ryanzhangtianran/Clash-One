@@ -222,8 +222,8 @@ type Split struct {
 
 // clientOf names a connection's client, an app folded into its bundle, the LAN device's address,
 // or Connaio for the core's own connections (rule sets, health checks), with the file whose
-// Finder icon stands for it: a command keeps its name but wears the icon of the app it was
-// started from (Ghostty for claude); the system's own daemons (trustd's certificate checks,
+// Finder icon stands for it: a command counts towards the app it was started from (claude run
+// in Ghostty is Ghostty), as on Linux; the system's own daemons (trustd's certificate checks,
 // nsurlsessiond's background downloads for other apps) fold into macOS; none for a device.
 func clientOf(c Conn) (name, icon string) {
 	if c.Inbound == "Inner" {
@@ -246,8 +246,12 @@ func clientOf(c Conn) (name, icon string) {
 	} else if app := appName(c.Path); app != "" {
 		name = app // Linux: the installed application the executable belongs to (chrome is Google Chrome)
 	} else if p := parentOf(name); p != "" {
-		icon = cmp.Or(bundleOf(p), p)
-		name = cmp.Or(appName(p), name) // Linux: a command counts towards the application it was started from
+		b := bundleOf(p)
+		icon = cmp.Or(b, p)
+		if b != "" {
+			name = strings.TrimSuffix(filepath.Base(b), ".app")
+		}
+		name = cmp.Or(appName(p), name) // a command counts towards the application it was started from
 	}
 	return cmp.Or(name, c.Source, "-"), icon
 }
