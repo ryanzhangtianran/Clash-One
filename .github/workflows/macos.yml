@@ -1,0 +1,61 @@
+# Builds the macOS (12+, Apple silicon) .dmg on macos-latest: Connaio.app with connaio-core inside,
+# ad-hoc signed, attached to the release of a pushed tag.
+name: macos
+
+on:
+  push:
+    branches: [main, macos]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write # attach the .dmg to a tag's release
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: Connaio
+          fetch-depth: 0 # the latest tag is the package version
+      - uses: actions/checkout@v4
+        with:
+          repository: ryanzhangtianran/connaio-core
+          ref: reverse-tunnels
+          path: connaio-core
+          fetch-depth: 0 # its latest tag is the mihomo version it reports
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: Connaio/go.mod
+          cache-dependency-path: |
+            Connaio/go.sum
+            connaio-core/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install wails3
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build the .dmg
+        working-directory: Connaio
+        run: |
+          wails3 task darwin:package:dmg
+          version=$(git describe --tags --abbrev=0 | sed 's/^v//')
+          mv bin/connaio.dmg "bin/Connaio-$version-macos-arm64.dmg"
+
+      - name: Test against the built core
+        working-directory: Connaio
+        run: CONNAIO_CORE=$PWD/bin/connaio-core go test ./...
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg
+          path: Connaio/bin/Connaio-*-macos-arm64.dmg
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" Connaio/bin/Connaio-*-macos-arm64.dmg --clobber -R "$GITHUB_REPOSITORY"
