@@ -9,6 +9,12 @@
 基于 <a href="https://github.com/MetaCubeX/mihomo">mihomo</a> 的代理客户端，规则分流、VPN 与反向隧道，界面基于 <a href="https://github.com/wailsapp/wails">Wails 3</a>。
 </h3>
 
+## Preview
+
+| Dark                             | Light                             |
+| -------------------------------- | --------------------------------- |
+| ![预览](./docs/preview_dark.png) | ![预览](./docs/preview_light.png) |
+
 ## Install
 
 请到发布页面下载对应的安装包：[Release page](https://github.com/ryanzhangtianran/Connaio/releases)
@@ -65,6 +71,8 @@ wails3 task darwin:package:dmg     # macOS：bin/Connaio.app 和 DMG；钥匙串
 wails3 task linux:package          # Linux（Ubuntu 22.04）：bin/connaio.deb
 wails3 task windows:package        # Windows：bin/Connaio-<版本>-windows-amd64.exe，需要 makensis；不依赖 cgo，在 macOS 上也能交叉编译
 ```
+
+`build/preview/render.sh` 用演示数据在无界面 Chrome 中渲染活动页，更新上面的预览图（先构建前端）。
 
 推送 `v*` 标签时，GitHub Actions 在三个平台上构建并把安装包附到对应的 Release。
 
