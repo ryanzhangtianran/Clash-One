@@ -39,6 +39,24 @@ jobs:
           go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.28
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      - name: Import the signing certificate
+        # an Apple Development identity (.p12, base64) signs the app and its core under one team, so
+        # 登录项与扩展 shows the daemon as Connaio; without the secret the build is signed ad-hoc
+        env:
+          P12: ${{ secrets.MACOS_CERT_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        if: env.P12 != ''
+        run: |
+          kc="$RUNNER_TEMP/signing.keychain-db" pass=$(uuidgen)
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$pass" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$pass" "$kc"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$pass" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+
       - name: Build the .dmg
         working-directory: Connaio
         run: |

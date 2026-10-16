@@ -9,12 +9,13 @@ import (
 )
 
 const (
-	Label   = "com.ryanzhangtianran.connaio.core"
-	Helper  = "/Library/PrivilegedHelperTools/" + Label
-	Plist   = "/Library/LaunchDaemons/" + Label + ".plist"
-	Dir     = "/Library/Application Support/Connaio Core"
-	Socket  = Dir + "/core.sock"
-	LogPath = Dir + "/core.log" // launchd writes the daemon's output here
+	Label     = "com.ryanzhangtianran.connaio.core"
+	Helper    = "/Library/PrivilegedHelperTools/Connaio Core" // named for 登录项与扩展, which lists an unsigned daemon by its executable
+	oldHelper = "/Library/PrivilegedHelperTools/" + Label     // 0.1.2 and before: removed on install
+	Plist     = "/Library/LaunchDaemons/" + Label + ".plist"
+	Dir       = "/Library/Application Support/Connaio Core"
+	Socket    = Dir + "/core.sock"
+	LogPath   = Dir + "/core.log" // launchd writes the daemon's output here
 )
 
 // Installed reports whether the LaunchDaemon is set up.
@@ -60,6 +61,7 @@ func installScript(core, coreSum, stage, plistSum string) string {
 		"launchctl bootout system/" + Label + " 2>/dev/null || true",
 		"mkdir -p /Library/PrivilegedHelperTools " + q(Dir),
 		"chmod 755 " + q(Dir),
+		"rm -f " + q(oldHelper),
 		"install -o root -g wheel -m 755 " + q(core) + " " + q(Helper),
 		verify(coreSum, Helper),
 		"install -o root -g wheel -m 644 " + q(filepath.Join(stage, "daemon.plist")) + " " + q(Plist),
@@ -72,7 +74,7 @@ func installScript(core, coreSum, stage, plistSum string) string {
 func uninstallScript() string {
 	return strings.Join([]string{
 		"launchctl bootout system/" + Label + " 2>/dev/null || true",
-		"rm -f " + shellQuote(Plist) + " " + shellQuote(Helper),
+		"rm -f " + shellQuote(Plist) + " " + shellQuote(Helper) + " " + shellQuote(oldHelper),
 	}, "\n")
 }
 
@@ -103,12 +105,13 @@ func Install(core string) error {
 }
 
 // Stale reports whether the installed daemon differs from what this app would install: another
-// core binary (an app update) or another plist; Install again to replace it.
+// core binary (an app update), none where this app puts it (one installed under the old name), or
+// another plist; Install again to replace it.
 func Stale(bin string) bool {
 	installed, err1 := fileSum(Helper)
 	bundled, err2 := fileSum(bin)
 	plistNow, err3 := fileSum(Plist)
-	return err1 == nil && err2 == nil && err3 == nil && (installed != bundled || plistNow != sum([]byte(plist(os.Getuid()))))
+	return err2 == nil && err3 == nil && (err1 != nil || installed != bundled || plistNow != sum([]byte(plist(os.Getuid()))))
 }
 
 // Uninstall stops and removes the LaunchDaemon; its data dir is kept.

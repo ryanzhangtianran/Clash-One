@@ -194,12 +194,16 @@ tasks:
       VERSION:
         sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 0.0.0
   codesign:adhoc:
-    summary: Ad-hoc signs the app bundle (macOS only)
+    summary: Signs the app bundle with the keychain's Apple Development identity, else ad-hoc (macOS only)
     internal: true
     cmds:
       - xattr -cr "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app"
-      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app"
+      # the app and its core under one team: 登录项与扩展 then lists the daemon as Connaio, with its icon
+      - codesign --force --deep --sign "{{.SIGN_IDENTITY}}" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app"
       - codesign --verify --deep --strict "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app"
+    vars:
+      SIGN_IDENTITY:
+        sh: security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ {print $2; exit}' | grep . || echo -
 
   codesign:skip:
     summary: Skips codesigning when cross-compiling
