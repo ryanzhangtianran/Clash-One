@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { CoreService, ProfileService, SettingsService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Activity as ActivityData, Conn, DiagSection, IPInfo, Latency, RepairItem, Status, Usage } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
-import { client } from "./Dashboard";
 import { nodesOf } from "./Proxies";
 import { platform, size, sizeText, speed } from "./format";
 import { DiagLog } from "./ProxyDiagnose";
@@ -277,15 +276,14 @@ function ProcessWatch() {
   const [proc, setProc] = useState(watched);
   usePoll(() => CoreService.Connections().then((c) => setConns(c ?? [])), 2000);
   const choose = (p: string) => { watched = p; setProc(p); };
-  const app = (c: Conn) => c.app || client(c); // helpers fold into their application, as in the applications card
   const counts = new Map<string, number>();
-  for (const c of conns) counts.set(app(c), (counts.get(app(c)) ?? 0) + 1);
+  for (const c of conns) counts.set(c.app, (counts.get(c.app) ?? 0) + 1) // by application, as in the applications card;
   const busiest = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
   const shown = proc || busiest; // until one is chosen, the one with the most connections, then kept
   useEffect(() => { if (!proc && busiest) choose(busiest); }, [proc, busiest]);
   const procs = [...new Set([...counts.keys(), ...(shown ? [shown] : [])])].sort((a, b) => a.localeCompare(b));
   const routes = new Map<string, Conn[]>();
-  for (const c of conns) if (app(c) === shown) routes.set(c.chain || "DIRECT", [...(routes.get(c.chain || "DIRECT") ?? []), c]);
+  for (const c of conns) if (c.app === shown) routes.set(c.chain || "DIRECT", [...(routes.get(c.chain || "DIRECT") ?? []), c]);
   return (
     <div className="card">
       <div className="head">
