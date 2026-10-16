@@ -421,10 +421,11 @@ tr.muted td.rule-actions { text-decoration: none; }
 .rules-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .rules-card .table-wrap { flex: 1; min-height: 0; }
 .rules-card .table th { position: sticky; top: 0; z-index: 1; background: var(--card); }
-/* profiles: the override editor takes the height the other groups leave */
-.profiles-page { display: flex; flex-direction: column; min-height: calc(100vh - var(--chrome)); }
-.profiles-page .override-card { flex: 1; min-height: 200px; display: flex; flex-direction: column; }
-.profiles-page .override-card textarea.override { flex: 1; resize: none; }
+/* profiles: one window high; the override editor takes the height the other groups leave and scrolls inside */
+.profiles-page { display: flex; flex-direction: column; height: calc(100vh - var(--chrome)); }
+.profiles-page .plist-rows { max-height: 40vh; overflow: auto; } /* a long profile list scrolls in place instead of squeezing the override */
+.profiles-page .override-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.profiles-page .override-card textarea.override { flex: 1; min-height: 0; resize: none; overflow: auto; }
 /* proxy diagnostics: a compact utility window, white log under a toolbar */
 .sheet.diag-sheet { width: min(560px, calc(100vw - 60px)); }
 .diag-sheet .sheet-head { padding: 12px 16px 10px; }
@@ -466,6 +467,7 @@ tr.muted td.rule-actions { text-decoration: none; }
 .tool-log .diag-section + .diag-section { margin-top: 10px; }
 .tools-card .setting-row { gap: 8px; padding: 8px 0; font-size: 12px; }
 .ip-big { margin-top: 6px; font: 400 22px/1.2 var(--rounded); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ip-big.muted { font-size: 14px; line-height: 26.4px; } /* 查询中… and — are no address: the 22px line's height, not its size */
 .exit-stats { grid-template-columns: auto minmax(0, 1fr); } /* the place is short; the ISP takes the rest */
 .exit-stats > div { padding: 0 12px; }
 .exit-stats > div:first-child { padding-left: 0; }

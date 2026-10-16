@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -238,11 +239,15 @@ func TestLedgerClear(t *testing.T) {
 }
 
 func TestClientOfSystemService(t *testing.T) {
-	if n, i := clientOf(Conn{Process: "NetworkManager", Path: "/usr/sbin/NetworkManager", System: true}); n != "System" || i != "system" {
+	name, icon := "System", "system"
+	if runtime.GOOS == "darwin" {
+		name, icon = "macOS", "/System/Applications/System Settings.app"
+	}
+	if n, i := clientOf(Conn{Process: "NetworkManager", Path: "/usr/sbin/NetworkManager", System: true}); n != name || i != icon {
 		t.Fatalf("system service: %q %q", n, i)
 	}
 	for _, src := range []string{"127.0.0.1", "198.18.0.1"} { // this machine, process unknown: not a device
-		if n, _ := clientOf(Conn{Source: src}); n != "System" {
+		if n, _ := clientOf(Conn{Source: src}); n != name {
 			t.Errorf("unnamed connection from %s: %q", src, n)
 		}
 	}

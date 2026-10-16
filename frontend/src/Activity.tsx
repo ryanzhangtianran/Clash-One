@@ -217,7 +217,7 @@ const exitIPs: Record<string, Promise<IPInfo>> = {};
 const exitIP = (policy: string) => (exitIPs[policy] ??= ToolService.ExitIP(policy).catch((e) => { delete exitIPs[policy]; throw e; }));
 
 // ExitIP shows where traffic through a chosen node comes out: the address, then where it is and
-// whose network, laid out like the cards beside it. Nodes only: a group's exit is its node's.
+// whose network, laid out like the cards beside it. Nodes and DIRECT only: a group's exit is its node's.
 function ExitIP() {
   const [names, setNames] = useState<string[]>([]);
   const [policy, setPolicy] = useState("");
@@ -227,8 +227,8 @@ function ExitIP() {
   useEffect(() => {
     CoreService.Groups().then((g) => {
       const nodes = nodesOf(g ?? []).map((n) => n.name);
-      setNames(nodes);
-      setPolicy((p) => p || nodes[0] || "");
+      setNames(["DIRECT", ...nodes]); // DIRECT: this network's own address, to compare against
+      setPolicy((p) => p || nodes[0] || "DIRECT"); // a node first: DIRECT when the profile has none
     });
   }, []);
   const check = (fresh: boolean) => {
@@ -270,21 +270,22 @@ function ExitCell({ policy }: { policy: string }) {
 
 let watched = ""; // the process the monitor shows, kept across page switches
 
-// ProcessWatch follows one process's live connections: each route it takes (the rule's policy down
+// ProcessWatch follows one application's live connections: each route it takes (the rule's policy down
 // to the node), the address that route comes out at, and the hosts on it.
 function ProcessWatch() {
   const [conns, setConns] = useState<Conn[]>([]);
   const [proc, setProc] = useState(watched);
   usePoll(() => CoreService.Connections().then((c) => setConns(c ?? [])), 2000);
   const choose = (p: string) => { watched = p; setProc(p); };
+  const app = (c: Conn) => c.app || client(c); // helpers fold into their application, as in the applications card
   const counts = new Map<string, number>();
-  for (const c of conns) counts.set(client(c), (counts.get(client(c)) ?? 0) + 1);
+  for (const c of conns) counts.set(app(c), (counts.get(app(c)) ?? 0) + 1);
   const busiest = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
   const shown = proc || busiest; // until one is chosen, the one with the most connections, then kept
   useEffect(() => { if (!proc && busiest) choose(busiest); }, [proc, busiest]);
   const procs = [...new Set([...counts.keys(), ...(shown ? [shown] : [])])].sort((a, b) => a.localeCompare(b));
   const routes = new Map<string, Conn[]>();
-  for (const c of conns) if (client(c) === shown) routes.set(c.chain || "DIRECT", [...(routes.get(c.chain || "DIRECT") ?? []), c]);
+  for (const c of conns) if (app(c) === shown) routes.set(c.chain || "DIRECT", [...(routes.get(c.chain || "DIRECT") ?? []), c]);
   return (
     <div className="card">
       <div className="head">

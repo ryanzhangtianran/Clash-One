@@ -83,6 +83,7 @@ export default function Profiles() {
 
       <div className="group-title">配置列表</div>
       <div className="plist">
+        <div className="plist-rows">
         {list.length === 0 && !adding && <div className="plist-empty muted">还没有配置，从 URL 添加订阅或导入文件。</div>}
         {list.map((p) => {
           const used = p.usage ? p.usage.upload + p.usage.download : 0;
@@ -106,6 +107,7 @@ export default function Profiles() {
             </div>
           );
         })}
+        </div>
         {adding && (
           <div className="plist-add">
             <input placeholder="名称（可选）" value={name} onChange={(e) => setName(e.target.value)} style={{ width: 130 }} />
