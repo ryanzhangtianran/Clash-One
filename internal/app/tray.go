@@ -541,7 +541,7 @@ func (t *trayMenu) build(groups []Group, list Profiles, vpns map[string]string) 
 	}
 
 	header("接管")
-	t.proxyItem = t.addSwitch(m, "设置为系统代理", t.proxy).SetAccelerator("CmdOrCtrl+S").OnClick(func(*application.Context) {
+	t.proxyItem = t.addSwitch(m, "系统代理", t.proxy).SetAccelerator("CmdOrCtrl+S").OnClick(func(*application.Context) {
 		if err := t.sysProxy.SetEnabled(!t.sysProxy.Enabled()); err != nil {
 			notify("error", "设置系统代理失败：%v", err)
 			t.sysProxy.onChange(t.sysProxy.Enabled()) // put the checkbox back
@@ -555,14 +555,6 @@ func (t *trayMenu) build(groups []Group, list Profiles, vpns map[string]string) 
 	})
 	t.enhancedItem = t.addSwitch(m, "增强模式", false).SetAccelerator("CmdOrCtrl+E").OnClick(func(*application.Context) { go t.toggleEnhanced(true) })
 	t.checkEnhanced()
-	m.Add("复制终端代理命令").SetAccelerator("CmdOrCtrl+C").OnClick(func(*application.Context) {
-		port, err := mixedPort(t.sysProxy.core)
-		if err != nil {
-			notify("error", "复制终端代理命令失败：%v", err)
-			return
-		}
-		t.app.Clipboard.SetText(fmt.Sprintf("export https_proxy=http://127.0.0.1:%[1]d http_proxy=http://127.0.0.1:%[1]d all_proxy=socks5://127.0.0.1:%[1]d", port))
-	})
 
 	t.profileItems = map[string]*application.MenuItem{}
 	if len(list.Profiles) > 0 {

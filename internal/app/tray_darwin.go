@@ -86,7 +86,7 @@ static const CGFloat kInset = 5;      // the highlight's inset from the menu edg
 static const CGFloat kTitleX = 16;    // where native titles start in this menu with no state column
 static const CGFloat kStateW = 14;    // the state column AppKit adds once any item is checked (measured)
 static const CGFloat kArrowW = 24;    // room for the submenu arrow at the right
-static const CGFloat kMinW = 280;     // the menu no narrower than this: room for the details
+static const CGFloat kMinW = 240;     // the menu no narrower than this: room for the details
 static const CGFloat kItemH = 22;
 static const CGFloat kHeaderH = 32;   // a section title, with its breathing room above
 static const CGFloat kDotW = 13;      // a state dot and its gap before the text
@@ -122,7 +122,7 @@ static NSFont *pillFont(void) { return [NSFont monospacedDigitSystemFontOfSize:1
 }
 - (CGFloat)fittingWidth {
 	CGFloat x = self.titleX + (self.icon ? 22 : 0);
-	return x + ceil([self.label sizeWithAttributes:@{NSFontAttributeName: menuFont()}].width) + 24 + self.detailWidth + kArrowW + kInset;
+	return x + ceil([self.label sizeWithAttributes:@{NSFontAttributeName: menuFont()}].width) + 24 + self.detailWidth + (self.enclosingMenuItem.hasSubmenu ? kArrowW : 10) + kInset; // as drawRect lays it out
 }
 
 - (void)drawRect:(NSRect)dirty {
