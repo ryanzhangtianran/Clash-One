@@ -258,6 +258,13 @@ func TestClientOfSystemService(t *testing.T) {
 	if n, _ := clientOf(Conn{Process: cmd, Path: "/opt/homebrew/bin/" + cmd}); n != name {
 		t.Errorf("a bare command: %q, want %q", n, name)
 	}
+	ghostty := "/Applications/Ghostty.app/Contents/MacOS/ghostty"
+	if n, i := clientOf(Conn{Process: cmd, Path: "/opt/homebrew/bin/" + cmd, Ancestors: []string{"/bin/zsh", ghostty}}); n != "Ghostty" || i != "/Applications/Ghostty.app" {
+		t.Errorf("a command exited before it was looked up, its ancestors read by the core: %q %q", n, i)
+	}
+	if n, _ := clientOf(Conn{Process: cmd, Path: "/opt/homebrew/bin/" + cmd, Ancestors: []string{"/usr/sbin/cron"}}); n != name {
+		t.Errorf("a command with no app among its ancestors: %q, want %q", n, name)
+	}
 	if n, _ := clientOf(Conn{Source: "192.0.2.9"}); n != "192.0.2.9" {
 		t.Errorf("a LAN device keeps its address: %q", n)
 	}

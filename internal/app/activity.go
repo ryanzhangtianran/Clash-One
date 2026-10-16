@@ -245,7 +245,7 @@ func clientOf(c Conn) (name, icon string) {
 		icon, name = b, strings.TrimSuffix(filepath.Base(b), ".app")
 	} else if app := appName(c.Path); app != "" {
 		name = app // Linux: the installed application the executable belongs to (chrome is Google Chrome)
-	} else if p := parentOf(name); p != "" {
+	} else if p := parentApp(c); p != "" {
 		b := bundleOf(p)
 		icon = cmp.Or(b, p)
 		if b != "" {
@@ -258,6 +258,21 @@ func clientOf(c Conn) (name, icon string) {
 		return "macOS", "/System/Applications/System Settings.app"
 	}
 	return cmp.Or(name, c.Source, "-"), icon
+}
+
+// parentApp is the application c's process was started from: the nearest of the ancestors the core
+// read when the connection opened that is one, or else, from a core that reports none, one looked
+// up by name now, which misses a command that has already exited.
+func parentApp(c Conn) string {
+	for _, a := range c.Ancestors {
+		if bundleOf(a) != "" && !systemDaemon(a) || appName(a) != "" {
+			return a
+		}
+	}
+	if len(c.Ancestors) > 0 {
+		return ""
+	}
+	return parentOf(c.Process)
 }
 
 // ownExe is this app's executable: its own connections are Connaio's, as the core's are.
