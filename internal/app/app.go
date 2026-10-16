@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/ryanzhangtianran/Connaio/internal/core"
 	"github.com/ryanzhangtianran/Connaio/internal/profile"
@@ -64,11 +65,12 @@ func Run(assets fs.FS, trayIcon []byte) error {
 
 	window = app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:          "Connaio",
-		Width:          1070,
-		Height:         700,
-		MinWidth:       1070, // the activity and dashboard layouts fit completely from here: every connections column shows whole
-		MinHeight:      700,
+		Width:          1440,
+		Height:         890,
+		MinWidth:       1440, // the activity page's four columns of cards show whole without scrolling from here, and every connections column too
+		MinHeight:      890,
 		BackgroundType: application.BackgroundTypeTranslucent,
+		Frameless:      runtime.GOOS == "linux", // the topbar draws the window buttons (App.tsx WindowButtons)
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 52,
 			Backdrop:                application.MacBackdropTranslucent,

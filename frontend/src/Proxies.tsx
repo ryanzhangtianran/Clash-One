@@ -13,6 +13,17 @@ const modes = [
 ];
 const builtin = new Set(["Direct", "Reject", "RejectDrop", "Compatible", "Pass", "Dns"]);
 let lastTested = 0; // when the page last probed every node on open; not again within 5 minutes
+
+// nodesOf is every non-group member across groups, built-ins (DIRECT, REJECT…) left out.
+export function nodesOf(groups: Group[]): Proxy[] {
+  const groupNames = new Set(groups.map((g) => g.name));
+  const nodes: Proxy[] = [];
+  const seen = new Set<string>();
+  for (const g of groups) for (const p of g.all ?? []) {
+    if (!groupNames.has(p.name) && !builtin.has(p.type) && !seen.has(p.name)) { seen.add(p.name); nodes.push(p); }
+  }
+  return nodes;
+}
 const groupTypes: Record<string, string> = { Selector: "手动选择", URLTest: "自动测速", Fallback: "故障转移", LoadBalance: "负载均衡", Relay: "链式", Subnet: "Subnet 策略组" };
 
 function delayClass(ms: number) {
@@ -42,24 +53,24 @@ export default function Proxies({ status }: { status: Status }) {
 
   useEffect(() => {
     if (!status.running) return;
-    load();
-    if (Date.now() - lastTested > 5 * 60_000) { // latencies on open, as Surge shows them
-      lastTested = Date.now();
-      CoreService.TestGroup("GLOBAL").finally(load);
-    }
+    CoreService.Groups().then((g) => {
+      setGroups(g ?? []);
+      if (Date.now() - lastTested > 5 * 60_000) { // latencies on open, as Surge shows them
+        lastTested = Date.now();
+        CoreService.TestGroup("GLOBAL").finally(load);
+        return;
+      }
+      // within those five minutes only the blank ones: a node whose last test failed, often the
+      // first connection after the node sat idle, would otherwise stay blank until clicked
+      for (const p of nodesOf(g ?? [])) if (p.delay <= 0) testOne(p.name);
+    });
     CoreService.Mode().then(setMode);
     return on("mode", (d) => setMode(d));
   }, [status.running, load]);
 
   useClickAway(!!menu || !!open, () => { setMenu(null); setOpen(""); });
 
-  // nodes: every non-group member across groups, built-ins (DIRECT, REJECT…) left out
-  const groupNames = new Set(groups.map((g) => g.name));
-  const nodes: Proxy[] = [];
-  const seen = new Set<string>();
-  for (const g of groups) for (const p of g.all ?? []) {
-    if (!groupNames.has(p.name) && !builtin.has(p.type) && !seen.has(p.name)) { seen.add(p.name); nodes.push(p); }
-  }
+  const nodes = nodesOf(groups);
   const shownGroups = groups.filter((g) => g.name !== "GLOBAL");
   const global = groups.find((g) => g.name === "GLOBAL");
 

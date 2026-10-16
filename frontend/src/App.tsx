@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Window } from "@wailsio/runtime";
 import { CoreService, EnhancedService, SystemProxyService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { Activity as ActivityData, Event as AppEvent, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import Activity from "./Activity";
@@ -14,12 +15,23 @@ import { AboutPage, Dns, General } from "./Settings";
 import Profiles from "./Profiles";
 import ErrorBoundary from "./ErrorBoundary";
 import { icons } from "./icons";
+import { platform } from "./format";
 import { on, usePoll, useClickAway } from "./hooks";
 import { start as startStore } from "./store";
 
 // NavIcon is the page's line icon, grey or, for the page shown, the accent colour.
 const NavIcon = ({ page }: { page: string }) => (
   <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: icons[page] ?? "" }} />
+);
+
+// WindowButtons stand in for the title bar Linux windows go without (frameless, see app.go); close
+// hides to the tray as the system one did.
+const WindowButtons = () => (
+  <div className="winbtns">
+    <button title="最小化" onClick={() => Window.Minimise()}><NavIcon page="minimise" /></button>
+    <button title="最大化" onClick={() => Window.ToggleMaximise()}><NavIcon page="maximise" /></button>
+    <button title="关闭" onClick={() => Window.Close()}><NavIcon page="close" /></button>
+  </div>
 );
 
 type Page = { key: string; title: string };
@@ -58,7 +70,7 @@ function EventsButton() {
   const clear = () => { CoreService.ClearEvents(); setList([]); setUnread(0); setOpen(false); };
   return (
     <div className="events">
-      <button className="pill small" onClick={toggle}>
+      <button className="pill" onClick={toggle}>
         <span className={`dot ${unread > 0 && last ? { error: "err", warning: "warn", info: "on" }[last.level] ?? "" : ""}`} />{label}
       </button>
       {open && (
@@ -116,7 +128,7 @@ export default function App() {
         ))}
       </nav>
       <main className="main">
-        <div className="topbar">
+        <div className="topbar" onDoubleClick={(e) => platform === "linux" && e.target === e.currentTarget && Window.ToggleMaximise()}>
           <EventsButton />
           <button
             className="pill"
@@ -129,15 +141,17 @@ export default function App() {
           <button
             className="pill"
             disabled={!status.running || enhancedBusy || !rooted}
-            title={rooted ? "TUN 接管全部流量" : "需先在「通用」中授予 root 权限"}
+            title={!rooted ? "需先在「通用」中授予 root 权限" : enhanced === "process-tun" ? "TUN 只接管选中的应用；点击关闭部分增强" : "TUN 接管全部流量"}
             onClick={() => {
+              // it turns off what it shows: partial enhancement when that runs, else enhanced mode
               setEnhancedBusy(true);
-              EnhancedService.SetMode(enhanced === "tun" ? "" : "tun").finally(() => setEnhancedBusy(false));
+              (enhanced === "process-tun" ? EnhancedService.SetPartial(false) : EnhancedService.SetFull(enhanced !== "tun")).finally(() => setEnhancedBusy(false));
             }}
           >
-            <span className={`dot ${enhanced === "tun" ? "on" : ""}`} />
-            {enhancedBusy ? "切换中…" : "增强模式"}
+            <span className={`dot ${enhanced === "tun" ? "on" : enhanced === "process-tun" ? "part" : ""}`} />
+            {enhancedBusy ? "切换中…" : enhanced === "process-tun" ? "部分增强" : "增强模式"}
           </button>
+          {platform === "linux" && <WindowButtons />}
         </div>
         <div className="page">
           <ErrorBoundary key={current} onReset={() => setCurrent("activity")}>

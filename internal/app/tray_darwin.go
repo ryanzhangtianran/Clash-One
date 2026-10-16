@@ -313,7 +313,7 @@ func padRate(b int64) string {
 
 // showTray draws the menu bar item: the cat badged with the outbound mode, greyed while nothing is
 // captured (no system proxy, no enhanced mode), plus upload over download unless the speed is hidden.
-func showTray(tray *application.SystemTray, icon []byte, t Traffic, mode string, capturing, showSpeed bool) {
+func showTray(tray *application.SystemTray, icon []byte, t Traffic, mode, state string, showSpeed bool) {
 	item := statusItem(tray)
 	if item == nil {
 		if showSpeed {
@@ -329,7 +329,7 @@ func showTray(tray *application.SystemTray, icon []byte, t Traffic, mode string,
 		up, down = C.CString(padRate(t.Up)), C.CString(padRate(t.Down))
 	}
 	// the icon is copied on the first call only, before setTray returns
-	C.setTray(item, unsafe.Pointer(&icon[0]), C.int(len(icon)), badge, C.bool(!capturing), up, down)
+	C.setTray(item, unsafe.Pointer(&icon[0]), C.int(len(icon)), badge, C.bool(state == ""), up, down)
 	for _, p := range []unsafe.Pointer{unsafe.Pointer(badge), unsafe.Pointer(up), unsafe.Pointer(down)} {
 		C.free(p) // free(NULL) is a no-op
 	}

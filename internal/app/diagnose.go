@@ -3,10 +3,10 @@ package app
 import (
 	"cmp"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -173,64 +173,226 @@ func ifaceAddr(name string, v6 bool) string {
 	return ""
 }
 
-// Resolver is which DNS server looked a test domain up, as the test service saw it.
-type Resolver struct {
-	IP  string `json:"ip"`
-	Geo string `json:"geo"`
-	Err string `json:"err,omitempty"`
+// LeakServer is an address bash.ws saw: a DNS server that queried a test domain, or the address a
+// test came from.
+type LeakServer struct {
+	IP      string `json:"ip"`
+	Country string `json:"country"`
+	ASN     string `json:"asn"` // "AS13335 CloudFlare Inc": the network and whose it is
 }
 
-// DNSLeak looks up a fresh random domain through the proxy unmatched traffic uses and directly.
-// The test service names the resolver that asked for it: through the proxy that should be the
-// proxy's, so the same resolver both times means proxied domains are resolved locally, a leak.
+// DNSLeak is a DNS leak test, done as bash.ws's own client (github.com/macvk/dnsleaktest) does:
+// fresh subdomains of one test id are fetched, and bash.ws lists the DNS servers that asked for them.
+// The proxied side goes through the mixed port with no rule of its own, so the profile's rules
+// decide as they do for any app, including those that make the core resolve a domain locally
+// before it is proxied; the direct side is the baseline, this network's own resolvers.
 type DNSLeak struct {
-	Proxy  Resolver `json:"proxy"`
-	Direct Resolver `json:"direct"`
-	Leak   bool     `json:"leak"`
+	Policy   string       `json:"policy"`   // where the rules sent the test domain, "PROXY → GIA"; "" if unseen
+	Exit     LeakServer   `json:"exit"`     // the proxied side's exit
+	Proxied  []LeakServer `json:"proxied"`  // the DNS servers that resolved it
+	DirectIP LeakServer   `json:"directIP"` // this network's own address
+	Direct   []LeakServer `json:"direct"`   // and its resolvers
+	Leaked   []LeakServer `json:"leaked"`   // the proxied side's servers in this network's networks or country
 }
+
+const leakProbes = 10 // subdomains per side: enough to draw out every resolver of a pool
+
+var leakMu sync.Mutex // one test at a time: the direct side holds a temporary rule
 
 func (s *ToolService) DNSLeakTest() (DNSLeak, error) {
-	policy := s.cs.matchPolicy()
-	if exit := s.cs.exitOf(policy); exit == "" || exit == "DIRECT" || exit == "REJECT" {
-		return DNSLeak{}, fmt.Errorf("未匹配的流量经 %s 直连，没有代理可检测", cmp.Or(policy, "DIRECT"))
+	leakMu.Lock()
+	defer leakMu.Unlock()
+	if mode, err := s.cs.Mode(); err != nil {
+		return DNSLeak{}, err
+	} else if mode != "rule" {
+		return DNSLeak{}, errors.New("需要「规则判定」模式：全局和直连模式不经过规则")
 	}
-	host := freshHost()
-	proxied, done, err := s.viaProxy(policy, "http://"+host) // a temporary rule sends it to policy
+	port, err := mixedPort(s.cs.core)
 	if err != nil {
 		return DNSLeak{}, err
 	}
-	defer done()
-	proxied.Timeout = 10 * time.Second
-	r := DNSLeak{Proxy: whoResolves(proxied, host)}
-	r.Direct = whoResolves(oneShotClient(0, 10*time.Second), freshHost())
-	r.Leak = r.Proxy.IP != "" && r.Proxy.IP == r.Direct.IP
+	client := oneShotClient(port, 10*time.Second)
+	var r DNSLeak
+
+	id, err := leakID(client)
+	if err != nil {
+		return r, err
+	}
+	stop := make(chan struct{})
+	seen := make(chan string, 1)
+	go func() { // the test's connections last a moment: watch for one to learn its route
+		for {
+			conns, _ := s.cs.fetchConnections()
+			for _, c := range conns {
+				if strings.HasSuffix(c.Host, "."+id+".bash.ws") {
+					seen <- c.Chain
+					return
+				}
+			}
+			select {
+			case <-stop:
+				seen <- ""
+				return
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}()
+	probe(client, id)
+	close(stop)
+	r.Policy = <-seen
+	if r.Policy == "DIRECT" {
+		return r, errors.New("测试域名按规则直连，没有经过代理，无法检测")
+	}
+	ips, dns, err := leakResults(client, id)
+	if err != nil {
+		return r, err
+	}
+	r.Proxied = dns
+	if len(ips) > 0 {
+		r.Exit = ips[0]
+	}
+
+	// the baseline: a second id with all of bash.ws sent DIRECT by a temporary rule, so its lookups
+	// are this network's, and so is the address that fetches the results, which bash.ws reports
+	rule, err := s.cs.AddTempRule("DOMAIN-SUFFIX,bash.ws,DIRECT")
+	if err != nil {
+		return r, err
+	}
+	defer func() { _ = s.cs.RemoveTempRule(rule) }()
+	if id, err = leakID(client); err != nil {
+		return r, err
+	}
+	probe(client, id)
+	if ips, r.Direct, err = leakResults(client, id); err != nil {
+		return r, err
+	}
+	if len(ips) > 0 {
+		r.DirectIP = ips[0]
+	}
+	r.Leaked = leakedServers(r.Proxied, r.Direct, r.DirectIP, r.Exit)
 	return r, nil
 }
 
-// freshHost is a random subdomain of edns.ip-api.com (it wants exactly 32 characters), so no cache
-// answers for it.
-func freshHost() string {
-	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b) + ".edns.ip-api.com"
+// leakedServers are the proxied side's DNS servers that belong to this network: one of the direct
+// side's networks (its ISP's, its resolvers'), or its country when the proxy exits elsewhere.
+// Resolvers abroad that aren't the exit's own are no leak: a proxy's always are someone else's.
+func leakedServers(proxied, direct []LeakServer, directIP, exit LeakServer) []LeakServer {
+	asn := func(s LeakServer) string { n, _, _ := strings.Cut(s.ASN, " "); return n }
+	local := map[string]bool{asn(directIP): true}
+	for _, d := range direct {
+		local[asn(d)] = true
+	}
+	delete(local, "")
+	var out []LeakServer
+	for _, p := range proxied {
+		if local[asn(p)] || (directIP.Country != "" && p.Country == directIP.Country && exit.Country != directIP.Country) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
-// whoResolves asks edns.ip-api.com, at host from freshHost, which resolver queried it.
-// ponytail: one third-party service; dnsleaktest-style multi-probe runs if it's flaky.
-func whoResolves(c *http.Client, host string) Resolver {
-	resp, err := c.Get("http://" + host + "/json")
+// leakID is a fresh test id from bash.ws.
+func leakID(c *http.Client) (string, error) {
+	resp, err := c.Get("https://bash.ws/id")
 	if err != nil {
-		return Resolver{Err: err.Error()}
+		return "", fmt.Errorf("bash.ws: %w", err)
 	}
 	defer resp.Body.Close()
-	var v struct {
-		DNS struct {
-			IP  string `json:"ip"`
-			Geo string `json:"geo"`
-		} `json:"dns"`
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 64))
+	id := strings.TrimSpace(string(b))
+	if id == "" || strings.ContainsAny(id, "/.: ") {
+		return "", fmt.Errorf("bash.ws: no test id (%q)", id)
 	}
+	return id, nil
+}
+
+// probe fetches every test subdomain of id at once; the answers don't matter, only the lookups.
+func probe(c *http.Client, id string) {
+	var wg sync.WaitGroup
+	for i := 1; i <= leakProbes; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if resp, err := c.Get(fmt.Sprintf("http://%d.%s.bash.ws/", i, id)); err == nil {
+				resp.Body.Close()
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// leakResults reads what bash.ws saw for id: the addresses the tests came from, and the DNS servers.
+func leakResults(c *http.Client, id string) (ips, dns []LeakServer, err error) {
+	resp, err := c.Get("https://bash.ws/dnsleak/test/" + id + "?json=2")
+	if err != nil {
+		return nil, nil, fmt.Errorf("bash.ws: %w", err)
+	}
+	defer resp.Body.Close()
+	var rows []struct {
+		Type, IP, Country, ASN, Text string
+		CountryName                  string `json:"country_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+		return nil, nil, fmt.Errorf("bash.ws: %w", err)
+	}
+	for _, r := range rows {
+		s := LeakServer{IP: r.IP, Country: cmp.Or(r.CountryName, r.Country), ASN: r.ASN}
+		switch r.Type {
+		case "ip":
+			ips = append(ips, s)
+		case "dns":
+			dns = append(dns, s)
+		}
+	}
+	if len(dns) == 0 {
+		return ips, nil, errors.New("bash.ws 没有收到任何 DNS 查询，请重试")
+	}
+	return ips, dns, nil
+}
+
+// IPInfo is where traffic through a policy comes out: the address the internet sees, and where it is.
+type IPInfo struct {
+	IP      string `json:"ip"`
+	Code    string `json:"code"` // ISO country code, for its flag
+	Country string `json:"country"`
+	Region  string `json:"region"`
+	City    string `json:"city"`
+	ISP     string `json:"isp"`
+}
+
+var exitMu sync.Mutex // one lookup at a time: they share the temporary rule's host
+
+// exitAPI answers with the asking address and its location.
+const exitAPI = "http://ip-api.com/json/?fields=status,message,query,country,countryCode,regionName,city,isp"
+
+// ExitIP looks up, through policy (a node, a group, or DIRECT), the address the internet sees and
+// where it is. It asks twice before giving up: the first connection through a node just after the
+// core starts can stall with no answer.
+// ponytail: one third-party service, over plain HTTP as its free tier is; add a fallback if it's flaky.
+func (s *ToolService) ExitIP(policy string) (IPInfo, error) {
+	exitMu.Lock()
+	defer exitMu.Unlock()
+	c, done, err := s.viaProxy(policy, exitAPI)
+	if err != nil {
+		return IPInfo{}, err
+	}
+	defer done()
+	c.Timeout = 6 * time.Second
+	resp, err := c.Get(exitAPI)
+	if err != nil {
+		resp, err = c.Get(exitAPI)
+	}
+	if err != nil {
+		return IPInfo{}, err
+	}
+	defer resp.Body.Close()
+	var v struct{ Status, Message, Query, Country, CountryCode, RegionName, City, ISP string } // matched to its fields case-insensitively
 	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
-		return Resolver{Err: err.Error()}
+		return IPInfo{}, err
 	}
-	return Resolver{IP: v.DNS.IP, Geo: v.DNS.Geo}
+	if v.Status != "success" {
+		return IPInfo{}, fmt.Errorf("ip-api.com: %s", cmp.Or(v.Message, v.Status))
+	}
+	return IPInfo{IP: v.Query, Code: v.CountryCode, Country: v.Country, Region: v.RegionName, City: v.City, ISP: v.ISP}, nil
 }

@@ -93,3 +93,6 @@ func appExecutable(bundle string) (ProcessChoice, error) {
 	}
 	return ProcessChoice{Name: strings.TrimSuffix(filepath.Base(bundle), ".app"), Exec: strings.TrimSpace(string(out)), Source: "app"}, nil
 }
+
+// appName names a Linux executable's application; here bundles (bundleOf) already fold processes into apps.
+func appName(string) string { return "" }

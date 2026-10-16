@@ -10,7 +10,7 @@ function method(c: Conn) {
   if (c.network === "udp") return c.port === "443" ? "QUIC" : "UDP";
   return c.port === "443" ? "HTTPS" : c.port === "80" ? "HTTP" : "TCP";
 }
-const client = (c: Conn) => (c.inbound === "Inner" ? "Connaio" : c.process || c.source || "未知"); // as the activity page names them
+export const client = (c: Conn) => (c.inbound === "Inner" ? "Connaio" : c.process || c.source || "未知"); // as the activity page names them
 
 function Detail({ c, onRule, onClose }: { c: Conn; onRule: () => void; onClose: () => void }) {
   const rows: [string, string][] = [

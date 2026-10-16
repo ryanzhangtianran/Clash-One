@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { CoreService, EnhancedService, ProfileService, SettingsService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
-import type { About, DNSLeak, Resolver, Update } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import type { About, DNSLeak, LeakServer, Update } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { on } from "./hooks";
-import { words, validPort } from "./format";
+import { platform, words, validPort } from "./format";
 
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
@@ -92,9 +92,11 @@ export function General() {
         <Row title="开机时启动">
           <Switch on={login} onChange={(v) => run(SettingsService.SetLaunchAtLogin(v))} />
         </Row>
-        <Row title={`${words.tray}显示网速`}>
-          <Switch on={traySpeed} onChange={(v) => run(SettingsService.SetTraySpeed(v))} />
-        </Row>
+        {platform === "macos" && ( // only the menu bar has room for it: the Linux and Windows trays show the icon alone
+          <Row title={`${words.tray}显示网速`}>
+            <Switch on={traySpeed} onChange={(v) => run(SettingsService.SetTraySpeed(v))} />
+          </Row>
+        )}
       </div>
 
       <div className="card settings-card">
@@ -168,20 +170,51 @@ function ListItem({ onRemove, children }: { onRemove: () => void; children: Reac
   return <div className="list-item">{children}<button className="list-remove" title="删除" onClick={onRemove}>−</button></div>;
 }
 
-// LeakTest resolves a fresh domain through the proxy and directly, and compares the resolvers.
+// servers sums a list of DNS servers up by network: "CloudFlare Inc（AS13335）· United States of America · 2 台",
+// the ones that leaked first and marked.
+function Servers({ list, leaked }: { list: LeakServer[]; leaked: Set<string> }) {
+  const nets = new Map<string, { s: LeakServer; n: number; bad: boolean }>();
+  for (const s of list) {
+    const e = nets.get(s.asn) ?? { s, n: 0, bad: false };
+    e.n++;
+    e.bad ||= leaked.has(s.ip);
+    nets.set(s.asn, e);
+  }
+  return (
+    <div className="leak-servers selectable">
+      {[...nets.values()].sort((a, b) => Number(b.bad) - Number(a.bad)).map(({ s, n, bad }) => {
+        const [num, ...name] = s.asn.split(" ");
+        return <div key={s.asn} className={bad ? "delay-bad" : "muted"} title={list.filter((x) => x.asn === s.asn).map((x) => x.ip).join("\n")}>{name.join(" ") || num}（{num}）· {s.country} · {n} 台</div>;
+      })}
+    </div>
+  );
+}
+
+// LeakTest asks bash.ws which DNS servers looked up fresh test domains: once through the rules as
+// any app's traffic goes, once directly as the baseline (ToolService.DNSLeakTest).
 function LeakTest() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<DNSLeak | null>(null);
-  const run = () => { setBusy(true); ToolService.DNSLeakTest().then(setResult).catch(() => setResult(null)).finally(() => setBusy(false)); };
-  const who = (r: Resolver) => r.err ? `失败：${r.err}` : `${r.ip}（${r.geo}）`;
+  const [error, setError] = useState("");
+  const run = () => {
+    setBusy(true); setError(""); setResult(null);
+    ToolService.DNSLeakTest().then(setResult).catch((e) => setError(String(e).replace(/^\w*Error:\s*/, "") || "检测失败，详情见事件")).finally(() => setBusy(false));
+  };
+  const leaked = new Set((result?.leaked ?? []).map((s) => s.ip));
+  const desc = busy ? "约需 20 秒" : error ? error : !result ? "按规则访问测试域名，看哪些 DNS 服务器解析了它；需要「规则判定」模式"
+    : leaked.size ? `可能泄漏：本地网络的 ${leaked.size} 台 DNS 服务器解析了走代理的域名` : "没有泄漏：走代理的域名只由代理一侧的 DNS 服务器解析";
   return (
     <>
-      <Row title="DNS 泄漏检测" desc={result ? (result.leak ? "可能泄漏：走代理的域名也由本地 DNS 解析" : result.proxy.err ? "无法通过代理检测" : "没有泄漏：走代理的域名由代理端解析") : undefined}>
+      <Row title="DNS 泄漏检测" desc={desc}>
         <button className="btn" disabled={busy} onClick={run}>{busy ? "检测中…" : "开始检测"}</button>
       </Row>
       {result && <>
-        <Row title="通过代理"><span className="muted small selectable">{who(result.proxy)}</span></Row>
-        <Row title="直连"><span className="muted small selectable">{who(result.direct)}</span></Row>
+        <Row title="代理一侧" desc={`测试域名经 ${result.policy || "代理"}，出口 ${result.exit.ip}（${result.exit.country}）`}>
+          <Servers list={result.proxied ?? []} leaked={leaked} />
+        </Row>
+        <Row title="本地网络" desc={`直连出口 ${result.directIP.ip}（${result.directIP.country}）`}>
+          <Servers list={result.direct ?? []} leaked={new Set()} />
+        </Row>
       </>}
     </>
   );

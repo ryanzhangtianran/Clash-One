@@ -220,7 +220,7 @@ function VpnEditor({ status, initial, tunnel, onDone }: { status: Status; initia
           <div className="form">{text("username", "用户名，可选")}{secret("password", "密码，可选")}</div>
         </>}
         {form.type === "tailscale" && <>
-          <div className="form">{secret("auth-key", "Auth key，可选；不填则在日志里找登录链接")}{text("hostname", "本机在 tailnet 里的名字，可选")}</div>
+          <div className="form">{secret("auth-key", "Auth key（可选，留空时登录链接见日志）")}{text("hostname", "本机在 tailnet 中的名称（可选）")}</div>
           <div className="form">{text("control-url", "控制服务器，Headscale 时填，可选")}{text("exit-node", "出口节点，可选")}
             <label className="radio"><input type="checkbox" checked={form["accept-routes"] === "true"} onChange={(e) => setForm({ ...form, "accept-routes": String(e.target.checked) })} /> 接受子网路由</label></div>
         </>}
@@ -290,7 +290,7 @@ export default function Vpn({ status }: { status: Status }) {
 
   return (
     <>
-      <div className="hint">VPN 那边的网段和域名走 VPN，其余流量不受影响。</div>
+      <div className="hint">仅目标为 VPN 网段或域名的流量经 VPN 隧道转发，其余流量按原有规则处理。</div>
       <div className="tile-head"><span className="tile-title groups">VPN</span></div>
       <div className="tiles">
         {vpns.map((v) => {

@@ -349,11 +349,40 @@ func (s *CoreService) Select(group, proxy string) error {
 }
 
 // TestGroup measures every member of group and returns name -> delay in ms (missing = failed).
+// A member that fails is measured again on its own, twice, 3s apart: just after the app starts,
+// while the core rebuilds the TUN under the config it was just given, every test can fail at once,
+// and the page's tiles would stay blank until clicked.
 func (s *CoreService) TestGroup(group string) (map[string]int, error) {
 	q := url.Values{"url": {"https://www.gstatic.com/generate_204"}, "timeout": {"5000"}}
 	delays := map[string]int{}
-	err := s.core.Do(context.Background(), http.MethodGet, "/group/"+url.PathEscape(group)+"/delay?"+q.Encode(), nil, &delays)
-	return delays, err
+	ctx := context.Background()
+	if err := s.core.Do(ctx, http.MethodGet, "/group/"+url.PathEscape(group)+"/delay?"+q.Encode(), nil, &delays); err != nil {
+		return delays, err
+	}
+	var g struct {
+		All []string `json:"all"`
+	}
+	if s.core.Do(ctx, http.MethodGet, "/proxies/"+url.PathEscape(group), nil, &g) != nil {
+		return delays, nil
+	}
+	for range 2 {
+		var failed []string
+		for _, m := range g.All {
+			if _, ok := delays[m]; !ok && m != "REJECT" && m != "REJECT-DROP" {
+				failed = append(failed, m)
+			}
+		}
+		if len(failed) == 0 {
+			break
+		}
+		time.Sleep(3 * time.Second)
+		for _, m := range failed {
+			if d, err := s.testProxy(ctx, m); err == nil && d > 0 {
+				delays[m] = d
+			}
+		}
+	}
+	return delays, nil
 }
 
 // streamTraffic forwards the core's per-second traffic to the frontend and menu bar, reconnecting on errors.

@@ -14,4 +14,8 @@ export const icons: Record<string, string> = {
   logs: `<path d="M21 5H3" /> <path d="M15 12H3" /> <path d="M17 19H3" />`, // text-align-start
   general: `<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" /> <circle cx="12" cy="12" r="3" />`, // settings
   about: `<circle cx="12" cy="12" r="10" /> <path d="M12 16v-4" /> <path d="M12 8h.01" />`, // info
+  // the Linux window buttons
+  minimise: `<path d="M5 12h14" />`, // minus
+  maximise: `<rect width="14" height="14" x="5" y="5" rx="1" />`, // square, inset
+  close: `<path d="M18 6 6 18" /> <path d="m6 6 12 12" />`, // x
 };

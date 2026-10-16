@@ -124,15 +124,27 @@ func TestDiagnoseNetwork(t *testing.T) {
 	t.Log(strings.Join(sec.Lines, "\n"), "\n", diagRouter(t.Context()).Lines, diagDNS(t.Context()).Lines, diagDirect(t.Context()).Lines)
 }
 
-func TestWhoResolves(t *testing.T) {
-	r := whoResolves(&http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 10 * time.Second}, freshHost())
-	if r.Err != "" || r.IP == "" {
-		t.Skipf("edns.ip-api.com unreachable here: %+v", r)
+func TestLeakedServers(t *testing.T) {
+	home := LeakServer{IP: "1.2.3.4", Country: "China", ASN: "AS4134 China Telecom"}
+	alidns := LeakServer{IP: "47.1.1.1", Country: "China", ASN: "AS37963 Alibaba"}
+	exit := LeakServer{IP: "23.0.0.1", Country: "United States of America", ASN: "AS402681 AYIT"}
+	cloudflare := LeakServer{IP: "104.22.22.78", Country: "United States of America", ASN: "AS13335 CloudFlare Inc"}
+	tencent := LeakServer{IP: "119.29.29.29", Country: "China", ASN: "AS45090 Tencent"}
+	if got := leakedServers([]LeakServer{cloudflare}, []LeakServer{alidns}, home, exit); len(got) != 0 {
+		t.Fatalf("resolvers abroad flagged: %v", got)
 	}
-	t.Logf("%+v", r)
+	if got := leakedServers([]LeakServer{cloudflare, alidns}, []LeakServer{alidns}, home, exit); len(got) != 1 || got[0] != alidns {
+		t.Fatalf("this network's resolver missed: %v", got)
+	}
+	if got := leakedServers([]LeakServer{tencent}, []LeakServer{alidns}, home, exit); len(got) != 1 {
+		t.Fatalf("a resolver in this country, the proxy abroad, missed: %v", got)
+	}
+	if got := leakedServers([]LeakServer{tencent}, []LeakServer{alidns}, home, home); len(got) != 0 {
+		t.Fatalf("a proxy in the same country: only networks count, got %v", got)
+	}
 }
 
-func TestLedgerChildren(t *testing.T) {
+func TestLedgerFoldsApps(t *testing.T) {
 	l := openLedger(filepath.Join(t.TempDir(), "traffic.json"))
 	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.Local)
 	app := "/Applications/Google Chrome.app/Contents/"
@@ -141,7 +153,7 @@ func TestLedgerChildren(t *testing.T) {
 	conns[0].Download, conns[1].Download = 100, 300
 	l.add(conns, now)
 	_, clients, _, _ := l.today(now)
-	if len(clients) != 1 || clients[0].Name != "Google Chrome" || len(clients[0].Children) != 2 || clients[0].Children[0].Name != "Google Chrome Helper" {
+	if len(clients) != 1 || clients[0].Name != "Google Chrome" || clients[0].Direct+clients[0].Proxy != 400 {
 		t.Fatalf("%+v", clients)
 	}
 	if err := l.save(); err != nil {
@@ -183,11 +195,10 @@ func TestLedgerSavePrunesAndTrims(t *testing.T) {
 	old := time.Now().AddDate(0, 0, -keepDays-1).Format(time.DateOnly)
 	today := time.Now().Format(time.DateOnly)
 	l.days[old] = &Day{Split: Split{Direct: 1}}
-	d := &Day{Client: map[string]Split{}, Procs: map[string]map[string]Split{}}
+	d := &Day{Client: map[string]Split{}}
 	for i := 0; i < 600; i++ {
 		name := fmt.Sprintf("c%d", i)
 		d.Client[name] = Split{Direct: int64(i)}
-		d.Procs[name] = map[string]Split{"p": {Direct: int64(i)}}
 	}
 	l.days[today] = d
 	l.dirty = true
@@ -197,10 +208,45 @@ func TestLedgerSavePrunesAndTrims(t *testing.T) {
 	if l.days[old] != nil {
 		t.Error("an old day survived")
 	}
-	if len(d.Client) != 500 || len(d.Procs) != 500 || d.Client["c0"] != (Split{}) || d.Client["c599"].Direct != 599 {
-		t.Errorf("trim: %d clients, %d procs", len(d.Client), len(d.Procs))
+	if len(d.Client) != 500 || d.Client["c0"] != (Split{}) || d.Client["c599"].Direct != 599 {
+		t.Errorf("trim: %d clients", len(d.Client))
 	}
 	if _, err := os.Stat(l.path); err != nil {
 		t.Error("not saved")
+	}
+}
+
+func TestLedgerClear(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "traffic.json")
+	l := openLedger(path)
+	now := time.Now()
+	l.add([]Conn{{ID: "1", Download: 100, Chain: "DIRECT"}}, now)
+	l.add([]Conn{{ID: "1", Download: 300, Chain: "DIRECT"}}, now) // counted from the second look
+	if today, _ := l.totals(now); today.Direct != 200 {
+		t.Fatalf("before: %+v", today)
+	}
+	if err := l.clear(); err != nil {
+		t.Fatal(err)
+	}
+	l.add([]Conn{{ID: "1", Download: 350, Chain: "DIRECT"}}, now)
+	if today, _ := l.totals(now); today.Direct != 50 {
+		t.Fatalf("after: %+v, want only what came since", today)
+	}
+	if again, _ := openLedger(path).totals(now); again.Direct != 0 {
+		t.Fatalf("saved file still has %+v", again)
+	}
+}
+
+func TestClientOfSystemService(t *testing.T) {
+	if n, i := clientOf(Conn{Process: "NetworkManager", Path: "/usr/sbin/NetworkManager", System: true}); n != "System" || i != "system" {
+		t.Fatalf("system service: %q %q", n, i)
+	}
+	for _, src := range []string{"127.0.0.1", "198.18.0.1"} { // this machine, process unknown: not a device
+		if n, _ := clientOf(Conn{Source: src}); n != "System" {
+			t.Errorf("unnamed connection from %s: %q", src, n)
+		}
+	}
+	if n, _ := clientOf(Conn{Source: "192.0.2.9"}); n != "192.0.2.9" {
+		t.Errorf("a LAN device keeps its address: %q", n)
 	}
 }

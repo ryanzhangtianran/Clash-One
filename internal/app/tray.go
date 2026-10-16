@@ -50,20 +50,20 @@ type trayMenu struct {
 	drawn        drawing     // what the native side shows, to skip redraws that change nothing
 	traffic      Traffic
 	mode         string
-	proxy, enhOn bool
+	proxy        bool
+	enh          string // EnhancedService.Mode: "", "tun" or "process-tun"
 	layout       string // groups and profiles the menu was built for
 	rows         []procRow
-	lastActive   map[string]time.Time  // process -> when it last moved bytes
-	speedItem    *application.MenuItem // the live speed row, where the tray itself can't show text (Windows)
+	lastActive   map[string]time.Time // process -> when it last moved bytes
 	modeItem     *application.MenuItem
 	vpnItem      *application.MenuItem            // the VPN submenu: the connected ones as its detail
 	vpnItems     map[string]*application.MenuItem // the VPN page's entries: state shown, click connects or disconnects
-	qualityItem  *application.MenuItem
 	proxyItem    *application.MenuItem
 	enhancedItem *application.MenuItem
 	modeItems    map[string]*application.MenuItem
 	partialItem  *application.MenuItem
 	partialMenu  *application.MenuItem // the 部分增强 submenu, which says when it is on
+	qualityItem  *application.MenuItem
 	procItems    []*application.MenuItem
 	details      map[*application.MenuItem]string // right of the label: grey text, or a pill (see pill)
 	icons        map[*application.MenuItem]string // file whose Finder icon the item shows
@@ -79,14 +79,15 @@ type procRow struct {
 
 // drawing is everything the native side is told: the menu bar item's inputs and the decorations.
 type drawing struct {
-	traffic          Traffic
-	mode             string
-	capturing, speed bool
-	details, icons   map[*application.MenuItem]string
+	traffic        Traffic
+	mode           string
+	state          string // what captures traffic: "", "proxy", "partial" (partial enhancement) or "tun" (enhanced mode)
+	speed          bool
+	details, icons map[*application.MenuItem]string
 }
 
 func newTrayMenu(t *trayMenu) {
-	t.mode, t.proxy, t.enhOn = "rule", t.sysProxy.Enabled(), t.enhanced.Enabled()
+	t.mode, t.proxy, t.enh = "rule", t.sysProxy.Enabled(), t.enhanced.Mode()
 	t.lastActive = map[string]time.Time{}
 	t.updates = make(chan func(), 1)
 	t.menu = application.NewMenu()
@@ -104,8 +105,8 @@ func newTrayMenu(t *trayMenu) {
 			t.locked(fn)
 		}
 	}()
-	t.sysProxy.onChange = func(on bool) { t.locked(func() { t.proxy = on; t.proxyItem.SetChecked(on) }) }
-	t.enhanced.onChange = func(on bool) { t.locked(func() { t.enhOn = on; t.checkEnhanced() }) }
+	t.sysProxy.onChange = func(on bool) { t.locked(func() { t.proxy = on; t.setOn(t.proxyItem, on) }) }
+	t.enhanced.onChange = func(bool) { t.locked(func() { t.enh = t.enhanced.Mode(); t.checkEnhanced() }) }
 	t.app.Event.On("setting", func(e *application.CustomEvent) {
 		if e.Data == "capture.mode" {
 			t.locked(t.checkEnhanced)
@@ -140,17 +141,23 @@ func (t *trayMenu) locked(change func()) {
 	if letter := modeBadges[t.mode]; letter != "" {
 		t.details[t.modeItem] = pill("accent", letter)
 	}
-	next := drawing{t.traffic, t.mode, t.proxy || t.enhOn, !t.settings.Get().HideTraySpeed, maps.Clone(t.details), maps.Clone(t.icons)}
+	state := ""
+	switch {
+	case t.enh == "tun":
+		state = "tun"
+	case t.enh == "process-tun":
+		state = "partial"
+	case t.proxy:
+		state = "proxy"
+	}
+	next := drawing{t.traffic, t.mode, state, !t.settings.Get().HideTraySpeed, maps.Clone(t.details), maps.Clone(t.icons)}
 	started := t.started
 	t.mu.Unlock()
 
 	t.drawMu.Lock()
 	defer t.drawMu.Unlock()
-	if next.traffic != t.drawn.traffic || next.mode != t.drawn.mode || next.capturing != t.drawn.capturing || next.speed != t.drawn.speed {
-		showTray(t.tray, t.icon, next.traffic, next.mode, next.capturing, next.speed)
-		if t.speedItem != nil {
-			t.speedItem.SetLabel(speedLabel(next.traffic))
-		}
+	if next.traffic != t.drawn.traffic || next.mode != t.drawn.mode || next.state != t.drawn.state || next.speed != t.drawn.speed {
+		showTray(t.tray, t.icon, next.traffic, next.mode, next.state, next.speed)
 	}
 	if started && (!maps.Equal(next.details, t.drawn.details) || !maps.Equal(next.icons, t.drawn.icons)) {
 		decorate(next.details, next.icons)
@@ -162,28 +169,36 @@ func (t *trayMenu) setMode(mode string) {
 	t.locked(func() {
 		t.mode = mode
 		for key, item := range t.modeItems {
-			item.SetChecked(key == mode)
+			check(item, key == mode)
 		}
 	})
 }
 
-// checkEnhanced ticks enhanced mode or partial enhancement, whichever is on; both need root.
+// checkEnhanced ticks enhanced mode and partial enhancement as chosen; both need root.
 func (t *trayMenu) checkEnhanced() {
-	mode, granted := t.enhanced.Mode(), t.enhanced.DaemonInstalled()
-	t.enhancedItem.SetChecked(mode == "tun").SetEnabled(granted)
-	t.partialItem.SetChecked(mode == "process-tun").SetEnabled(granted)
+	full, partial, granted := t.enhanced.Full(), t.enhanced.Partial(), t.enhanced.DaemonInstalled()
+	t.setOn(t.enhancedItem, full)
+	t.setOn(t.partialItem, partial)
+	t.enhancedItem.SetEnabled(granted)
+	t.partialItem.SetEnabled(granted)
 	t.details[t.partialMenu] = ""
-	if mode == "process-tun" {
+	switch {
+	case partial && full:
+		t.details[t.partialMenu] = "增强模式下暂停"
+	case partial:
 		t.details[t.partialMenu] = "已开启"
 	}
 }
 
-// toggleEnhanced turns mode on or, when it is the current one, TUN off.
-func (t *trayMenu) toggleEnhanced(mode string) {
-	if t.enhanced.Mode() == mode {
-		mode = ""
+// toggleEnhanced flips enhanced mode (full) or partial enhancement.
+func (t *trayMenu) toggleEnhanced(full bool) {
+	var err error
+	if full {
+		err = t.enhanced.SetFull(!t.enhanced.Full())
+	} else {
+		err = t.enhanced.SetPartial(!t.enhanced.Partial())
 	}
-	if err := t.enhanced.SetMode(mode); err != nil {
+	if err != nil {
 		notify("error", "切换增强模式失败：%v", err)
 	}
 	t.locked(t.checkEnhanced) // also puts the checkbox back after a failure
@@ -202,14 +217,88 @@ func (t *trayMenu) loop() {
 	}
 }
 
+// measure shows the network quality. Its "…" goes up only the first time: on Linux every label
+// change has the panel fetch the whole menu again, closing any submenu that is open.
 func (t *trayMenu) measure() {
-	t.locked(func() { t.details[t.qualityItem] = dot("gray", "…") })
+	t.locked(func() {
+		if t.details[t.qualityItem] == "" {
+			t.details[t.qualityItem] = dot("gray", "…")
+		}
+	})
 	q := qualityBadge(t.svc.Latency().Internet)
 	t.locked(func() { t.details[t.qualityItem] = q })
 }
 
-// speedLabel is the live speed row on menus whose tray shows no text.
-func speedLabel(t Traffic) string { return fmt.Sprintf("↑ %s    ↓ %s", rate(t.Up), rate(t.Down)) }
+// qualityBadge colours a latency like the proxies page does: green, orange, then red.
+func qualityBadge(ms int) string {
+	switch {
+	case ms <= 0:
+		return dot("bad", "超时")
+	case ms < 300:
+		return dot("good", fmt.Sprintf("%d ms", ms))
+	case ms < 800:
+		return dot("warn", fmt.Sprintf("%d ms", ms))
+	}
+	return dot("bad", fmt.Sprintf("%d ms", ms))
+}
+
+// On Linux a list of choices starts every label with a tick or a blank as wide (tickOn, tickOff):
+// the panel draws a radio's own mark before the label only once it is chosen, leaving no space for
+// it on the rest, so the chosen label sat out of line. The blank is U+2800, which draws nothing,
+// within half a pixel of ✓; a thin space follows either.
+const (
+	tickOn  = "✓\u2009"
+	tickOff = "\u2800\u2009"
+)
+
+// addChoice adds one of a list of choices, ticked when on; on Linux a plain item (check).
+func addChoice(m *application.Menu, label string, on bool) *application.MenuItem {
+	if runtime.GOOS != "linux" {
+		return m.AddRadio(label, on)
+	}
+	item := m.Add(tickOff + label)
+	check(item, on)
+	return item
+}
+
+// addSwitch adds an on/off item. On Linux its state is a detail after the label (setOn), so the
+// main menu needs no column of ticks.
+func (t *trayMenu) addSwitch(m *application.Menu, label string, on bool) *application.MenuItem {
+	if runtime.GOOS != "linux" {
+		return m.AddCheckbox(label, on)
+	}
+	item := m.Add(label)
+	t.setOn(item, on)
+	return item
+}
+
+// setOn shows a switch (addSwitch) on or off; called with the lock held.
+func (t *trayMenu) setOn(item *application.MenuItem, on bool) {
+	if runtime.GOOS != "linux" {
+		item.SetChecked(on)
+		return
+	}
+	t.details[item] = ""
+	if on {
+		t.details[item] = "已开启"
+	}
+}
+
+// check ticks a choice (addChoice) or not; on Linux only a change touches the label, as each one has
+// the panel fetch the whole menu again.
+func check(item *application.MenuItem, on bool) {
+	if runtime.GOOS != "linux" {
+		item.SetChecked(on)
+		return
+	}
+	label := tickOff + strings.TrimPrefix(strings.TrimPrefix(item.Label(), tickOn), tickOff)
+	if on {
+		label = tickOn + strings.TrimPrefix(label, tickOff)
+	}
+	if label != item.Label() {
+		item.SetLabel(label)
+	}
+}
 
 // modeLabel is the name of an outbound mode key ("rule" → 规则判定), or "".
 func modeLabel(key string) string {
@@ -226,19 +315,6 @@ func pill(color, text string) string { return "\x01" + color + "|" + text }
 
 // dot is a detail drawn as a coloured dot before grey text: a state.
 func dot(color, text string) string { return "\x02" + color + "|" + text }
-
-// qualityBadge colours a latency like the proxies page does: green, orange, then red.
-func qualityBadge(ms int) string {
-	switch {
-	case ms <= 0:
-		return dot("bad", "超时")
-	case ms < 300:
-		return dot("good", fmt.Sprintf("%d ms", ms))
-	case ms < 800:
-		return dot("warn", fmt.Sprintf("%d ms", ms))
-	}
-	return dot("bad", fmt.Sprintf("%d ms", ms))
-}
 
 // toggleVPN connects the named VPN's draft, or disconnects it when active.
 func (t *trayMenu) toggleVPN(name string) {
@@ -286,19 +362,21 @@ func (t *trayMenu) tick() {
 	}
 	list := t.profiles.Profiles()
 	vpns := t.vpnStates()
+	rebuilt := false
 	t.locked(func() {
 		if layout := menuLayout(groups, list, vpns); layout != t.layout {
 			t.layout = layout
 			t.build(groups, list, vpns)
+			rebuilt = true
 		}
 		for _, g := range groups {
 			t.details[t.groupItems[g.Name]] = g.Now
 			for name, item := range t.memberItems[g.Name] {
-				item.SetChecked(name == g.Now)
+				check(item, name == g.Now)
 			}
 		}
 		for id, item := range t.profileItems {
-			item.SetChecked(id == list.Current)
+			check(item, id == list.Current)
 		}
 		var up []string
 		for name, item := range t.vpnItems {
@@ -311,6 +389,12 @@ func (t *trayMenu) tick() {
 		t.details[t.vpnItem] = cmp.Or(strings.Join(up, "、"), "未连接")
 		t.showRows()
 	})
+	if rebuilt && runtime.GOOS == "linux" {
+		// the tray hands its menu to the panel over D-Bus only when one is set: Update redraws GTK's
+		// menus, not that copy, which kept the first layout, made before the core had any groups.
+		// Outside the lock, as it waits on the main thread.
+		t.tray.SetMenu(t.menu)
+	}
 }
 
 func menuLayout(groups []Group, list Profiles, vpns map[string]string) string {
@@ -393,18 +477,21 @@ func (t *trayMenu) build(groups []Group, list Profiles, vpns map[string]string) 
 		return sub, item
 	}
 
-	if runtime.GOOS == "windows" {
-		t.speedItem = m.Add(speedLabel(Traffic{})).SetEnabled(false)
-	}
 	m.Add("显示主窗口").SetAccelerator("CmdOrCtrl+M").OnClick(func(*application.Context) { t.show() })
 	var headers []*application.MenuItem
-	header := func(title string) { headers = append(headers, m.Add(title).SetEnabled(false)) }
+	header := func(title string) {
+		if runtime.GOOS != "darwin" { // elsewhere a title is a plain disabled item, read as a greyed-out option
+			m.AddSeparator()
+			return
+		}
+		headers = append(headers, m.Add(title).SetEnabled(false))
+	}
 	header("路由")
 	sub, item := submenu("出站模式")
 	t.modeItem, t.modeItems = item, map[string]*application.MenuItem{}
 	for _, md := range modes {
 		key := md.key
-		t.modeItems[key] = sub.AddRadio(md.label, key == t.mode).OnClick(func(*application.Context) {
+		t.modeItems[key] = addChoice(sub, md.label, key == t.mode).OnClick(func(*application.Context) {
 			if err := t.svc.SetMode(key); err != nil {
 				notify("error", "切换出站模式失败：%v", err)
 				t.setMode(t.mode) // put the radio back
@@ -418,7 +505,7 @@ func (t *trayMenu) build(groups []Group, list Profiles, vpns map[string]string) 
 		t.groupItems[g.Name], t.memberItems[g.Name] = item, map[string]*application.MenuItem{}
 		for _, p := range g.All {
 			group, name := g.Name, p.Name
-			t.memberItems[group][name] = sub.AddRadio(name, name == g.Now).OnClick(func(*application.Context) {
+			t.memberItems[group][name] = addChoice(sub, name, name == g.Now).OnClick(func(*application.Context) {
 				if err := t.svc.Select(group, name); err != nil {
 					notify("error", "选择 %s / %s 失败：%v", group, name, err)
 				}
@@ -441,28 +528,32 @@ func (t *trayMenu) build(groups []Group, list Profiles, vpns map[string]string) 
 		emit("navigate", "vpn")
 	})
 	header("网络")
-	t.qualityItem = m.Add("网络质量").OnClick(func(*application.Context) { t.measure() })
+	t.qualityItem = m.Add("网络质量").OnClick(func(*application.Context) { go t.measure() })
 	t.details[t.qualityItem] = quality
-	header("流量")
 	t.procItems = nil
-	for range trayProcesses {
-		t.procItems = append(t.procItems, m.Add("").SetHidden(true).OnClick(func(*application.Context) { t.show() }))
+	if runtime.GOOS == "darwin" {
+		// each process's speed, live. Not on Linux, where every label change has the panel fetch the
+		// whole menu again and close the submenu being read, nor on Windows, which shows plain text
+		header("流量")
+		for range trayProcesses {
+			t.procItems = append(t.procItems, m.Add("").SetHidden(true).OnClick(func(*application.Context) { t.show() }))
+		}
 	}
 
 	header("接管")
-	t.proxyItem = m.AddCheckbox("设置为系统代理", t.proxy).SetAccelerator("CmdOrCtrl+S").OnClick(func(ctx *application.Context) {
-		if err := t.sysProxy.SetEnabled(ctx.ClickedMenuItem().Checked()); err != nil {
+	t.proxyItem = t.addSwitch(m, "设置为系统代理", t.proxy).SetAccelerator("CmdOrCtrl+S").OnClick(func(*application.Context) {
+		if err := t.sysProxy.SetEnabled(!t.sysProxy.Enabled()); err != nil {
 			notify("error", "设置系统代理失败：%v", err)
 			t.sysProxy.onChange(t.sysProxy.Enabled()) // put the checkbox back
 		}
 	})
 	sub, t.partialMenu = submenu("部分增强")
-	t.partialItem = sub.AddCheckbox("开启", false).OnClick(func(*application.Context) { go t.toggleEnhanced("process-tun") })
+	t.partialItem = t.addSwitch(sub, "开启", false).OnClick(func(*application.Context) { go t.toggleEnhanced(false) })
 	sub.Add("配置…").OnClick(func(*application.Context) {
 		t.show()
 		emit("navigate", "processes") // the window opens the 增强 page, where the apps are picked
 	})
-	t.enhancedItem = m.AddCheckbox("增强模式", false).SetAccelerator("CmdOrCtrl+E").OnClick(func(*application.Context) { go t.toggleEnhanced("tun") })
+	t.enhancedItem = t.addSwitch(m, "增强模式", false).SetAccelerator("CmdOrCtrl+E").OnClick(func(*application.Context) { go t.toggleEnhanced(true) })
 	t.checkEnhanced()
 	m.Add("复制终端代理命令").SetAccelerator("CmdOrCtrl+C").OnClick(func(*application.Context) {
 		port, err := mixedPort(t.sysProxy.core)
@@ -479,7 +570,7 @@ func (t *trayMenu) build(groups []Group, list Profiles, vpns map[string]string) 
 		sub, _ := submenu("配置")
 		for _, p := range list.Profiles {
 			id := p.ID
-			t.profileItems[id] = sub.AddRadio(p.Name, id == list.Current).OnClick(func(*application.Context) {
+			t.profileItems[id] = addChoice(sub, p.Name, id == list.Current).OnClick(func(*application.Context) {
 				if err := t.profiles.Select(id); err != nil {
 					notify("error", "切换配置失败：%v", err)
 				}

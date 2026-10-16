@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,9 +23,8 @@ import (
 
 // Usage is a client, host or policy's traffic today; Icon is a file whose Finder icon stands for it.
 type Usage struct {
-	Name     string  `json:"name"`
-	Icon     string  `json:"icon,omitempty"`
-	Children []Usage `json:"children,omitempty"` // a client's own processes (an app's helpers), biggest first
+	Name string `json:"name"`
+	Icon string `json:"icon,omitempty"`
 	Split
 }
 
@@ -79,10 +79,8 @@ func (s *CoreService) Activity() (Activity, error) {
 	for _, c := range conns {
 		name, _ := clientOf(c)
 		processes[name], hosts[c.Host] = true, true
-		if c.Process == "" && c.Path == "" { // no local process: a LAN device using us as a proxy or gateway
-			if ip := net.ParseIP(c.Source); ip != nil && !ip.IsLoopback() {
-				devices[c.Source] = true
-			}
+		if c.Process == "" && c.Path == "" && net.ParseIP(c.Source) != nil && !fromHere(c.Source) { // a LAN device using us as a proxy or gateway
+			devices[c.Source] = true
 		}
 	}
 	a.Processes, a.Devices, a.Hosts = len(processes), len(devices), len(hosts)
@@ -229,25 +227,36 @@ type Split struct {
 // nsurlsessiond's background downloads for other apps) fold into macOS; none for a device.
 func clientOf(c Conn) (name, icon string) {
 	if c.Inbound == "Inner" {
-		return "Connaio", ownBundle
+		return "Connaio", cmp.Or(ownBundle, ownExe)
 	}
 	if systemDaemon(c.Path) {
 		return "macOS", "/System/Applications/System Settings.app"
 	}
+	if c.System || c.Process == "" && c.Path == "" && c.Inbound != "Inner" && fromHere(c.Source) {
+		// Linux's services, as macOS's daemons above, and this machine's connections the core
+		// couldn't name; AppIcon draws "system" as the settings gear
+		if runtime.GOOS == "darwin" {
+			return "macOS", "/System/Applications/System Settings.app"
+		}
+		return "System", "system"
+	}
 	name, icon = c.Process, c.Path
 	if b := bundleOf(c.Path); b != "" {
 		icon, name = b, strings.TrimSuffix(filepath.Base(b), ".app")
+	} else if app := appName(c.Path); app != "" {
+		name = app // Linux: the installed application the executable belongs to (chrome is Google Chrome)
 	} else if p := parentOf(name); p != "" {
 		icon = cmp.Or(bundleOf(p), p)
+		name = cmp.Or(appName(p), name) // Linux: a command counts towards the application it was started from
 	}
 	return cmp.Or(name, c.Source, "-"), icon
 }
 
+// ownExe is this app's executable: its own connections are Connaio's, as the core's are.
+var ownExe, _ = os.Executable()
+
 // ownBundle is this app's bundle, for its icon; empty when not run from one.
-var ownBundle = func() string {
-	exe, _ := os.Executable()
-	return bundleOf(exe)
-}()
+var ownBundle = bundleOf(ownExe)
 
 func (s *Split) add(direct bool, n int64) {
 	if direct {
@@ -261,12 +270,11 @@ func (s *Split) add(direct bool, n int64) {
 // and policy.
 type Day struct {
 	Split
-	Hours  [24]Split                   `json:"hours"`
-	Client map[string]Split            `json:"client,omitempty"`
-	Procs  map[string]map[string]Split `json:"procs,omitempty"` // client -> its processes
-	Host   map[string]Split            `json:"host,omitempty"`
-	Policy map[string]Split            `json:"policy,omitempty"`
-	Icons  map[string]string           `json:"icons,omitempty"` // client -> file whose icon stands for it, kept across restarts
+	Hours  [24]Split         `json:"hours"`
+	Client map[string]Split  `json:"client,omitempty"`
+	Host   map[string]Split  `json:"host,omitempty"`
+	Policy map[string]Split  `json:"policy,omitempty"`
+	Icons  map[string]string `json:"icons,omitempty"` // client -> file whose icon stands for it, kept across restarts
 }
 
 // ledger keeps per-day traffic in traffic.json.
@@ -321,14 +329,6 @@ func (l *ledger) add(conns []Conn, now time.Time) map[string]int64 {
 		bump(&d.Client, name, direct, delta)
 		bump(&d.Host, c.Host, direct, delta)
 		bump(&d.Policy, policy, direct, delta)
-		if proc := processName(c); proc != "" {
-			if d.Procs == nil {
-				d.Procs = map[string]map[string]Split{}
-			}
-			procs := d.Procs[name]
-			bump(&procs, proc, direct, delta)
-			d.Procs[name] = procs
-		}
 		if icon != "" {
 			if d.Icons == nil {
 				d.Icons = map[string]string{}
@@ -377,21 +377,7 @@ func (l *ledger) today(now time.Time) (hours [24]Split, clients, hosts, policies
 	if d == nil {
 		return
 	}
-	clients = topUsage(d.Client, d.Icons, 20)
-	for i := range clients {
-		if procs := d.Procs[clients[i].Name]; len(procs) > 1 || (len(procs) == 1 && procs[clients[i].Name] == (Split{})) {
-			clients[i].Children = topUsage(procs, nil, 20)
-		}
-	}
-	return d.Hours, clients, topUsage(d.Host, nil, 20), topUsage(d.Policy, nil, 20)
-}
-
-// processName is the executable behind a connection, as opposed to the app it belongs to.
-func processName(c Conn) string {
-	if c.Path != "" {
-		return filepath.Base(c.Path)
-	}
-	return c.Process
+	return d.Hours, topUsage(d.Client, d.Icons, 20), topUsage(d.Host, nil, 20), topUsage(d.Policy, nil, 20)
 }
 
 // topUsage is the n largest entries, biggest first (the page can rank by proxied traffic alone).
@@ -409,6 +395,23 @@ func topUsage(m map[string]Split, icons map[string]string, n int) []Usage {
 // keepDays is how long a day's traffic stays in the ledger: a year of months, plus the current one.
 const keepDays = 13 * 31
 
+// clear forgets every day's traffic and saves that; live connections go on counting from the bytes
+// already seen, so nothing before the clear comes back.
+func (l *ledger) clear() error {
+	l.mu.Lock()
+	l.days, l.dirty = map[string]*Day{}, true
+	l.mu.Unlock()
+	return l.save()
+}
+
+// ClearTraffic clears the traffic statistics: today's, this month's and every day kept.
+func (s *CoreService) ClearTraffic() error {
+	if s.ledger == nil {
+		return nil
+	}
+	return s.ledger.clear()
+}
+
 func (l *ledger) save() error {
 	l.mu.Lock()
 	if !l.dirty {
@@ -421,15 +424,8 @@ func (l *ledger) save() error {
 			delete(l.days, day)
 			continue
 		}
-		// ponytail: hosts, clients and processes grow without bound in a day; keep the 500 busiest
+		// ponytail: hosts and clients grow without bound in a day; keep the 500 busiest
 		d.Host, d.Client = trimUsage(d.Host, 500), trimUsage(d.Client, 500)
-		for client, procs := range d.Procs {
-			if _, kept := d.Client[client]; !kept {
-				delete(d.Procs, client)
-				continue
-			}
-			d.Procs[client] = trimUsage(procs, 500)
-		}
 	}
 	b, err := json.Marshal(l.days)
 	l.dirty = err != nil

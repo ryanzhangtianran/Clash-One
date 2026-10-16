@@ -78,17 +78,38 @@ func lanAddresses() []string {
 	return out
 }
 
-// Devices groups live connections by source IP, leaving out this Mac's own processes and addresses.
+// tunRange holds the TUN's own address and its fake IPs (mihomo's 198.18.0.1/16).
+var _, tunRange, _ = net.ParseCIDR("198.18.0.0/15")
+
+// fromHere says whether a source address is this machine's: loopback (the proxy port), the TUN's
+// (what it captured), or one of its interfaces'. A connection from here that has no process is one
+// the core couldn't name (a process gone before it asked), not a LAN device.
+func fromHere(source string) bool {
+	ip := net.ParseIP(source)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() || tunRange.Contains(ip) {
+		return true
+	}
+	addrs, _ := net.InterfaceAddrs()
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok && n.IP.Equal(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// Devices groups live connections by source IP, leaving out this machine's own processes and addresses.
 func (s *DeviceService) Devices() ([]Device, error) {
 	conns, err := s.core.Connections()
 	if err != nil {
 		return nil, err
 	}
-	own := lanAddresses()
 	byIP := map[string]*Device{}
 	for _, c := range conns {
-		ip := net.ParseIP(c.Source)
-		if c.Process != "" || ip == nil || ip.IsLoopback() || slices.Contains(own, c.Source) {
+		if c.Process != "" || net.ParseIP(c.Source) == nil || fromHere(c.Source) {
 			continue
 		}
 		d := byIP[c.Source]

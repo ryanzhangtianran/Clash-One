@@ -162,6 +162,9 @@ func TestCapture(t *testing.T) {
 	if cfg["capture"].(map[string]any)["mode"] != "tun" || cfg["dns"].(map[string]any)["enable"] != true {
 		t.Fatalf("enhanced: %v", cfg)
 	}
+	if !slices.Contains(cfg["dns"].(map[string]any)["fake-ip-filter"].([]any), any("connectivity-check.ubuntu.com")) {
+		t.Fatalf("connectivity checks get real IPs: %v", cfg["dns"])
+	}
 	cfg = map[string]any{"capture": map[string]any{"mode": "process-tun"}, "dns": map[string]any{"enable": true, "nameserver": []any{"1.1.1.1"}}}
 	Capture(cfg, true)
 	if cfg["capture"].(map[string]any)["mode"] != "process-tun" || cfg["dns"].(map[string]any)["nameserver"].([]any)[0] != "1.1.1.1" {
@@ -170,6 +173,33 @@ func TestCapture(t *testing.T) {
 	Capture(cfg, false)
 	if cfg["capture"].(map[string]any)["mode"] != "system-proxy" {
 		t.Fatalf("no daemon, no TUN: %v", cfg)
+	}
+}
+
+func TestReplaceSystemDNS(t *testing.T) {
+	dns := map[string]any{
+		"direct-nameserver": []any{"system"},
+		"nameserver":        []any{"https://1.1.1.1/dns-query"},
+		"nameserver-policy": map[string]any{"+.lan": []any{"system"}, "+.cn": "system", "geosite:x": []any{"https://doh.pub/dns-query"}},
+	}
+	replaceSystemDNS(dns, []any{"192.168.8.1"})
+	if got := dns["direct-nameserver"].([]any); len(got) != 1 || got[0] != "192.168.8.1" {
+		t.Fatalf("system kept: %v", got)
+	}
+	if got := dns["nameserver"].([]any); got[0] != "https://1.1.1.1/dns-query" {
+		t.Fatalf("others changed: %v", got)
+	}
+	policy := dns["nameserver-policy"].(map[string]any)
+	if policy["+.lan"].([]any)[0] != "192.168.8.1" || policy["+.cn"].([]any)[0] != "192.168.8.1" || policy["geosite:x"].([]any)[0] != "https://doh.pub/dns-query" {
+		t.Fatalf("policy: %v", policy)
+	}
+}
+
+func TestUpstreamDNS(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "resolv.conf")
+	_ = os.WriteFile(path, []byte("# resolved\nnameserver 198.18.0.2\nnameserver 192.168.8.1\nnameserver fe80::1%2\nnameserver 127.0.0.53\nsearch lan\n"), 0o644)
+	if got := upstreamDNS(path); len(got) != 1 || got[0] != "192.168.8.1" {
+		t.Fatalf("upstream %v, want the router only", got)
 	}
 }
 

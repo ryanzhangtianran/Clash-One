@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/ryanzhangtianran/Connaio/internal/core"
@@ -37,37 +36,63 @@ func (s *EnhancedService) Mode() string {
 	return "tun"
 }
 
-// SetMode switches between the two, or turns TUN off with "": off from enhanced mode goes back
-// to partial enhancement when that was on underneath.
-func (s *EnhancedService) SetMode(mode string) error {
-	was := s.Mode()
-	switch mode {
-	case "":
-		if was == "tun" && s.settings.Get().Partial {
-			return s.SetMode("process-tun")
-		}
+// Full is whether enhanced mode is on: all traffic through TUN.
+func (s *EnhancedService) Full() bool { return s.Mode() == "tun" }
+
+// Partial is whether partial enhancement is chosen. Enhanced mode covers it: it captures while
+// enhanced mode is off, and waits underneath while it is on.
+func (s *EnhancedService) Partial() bool { return s.settings.Get().Partial }
+
+// SetFull turns enhanced mode on or off; off falls back to partial enhancement when that is chosen.
+func (s *EnhancedService) SetFull(on bool) error { return s.set(on, s.Partial()) }
+
+// SetPartial chooses partial enhancement or not, leaving enhanced mode as it is.
+func (s *EnhancedService) SetPartial(on bool) error { return s.set(s.Full(), on) }
+
+// set records the two choices and runs what they come to: enhanced mode if on, else partial
+// enhancement if chosen, else no TUN. The config is applied only when that changes, since applying
+// rebuilds the TUN under every connection.
+func (s *EnhancedService) set(full, partial bool) error {
+	mode := ""
+	switch {
+	case full:
+		mode = "tun"
+	case partial:
+		mode = "process-tun"
+	}
+	was := s.Partial()
+	if err := s.settings.Update(func(st *Settings) { st.Partial = partial }); err != nil {
+		return err
+	}
+	undo := func(err error) error {
+		_ = s.settings.Update(func(st *Settings) { st.Partial = was })
+		return err
+	}
+	switch {
+	case mode == s.Mode():
+		s.changed(s.Enabled()) // only the choice underneath changed: the views show it
+	case mode == "":
 		if err := s.SetEnabled(false); err != nil {
-			return err
+			return undo(err)
 		}
-		return s.settings.Update(func(st *Settings) { st.Partial = false })
-	case "tun", "process-tun":
+	default:
 		// capture.mode goes into the override without applying; SetEnabled applies once and
 		// rolls both back if the core refuses
 		old, _ := s.profiles.Value("capture.mode")
 		if err := s.profiles.store.SetPath([]string{"capture", "mode"}, mode); err != nil {
-			return err
+			return undo(err)
 		}
 		if err := s.SetEnabled(true); err != nil {
 			if old != nil {
 				_ = s.profiles.store.SetPath([]string{"capture", "mode"}, old)
 			}
-			return err
+			return undo(err)
 		}
 		emit("setting", "capture.mode")
-		return s.settings.Update(func(st *Settings) { st.Partial = mode == "process-tun" || was == "process-tun" })
 	}
-	return fmt.Errorf("unknown enhanced mode %q", mode)
+	return nil
 }
+
 func (s *EnhancedService) DaemonInstalled() bool { return daemon.Installed() }
 
 // Grant installs the root daemon (one administrator prompt) and moves the GUI's core onto it;

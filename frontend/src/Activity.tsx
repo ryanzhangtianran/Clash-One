@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { CoreService, ProfileService, SettingsService, ToolService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
-import type { Activity as ActivityData, DiagSection, Latency, RepairItem, Status, Usage } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
-import { size, sizeText, speed } from "./format";
+import type { Activity as ActivityData, Conn, DiagSection, IPInfo, Latency, RepairItem, Status, Usage } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
+import { client } from "./Dashboard";
+import { nodesOf } from "./Proxies";
+import { platform, size, sizeText, speed } from "./format";
 import { DiagLog } from "./ProxyDiagnose";
-import { on, usePoll, useCachedURL } from "./hooks";
+import { on, usePoll, useCachedURL, useClickAway } from "./hooks";
 import { useHistory } from "./store";
 
 const modes: Record<string, string> = { rule: "规则判定", global: "全局代理", direct: "直接连接" };
@@ -74,6 +76,17 @@ function SpeedCard({ label, values, color }: { label: string; values: number[]; 
 // TotalCard shows today's or this month's traffic, split into direct and proxied.
 function TotalCard({ activity }: { activity: ActivityData | null }) {
   const [range, setRange] = useState<"today" | "month">("today");
+  const [confirming, setConfirming] = useState(false); // 清除 asks once more before it forgets
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirming]);
+  const clear = () => {
+    if (!confirming) { setConfirming(true); return; }
+    setConfirming(false);
+    CoreService.ClearTraffic();
+  };
   const { direct, proxy } = activity?.[range] ?? { direct: 0, proxy: 0 };
   const [total, unit] = size(direct + proxy);
   const part = (bytes: number) => { const [v, u] = size(bytes); return <Num cls="mid" value={v} unit={u} />; };
@@ -81,9 +94,12 @@ function TotalCard({ activity }: { activity: ActivityData | null }) {
     <div className="card">
       <div className="head">
         <div className="label">总计</div>
-        <div className="seg">
-          <button className={range === "today" ? "on" : ""} onClick={() => setRange("today")}>今日</button>
-          <button className={range === "month" ? "on" : ""} onClick={() => setRange("month")}>本月</button>
+        <div className="head-actions">
+          <button className={`link-btn ${confirming ? "danger" : ""}`} onClick={clear} title="清除所有流量统计">{confirming ? "确认清除" : "清除"}</button>
+          <div className="seg">
+            <button className={range === "today" ? "on" : ""} onClick={() => setRange("today")}>今日</button>
+            <button className={range === "month" ? "on" : ""} onClick={() => setRange("month")}>本月</button>
+          </div>
         </div>
       </div>
       <Num value={total} unit={unit} />
@@ -99,72 +115,193 @@ function TotalCard({ activity }: { activity: ActivityData | null }) {
   );
 }
 
-// Diagnose runs the network diagnosis and shows each step as it finishes.
-function Diagnose({ onClose }: { onClose: () => void }) {
+const errText = (e: unknown) => String(e).replace(/^\w*Error:\s*/, "") || "失败，详情见事件";
+
+// NetTools is the network repair (its checks run on open, each with its fix) and the diagnosis (on
+// demand, each step shown as it finishes); every action sits in the head, beside the title.
+function NetTools() {
+  const [tab, setTab] = useState(0);
+  const [items, setItems] = useState<RepairItem[]>([]);
+  const [busy, setBusy] = useState("");
+  const [notes, setNotes] = useState<Record<string, string>>({});
   const [sections, setSections] = useState<DiagSection[]>([]);
-  const [running, setRunning] = useState(true);
+  const [running, setRunning] = useState(false);
+  const load = () => ToolService.RepairChecks().then((r) => setItems(r ?? []));
   useEffect(() => {
+    load();
     const off = on("diagnose", (d) => setSections((s) => [...s, d]));
-    ToolService.Diagnose().finally(() => setRunning(false));
     return () => { off(); ToolService.CancelDiagnose(); };
   }, []);
+  const fix = (id: string) => {
+    setBusy(id);
+    ToolService.Repair(id).then((m) => setNotes((n) => ({ ...n, [id]: m }))).catch((e) => setNotes((n) => ({ ...n, [id]: errText(e) }))).finally(() => { setBusy(""); load(); });
+  };
+  const diagnose = () => {
+    setSections([]);
+    setRunning(true);
+    ToolService.Diagnose().finally(() => setRunning(false));
+  };
+  const found = items.filter((i) => i.found);
+  const isCheck = (i: RepairItem) => ["proxy", "orphan", "tun"].includes(i.id); // a check, as opposed to a reset
   return (
-    <div className="modal-bg">
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-head"><div className="sheet-title">网络诊断</div><div className="muted small">逐项检查配置、网络、DNS 和代理，帮你快速找到问题。</div></div>
-        <div className="sheet-body diag">
-          <DiagLog sections={sections} />
+    <div className="card tools-card">
+      <div className="head">
+        <div className="label">
+          网络诊断与修复
+          {tab === 0 && <button className="icon-btn" onClick={load} disabled={!!busy} title="重新检查">↻</button>}
+          {tab === 1 && (running ? <span className="spinner" /> : sections.length > 0 && <button className="icon-btn" onClick={diagnose} title="重新诊断">↻</button>)}
         </div>
-        <div className="sheet-foot">
-          {running && <span className="spinner" />}
-          <span className="grow" />
-          {running
-            ? <button className="btn primary" onClick={() => ToolService.CancelDiagnose()}>终止</button>
-            : <button className="btn primary" onClick={onClose}>完成</button>}
+        <div className="head-actions">
+          {tab === 0 && found.length > 0 && <button className="link-btn" disabled={!!busy} onClick={() => found.forEach((i) => fix(i.id))}>全部修复</button>}
+          {tab === 1 && running && <button className="link-btn" onClick={() => ToolService.CancelDiagnose()}>终止</button>}
+          <div className="seg">
+            {["修复", "诊断"].map((t, i) => <button key={t} className={i === tab ? "on" : ""} onClick={() => setTab(i)}>{t}</button>)}
+          </div>
         </div>
+      </div>
+      <div className="card-scroll">
+        {tab === 0 ? (
+          items.length === 0 ? <div className="muted small">检查中…</div> : items.map((i) => {
+            const detail = notes[i.id] ?? `${i.found ? "发现问题：" : ""}${i.detail}${i.reboot ? "，重启后生效" : ""}`;
+            return (
+              <div key={i.id} className="tool-row">
+                <span className="tool-title">{i.title}</span>
+                <span className={`tool-detail ${i.found && !notes[i.id] ? "delay-bad" : "muted"}`} title={detail}>{detail}</span>
+                <span className="tool-action">
+                  {i.fix && (i.found || !isCheck(i)) ? <button className="btn" disabled={!!busy} onClick={() => fix(i.id)}>{busy === i.id ? "处理中…" : i.fix}</button>
+                    : isCheck(i) ? <span className="delay-good">正常</span> : null}
+                </span>
+              </div>
+            );
+          })
+        ) : !running && sections.length === 0 ? (
+          <div className="tool-empty">
+            <span className="muted small">逐项检查配置、网络、DNS 和代理</span>
+            <button className="btn" onClick={diagnose}>开始诊断</button>
+          </div>
+        ) : <div className="tool-log"><DiagLog sections={sections} /></div>}
       </div>
     </div>
   );
 }
 
-// Repair lists the network checks (a system proxy leading nowhere, stray cores, a leftover TUN)
-// and the usual resets, each with its fix.
-function Repair({ onClose }: { onClose: () => void }) {
-  const [items, setItems] = useState<RepairItem[]>([]);
-  const [busy, setBusy] = useState("");
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const load = () => ToolService.RepairChecks().then((r) => setItems(r ?? []));
-  useEffect(() => { load(); }, []);
-  const fix = (id: string) => {
-    setBusy(id);
-    ToolService.Repair(id).then((m) => setNotes((n) => ({ ...n, [id]: m }))).catch((e) => setNotes((n) => ({ ...n, [id]: String(e).replace(/^RuntimeError:\s*/, "") }))).finally(() => { setBusy(""); load(); });
-  };
-  const found = items.filter((i) => i.found);
-  const isCheck = (i: RepairItem) => ["proxy", "orphan", "tun"].includes(i.id); // a check, as opposed to a reset
+// Picker is a compact dropdown for a card's head. Not a <select>: on Linux its popup is GTK's own
+// menu, out of keeping with the page; the menu is fixed to the window so the card doesn't clip it.
+function Picker({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
+  const [at, setAt] = useState<DOMRect | null>(null);
+  useClickAway(!!at, () => setAt(null));
   return (
-    <div className="modal-bg">
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-head"><div className="sheet-title">网络修复</div><div className="muted small">清理代理程序退出后留下的残留，以及常用的网络重置。</div></div>
-        <div className="sheet-body" style={{ paddingBottom: 4 }}>
-          {items.map((i) => (
-            <div key={i.id} className="setting-row">
-              <div>
-                <div className="setting-title">{i.title}</div>
-                <div className={`small ${notes[i.id] ? "" : "muted"}`}>{notes[i.id] ?? `${i.detail}${i.reboot ? "，重启后生效" : ""}`}</div>
-              </div>
-              <div className="setting-control">
-                {i.found ? <span className="delay-bad small">发现问题</span> : isCheck(i) ? <span className="delay-good small">正常</span> : null}
-                {i.fix && (i.found || !isCheck(i)) && <button className="btn ctl" disabled={!!busy} onClick={() => fix(i.id)}>{busy === i.id ? "处理中…" : i.fix}</button>}
-              </div>
-            </div>
-          ))}
-          {items.length === 0 && <div className="muted small" style={{ padding: 16 }}>检查中…</div>}
+    <>
+      {/* the click stops here: opening attaches the click-away listener, which it would reach next */}
+      <button className="picker" onClick={(e) => { e.stopPropagation(); setAt(at ? null : e.currentTarget.getBoundingClientRect()); }}>
+        <span>{value || "—"}</span>
+        <svg viewBox="0 0 10 6" width="10" height="6"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" /></svg>
+      </button>
+      {at && (
+        <div className="menu picker-menu" style={{ top: at.bottom + 4, right: window.innerWidth - at.right, minWidth: at.width }}>
+          {options.map((o) => <button key={o} className={o === value ? "current" : ""} onClick={() => onChange(o)}>{o}</button>)}
         </div>
-        <div className="sheet-foot">
-          {found.length > 0 && <button className="btn" disabled={!!busy} onClick={() => found.forEach((i) => fix(i.id))}>全部修复</button>}
-          <span className="grow" />
-          <button className="btn primary" onClick={onClose}>完成</button>
+      )}
+    </>
+  );
+}
+
+const place = (i: IPInfo) => [i.city || i.region || i.country, i.code].filter(Boolean).join(", ");
+// flag is a country's flag emoji from its ISO code.
+const flag = (code: string) => (code.length === 2 ? String.fromCodePoint(...[...code.toUpperCase()].map((c) => 0x1f1a5 + c.charCodeAt(0))) : "");
+const fullPlace = (i: IPInfo) => [...new Set([i.city, i.region, i.country].filter(Boolean))].join(", ");
+
+// exitIPs caches each policy's exit lookup for the session, a failed one dropped so it is asked again.
+// ponytail: no expiry; a node whose address changes shows the old one until the app restarts.
+const exitIPs: Record<string, Promise<IPInfo>> = {};
+const exitIP = (policy: string) => (exitIPs[policy] ??= ToolService.ExitIP(policy).catch((e) => { delete exitIPs[policy]; throw e; }));
+
+// ExitIP shows where traffic through a chosen node comes out: the address, then where it is and
+// whose network, laid out like the cards beside it. Nodes only: a group's exit is its node's.
+function ExitIP() {
+  const [names, setNames] = useState<string[]>([]);
+  const [policy, setPolicy] = useState("");
+  const [info, setInfo] = useState<IPInfo | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    CoreService.Groups().then((g) => {
+      const nodes = nodesOf(g ?? []).map((n) => n.name);
+      setNames(nodes);
+      setPolicy((p) => p || nodes[0] || "");
+    });
+  }, []);
+  const check = (fresh: boolean) => {
+    if (!policy) return;
+    if (fresh) delete exitIPs[policy];
+    setBusy(true); setError(""); setInfo(null);
+    exitIP(policy).then(setInfo).catch((e) => setError(errText(e))).finally(() => setBusy(false));
+  };
+  useEffect(() => check(false), [policy]);
+  return (
+    <div className="card">
+      <div className="head">
+        <div className="label">
+          出口 IP
+          <button className="icon-btn" onClick={() => check(true)} disabled={busy} title="重新查询">↻</button>
         </div>
+        <Picker value={policy} options={names} onChange={setPolicy} />
+      </div>
+      {error ? <div className="exit-error small" title={error}>{error}</div>
+        : <div className={`ip-big selectable ${info ? "" : "muted"}`}>{info?.ip ?? (busy ? "查询中…" : "—")}</div>}
+      <div className="stats exit-stats">
+        <div><div className="label">位置</div><div className="exit-value" title={info ? fullPlace(info) : ""}>{info ? `${flag(info.code)} ${place(info)}` : "—"}</div></div>
+        <div><div className="label">运营商</div><div className="exit-value" title={info?.isp}>{info?.isp || "—"}</div></div>
+      </div>
+    </div>
+  );
+}
+
+// ExitCell is the exit address of one route, looked up once per session.
+function ExitCell({ policy }: { policy: string }) {
+  const [text, setText] = useState("查询出口…");
+  const [full, setFull] = useState("");
+  useEffect(() => {
+    if (policy === "REJECT") { setText("拒绝"); return; }
+    exitIP(policy).then((i) => { setText(`${flag(i.code)} ${i.ip} · ${place(i)}`); setFull(`${i.ip} · ${fullPlace(i)} · ${i.isp}`); }).catch(() => setText("出口查询失败"));
+  }, [policy]);
+  return <span className="selectable" title={full}>{text}</span>;
+}
+
+let watched = ""; // the process the monitor shows, kept across page switches
+
+// ProcessWatch follows one process's live connections: each route it takes (the rule's policy down
+// to the node), the address that route comes out at, and the hosts on it.
+function ProcessWatch() {
+  const [conns, setConns] = useState<Conn[]>([]);
+  const [proc, setProc] = useState(watched);
+  usePoll(() => CoreService.Connections().then((c) => setConns(c ?? [])), 2000);
+  const choose = (p: string) => { watched = p; setProc(p); };
+  const counts = new Map<string, number>();
+  for (const c of conns) counts.set(client(c), (counts.get(client(c)) ?? 0) + 1);
+  const busiest = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+  const shown = proc || busiest; // until one is chosen, the one with the most connections, then kept
+  useEffect(() => { if (!proc && busiest) choose(busiest); }, [proc, busiest]);
+  const procs = [...new Set([...counts.keys(), ...(shown ? [shown] : [])])].sort((a, b) => a.localeCompare(b));
+  const routes = new Map<string, Conn[]>();
+  for (const c of conns) if (client(c) === shown) routes.set(c.chain || "DIRECT", [...(routes.get(c.chain || "DIRECT") ?? []), c]);
+  return (
+    <div className="card">
+      <div className="head">
+        <div className="label">进程监视</div>
+        <Picker value={shown} options={procs} onChange={choose} />
+      </div>
+      <div className="card-scroll">
+        {routes.size === 0 ? <div className="muted small">{shown ? `${shown} 当前没有连接` : "当前没有连接"}</div>
+          : [...routes].map(([chain, cs]) => {
+            const hosts = [...new Set(cs.map((c) => c.host))];
+            return (
+              <div key={chain} className="watch-route" title={hosts.join("\n")}>
+                <div className="watch-head"><span className="watch-chain">{chain}</span><span className="muted small">{cs.length} 个连接</span></div>
+                <div className="watch-exit"><ExitCell policy={chain.split(" → ").pop()!} /></div>
+              </div>
+            );
+          })}
       </div>
     </div>
   );
@@ -198,7 +335,7 @@ function HourChart({ values }: { values: number[] }) {
 
 // ClientIcon is a client's Finder icon (an app's, or an executable's generic one), or a device glyph.
 function ClientIcon({ path }: { path?: string }) {
-  const src = useCachedURL(path, SettingsService.AppIcon);
+  const src = useCachedURL(path || (platform === "linux" ? "device" : undefined), SettingsService.AppIcon); // Linux has a theme icon for devices
   if (src) return <img className="client-icon" src={src} alt="" />;
   return (
     <span className="client-icon device">
@@ -209,53 +346,52 @@ function ClientIcon({ path }: { path?: string }) {
   );
 }
 
-// Ranking is today's traffic: per hour, then by client, host or policy; all of it or proxied only.
+// Ranking is today's traffic as two cards sharing the 全部 / 仅代理 choice: per hour, and the top
+// eight applications (a command counted towards the one it was started from), hosts or policies,
+// as many as the card shows whole.
 function Ranking({ activity }: { activity: ActivityData }) {
   const [proxyOnly, setProxyOnly] = useState(false);
   const [tab, setTab] = useState(0);
-  const [children, setChildren] = useState(false); // list an app's own processes under it
   const pick = (s: { direct: number; proxy: number }) => (proxyOnly ? s.proxy : s.direct + s.proxy);
-  const tabs: [string, Usage[] | null][] = [["进程与设备", activity.byProcess], ["域名", activity.byHost], ["策略", activity.byPolicy]];
+  const tabs: [string, Usage[] | null][] = [["应用", activity.byProcess], ["域名", activity.byHost], ["策略", activity.byPolicy]];
   const rows = (tabs[tab][1] ?? []).filter((r) => pick(r) > 0).sort((a, b) => pick(b) - pick(a)).slice(0, 8);
   const peak = Math.max(1, ...rows.map(pick));
   return (
-    <div className="card ranking">
-      <div className="head">
-        <div className="label">今日流量</div>
-        <div className="seg">
-          <button className={!proxyOnly ? "on" : ""} onClick={() => setProxyOnly(false)}>全部</button>
-          <button className={proxyOnly ? "on" : ""} onClick={() => setProxyOnly(true)}>仅代理</button>
+    <>
+      <div className="card" style={{ gridArea: "hours" }}>
+        <div className="head">
+          <div className="label">今日流量</div>
+          <div className="seg">
+            <button className={!proxyOnly ? "on" : ""} onClick={() => setProxyOnly(false)}>全部</button>
+            <button className={proxyOnly ? "on" : ""} onClick={() => setProxyOnly(true)}>仅代理</button>
+          </div>
         </div>
+        <HourChart values={(activity.hours ?? []).map(pick)} />
       </div>
-      <HourChart values={(activity.hours ?? []).map(pick)} />
-      <div className="seg wide">
-        {tabs.map(([name], i) => <button key={name} className={i === tab ? "on" : ""} onClick={() => setTab(i)}>{name}</button>)}
-      </div>
-      {rows.length === 0 && <div className="muted">今天还没有流量</div>}
-      {tab === 0 && rows.some((r) => r.children?.length) && (
-        <label className="rank-toggle"><input type="checkbox" checked={children} onChange={(e) => setChildren(e.target.checked)} /> 显示子进程</label>
-      )}
-      <div className="rank-scroll">
-        <div className={`rank ${tab === 0 ? "with-icons" : ""}`}>
-          {rows.map((r) => (
-            <div key={r.name}>
-              <div className="row">
-                {tab === 0 && <ClientIcon path={r.icon} />}
-                <span className="name" title={r.name}>{r.name}</span>
-                <span className="bytes">{sizeText(pick(r))}</span>
-                <span className="bar"><i style={{ width: `${(pick(r) / peak) * 100}%` }} /></span>
-              </div>
-              {tab === 0 && children && (r.children ?? []).filter((c) => pick(c) > 0).map((c) => (
-                <div className="row child" key={c.name}>
-                  <span className="name" title={c.name}>{c.name}</span>
-                  <span className="bytes">{sizeText(pick(c))}</span>
+      <div className="card ranking" style={{ gridArea: "rank" }}>
+        <div className="head">
+          <div className="label">流量排行{proxyOnly && " · 仅代理"}</div>
+          <div className="seg">
+            {tabs.map(([name], i) => <button key={name} className={i === tab ? "on" : ""} onClick={() => setTab(i)}>{name}</button>)}
+          </div>
+        </div>
+        {rows.length === 0 && <div className="muted small">今天还没有流量</div>}
+        <div className="rank-scroll">
+          <div className={`rank ${tab === 0 ? "with-icons" : ""}`}>
+            {rows.map((r) => (
+              <div key={r.name}>
+                <div className="row">
+                  {tab === 0 && <ClientIcon path={r.icon} />}
+                  <span className="name" title={r.name}>{r.name}</span>
+                  <span className="bytes">{sizeText(pick(r))}</span>
+                  <span className="bar"><i style={{ width: `${(pick(r) / peak) * 100}%` }} /></span>
                 </div>
-              ))}
-            </div>
-          ))}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -270,8 +406,6 @@ export default function Activity({ status, activity }: { status: Status; activit
     ProfileService.Profiles().then(show);
     return on("profiles", (d) => show(d));
   }, []);
-  const [diagnosing, setDiagnosing] = useState(false);
-  const [repairing, setRepairing] = useState(false);
   const [ip, setIP] = useState("");
 
   const measure = useCallback(() => {
@@ -305,18 +439,14 @@ export default function Activity({ status, activity }: { status: Status; activit
         <div className="fact"><div className="label">外部 IP</div><div className="value">{ip || "…"}</div></div>
       </div>
 
-      {/* one grid, so cards side by side share a row height */}
+      {/* one grid of four columns: figures across the top, then charts, then lists */}
       <div className="grid">
-        <div className="card">
+        <div className="card" style={{ gridArea: "lat" }}>
           <div className="head">
             <div className="label">
               INTERNET 延迟
               <button className="icon-btn" onClick={measure} disabled={measuring} title="重新测试">↻</button>
             </div>
-            <span style={{ display: "flex", gap: 6 }}>
-              <button className="btn small-btn" onClick={() => setRepairing(true)}>网络修复</button>
-              <button className="btn small-btn" onClick={() => setDiagnosing(true)}>网络诊断</button>
-            </span>
           </div>
           {latency && latency.internet > 0 ? <Num value={String(latency.internet)} unit="ms" /> : <div className="big muted">—</div>}
           <div className="stats">
@@ -326,12 +456,7 @@ export default function Activity({ status, activity }: { status: Status; activit
           </div>
         </div>
 
-        <div className="row2">
-          <SpeedCard label="上传" values={history.map((t) => t.up)} color="var(--up)" />
-          <SpeedCard label="下载" values={history.map((t) => t.down)} color="var(--down)" />
-        </div>
-
-        <div className="card">
+        <div className="card" style={{ gridArea: "conn" }}>
           <div className="head">
             <div className="label">活动连接</div>
             <span className="dot on" />
@@ -344,12 +469,14 @@ export default function Activity({ status, activity }: { status: Status; activit
           </div>
         </div>
 
-        <div className="span2">{activity && <Ranking activity={activity} />}</div>
-
-        <TotalCard activity={activity} />
+        <div className="cell" style={{ gridArea: "total" }}><TotalCard activity={activity} /></div>
+        <div className="cell" style={{ gridArea: "exit" }}><ExitIP /></div>
+        <div className="cell" style={{ gridArea: "up" }}><SpeedCard label="上传" values={history.map((t) => t.up)} color="var(--up)" /></div>
+        <div className="cell" style={{ gridArea: "down" }}><SpeedCard label="下载" values={history.map((t) => t.down)} color="var(--down)" /></div>
+        {activity && <Ranking activity={activity} />}
+        <div className="cell" style={{ gridArea: "watch" }}><ProcessWatch /></div>
+        <div className="cell" style={{ gridArea: "tools" }}><NetTools /></div>
       </div>
-      {diagnosing && <Diagnose onClose={() => setDiagnosing(false)} />}
-      {repairing && <Repair onClose={() => setRepairing(false)} />}
     </div>
   );
 }

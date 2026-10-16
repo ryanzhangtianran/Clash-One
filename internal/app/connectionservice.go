@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,6 +21,7 @@ type Conn struct {
 	Inbound  string `json:"inbound"` // TUN, HTTP, FRP, ...
 	Process  string `json:"process"`
 	Path     string `json:"path"`
+	System   bool   `json:"-"` // a system service's: NetworkManager, livepatch on Linux; svchost on Windows
 	Source   string `json:"source"`
 	SrcPort  string `json:"-"`    // for finding this process's own test connection
 	Host     string `json:"host"` // domain, or destination IP when there is none
@@ -37,6 +40,14 @@ type TempRule struct {
 	Proxy   string `json:"proxy"`
 	Hits    uint64 `json:"hits"`
 }
+
+// winDir is Windows' own directory, lowercased with a trailing separator; "" elsewhere.
+var winDir = func() string {
+	if d := os.Getenv("SystemRoot"); runtime.GOOS == "windows" && d != "" {
+		return strings.ToLower(strings.TrimRight(d, `\`)) + `\`
+	}
+	return ""
+}()
 
 // Connections lists the live connections Connaio manages, newest first: not those partial
 // enhancement's capture filter passes straight through, which go through the core only because
@@ -93,15 +104,16 @@ func (s *CoreService) fetchConnections() ([]Conn, error) {
 			Rule        string    `json:"rule"`
 			RulePayload string    `json:"rulePayload"`
 			Metadata    struct {
-				Network     string `json:"network"`
-				Type        string `json:"type"`
-				SourceIP    string `json:"sourceIP"`
-				SourcePort  string `json:"sourcePort"`
-				Host        string `json:"host"`
-				DestIP      string `json:"destinationIP"`
-				DestPort    string `json:"destinationPort"`
-				Process     string `json:"process"`
-				ProcessPath string `json:"processPath"`
+				Network     string  `json:"network"`
+				Type        string  `json:"type"`
+				SourceIP    string  `json:"sourceIP"`
+				SourcePort  string  `json:"sourcePort"`
+				Host        string  `json:"host"`
+				DestIP      string  `json:"destinationIP"`
+				DestPort    string  `json:"destinationPort"`
+				Process     string  `json:"process"`
+				ProcessPath string  `json:"processPath"`
+				UID         *uint32 `json:"uid"`
 			} `json:"metadata"`
 		} `json:"connections"`
 	}
@@ -119,6 +131,14 @@ func (s *CoreService) fetchConnections() ([]Conn, error) {
 		if process == "" && m.ProcessPath != "" {
 			process = filepath.Base(m.ProcessPath)
 		}
+		// a system service's: on Linux one run below UID_MIN (1000), by root or a service's own account
+		// (a connection with no local process, a LAN device's or the core's own, carries uid 0 too);
+		// on Windows one from the Windows directory (svchost.exe and its like)
+		system := m.ProcessPath != "" && (runtime.GOOS == "linux" && m.UID != nil && *m.UID < 1000 ||
+			runtime.GOOS == "windows" && winDir != "" && strings.HasPrefix(strings.ToLower(m.ProcessPath), winDir))
+		if m.ProcessPath != "" && m.ProcessPath == ownExe {
+			process = "Connaio" // not the executable's lowercase name, so it lists with the core's own connections
+		}
 		rule := c.Rule
 		if c.RulePayload != "" {
 			rule += "(" + c.RulePayload + ")"
@@ -126,7 +146,7 @@ func (s *CoreService) fetchConnections() ([]Conn, error) {
 		chain := slices.Clone(c.Chains)
 		slices.Reverse(chain) // the core lists the exit first; show group → node
 		conns = append(conns, Conn{
-			ID: c.ID, Network: m.Network, Inbound: m.Type, Process: process, Path: m.ProcessPath, Source: m.SourceIP, SrcPort: m.SourcePort,
+			ID: c.ID, Network: m.Network, Inbound: m.Type, Process: process, Path: m.ProcessPath, System: system, Source: m.SourceIP, SrcPort: m.SourcePort,
 			Host: host, Port: m.DestPort, Rule: rule, Chain: strings.Join(chain, " → "),
 			Upload: c.Upload, Download: c.Download, Start: c.Start.Format(time.RFC3339),
 		})

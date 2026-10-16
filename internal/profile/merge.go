@@ -3,7 +3,9 @@ package profile
 import (
 	"fmt"
 	"maps"
+	"net"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -84,6 +86,11 @@ var tunDNS = map[string]any{
 	"nameserver":         []any{"https://223.5.5.5/dns-query", "https://1.12.12.12/dns-query"},
 }
 
+// connectivityChecks are the hosts the OSes probe to tell whether they are online (NetworkManager,
+// Windows NCSI, macOS). The probe goes out the physical interface, past the TUN, so a fake IP for
+// one reads as offline: GNOME puts a "?" on the network icon.
+var connectivityChecks = []any{"connectivity-check.ubuntu.com", "nmcheck.gnome.org", "network-test.debian.org", "+.msftconnecttest.com", "+.msftncsi.com", "captive.apple.com"}
+
 // Capture aligns capture.mode with enhanced mode. On: system-proxy (or none) becomes tun, an
 // explicit process-tun is kept, and DNS is switched on for the hijack. Off: TUN modes fall back
 // to system-proxy, since only the daemon can create a TUN.
@@ -107,6 +114,79 @@ func Capture(cfg map[string]any, enhanced bool) {
 	if dns == nil || dns["enable"] != true {
 		cfg["dns"] = merge(clone(tunDNS), dns)
 		cfg["dns"].(map[string]any)["enable"] = true
+	}
+	dns = cfg["dns"].(map[string]any)
+	if m, _ := dns["fake-ip-filter-mode"].(string); m == "" || m == "blacklist" { // whitelist and rule modes list what does get a fake IP
+		filter, _ := dns["fake-ip-filter"].([]any)
+		dns["fake-ip-filter"] = append(slices.Clone(filter), connectivityChecks...)
+	}
+	if runtime.GOOS == "linux" || runtime.GOOS == "windows" {
+		upstream := upstreamDNS("/run/systemd/resolve/resolv.conf") // none on Windows: the plain resolvers stand in
+		if len(upstream) == 0 {
+			upstream, _ = dns["default-nameserver"].([]any)
+		}
+		if len(upstream) == 0 {
+			upstream = tunDNS["default-nameserver"].([]any)
+		}
+		replaceSystemDNS(dns, upstream)
+	}
+}
+
+// tunNet holds the TUN's addresses and its fake IPs (mihomo's default 198.18.0.1/16).
+var _, tunNet, _ = net.ParseCIDR("198.18.0.0/15")
+
+// upstreamDNS lists the resolvers systemd-resolved forwards to, from its resolv.conf: the network's
+// own (the router's, which also answers .lan names), the TUN's and loopback left out.
+func upstreamDNS(path string) []any {
+	b, _ := os.ReadFile(path)
+	var out []any
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 || f[0] != "nameserver" {
+			continue
+		}
+		if ip := net.ParseIP(f[1]); ip != nil && !ip.IsLoopback() && !tunNet.Contains(ip) { // a scoped fe80::…%2 doesn't parse: skipped
+			out = append(out, f[1])
+		}
+	}
+	return out
+}
+
+// replaceSystemDNS swaps a "system" nameserver, in the lists and in nameserver-policy, for upstream.
+// On Linux, TUN's auto-route points systemd-resolved at the TUN's own DNS, so "system" answers the
+// core's own lookups with fake IPs and every DIRECT connection it resolves itself goes nowhere.
+// Windows' DNS client sends its queries into the TUN the same way.
+// ponytail: on Windows the plain resolvers stand in, so .lan names the router alone knows don't
+// resolve under TUN; read the physical adapter's DNS (Get-DnsClientServerAddress) if that matters.
+func replaceSystemDNS(dns map[string]any, upstream []any) {
+	isSystem := func(v any) bool { return v == "system" || v == "system://" }
+	swap := func(v any) any {
+		if isSystem(v) {
+			return slices.Clone(upstream)
+		}
+		list, ok := v.([]any)
+		if !ok || !slices.ContainsFunc(list, isSystem) {
+			return v
+		}
+		var out []any
+		for _, s := range list {
+			if isSystem(s) {
+				out = append(out, upstream...)
+			} else {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	for _, key := range []string{"nameserver", "direct-nameserver", "proxy-server-nameserver", "fallback"} {
+		if v, ok := dns[key]; ok {
+			dns[key] = swap(v)
+		}
+	}
+	if policy, ok := dns["nameserver-policy"].(map[string]any); ok {
+		for k, v := range policy {
+			policy[k] = swap(v)
+		}
 	}
 }
 

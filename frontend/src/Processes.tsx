@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { EnhancedService, SettingsService } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import type { ProcessChoice, Status } from "../bindings/github.com/ryanzhangtianran/Connaio/internal/app";
 import { Switch, useSetting } from "./Settings";
@@ -14,7 +14,8 @@ const sources: Record<string, string> = { app: "正在运行", network: "有网�
 const defaultTools = ["ssh", "scp", "sftp", "rsync", "git", "curl", "wget", "pip3", "python3", "npm", "node", "go", "brew", "kubectl", "conda", "claude", "codex"];
 
 // Processes is the enhanced page: enhanced mode routes all traffic through TUN, partial enhancement
-// only the selected apps (and their child processes). The two exclude each other (EnhancedService.Mode).
+// only the selected apps (and their child processes). They are chosen apart; enhanced mode covers
+// partial enhancement, which waits underneath until it is off (EnhancedService.set).
 export default function Processes({ status, mode, rooted }: { status: Status; mode: string; rooted: boolean }) {
   const [busy, setBusy] = useState("");
   const [processes, setProcesses] = useSetting<string[]>("capture.processes", []);
@@ -22,13 +23,15 @@ export default function Processes({ status, mode, rooted }: { status: Status; mo
   const [query, setQuery] = useState("");
   const [newTool, setNewTool] = useState("");
 
+  const [partial, setPartial] = useState(false); // partial enhancement chosen, running or waiting under enhanced mode
+  const refresh = () => EnhancedService.Partial().then(setPartial);
+  useEffect(() => { refresh(); }, [mode]);
   const load = useCallback(() => SettingsService.ProcessChoices().then((c) => setChoices(c ?? [])), []);
-  const partial = mode === "process-tun";
   usePoll(load, 5000, status.running && partial);
 
   const run = (key: string, p: Promise<unknown>) => {
     setBusy(key);
-    p.finally(() => setBusy(""));
+    p.finally(() => { setBusy(""); refresh(); });
   };
   const picked = processes ?? [];
   const has = (exec: string) => picked.some((p) => p.toLowerCase() === exec.toLowerCase());
@@ -54,7 +57,7 @@ export default function Processes({ status, mode, rooted }: { status: Status; mo
   const shown = rows.filter((r) => !q || matches(r) || kids(r.exec).some(matches));
   const showTools = !q || "shell tools".includes(q) || toolNames.some((t) => t.includes(q));
   const off = !status.running || !!busy || !rooted;
-  const partialState = busy === "partial" ? "切换中…" : !rooted ? "需先在「通用」中授予 root 权限" : !partial ? "选中的应用及其子进程经 TUN 按规则分流，其他应用照常遵循系统代理" : picked.length === 0 ? "还没有选择应用，暂不接管" : `已增强 ${picked.length} 个应用`;
+  const partialState = busy === "partial" ? "切换中…" : !rooted ? "需先在「通用」中授予 root 权限" : !partial ? "选中的应用及其子进程经 TUN 按规则分流，其他应用照常遵循系统代理" : mode === "tun" ? "增强模式已接管全部流量，关闭后恢复部分增强" : picked.length === 0 ? "尚未选择应用，暂不接管" : `已增强 ${picked.length} 个应用`;
 
   return (
     <>
@@ -62,7 +65,7 @@ export default function Processes({ status, mode, rooted }: { status: Status; mo
       <div className="plist">
         <div className="plist-row static">
           <div className="plist-main"><div className="plist-name">增强模式</div><div className="muted small">{busy === "enh" ? "切换中…" : !rooted ? "需先在「通用」中授予 root 权限" : mode === "tun" ? "TUN 已接管全部流量" : "以 TUN 接管全部流量，包括不遵循系统代理的应用"}</div></div>
-          <Switch on={mode === "tun"} disabled={off} onChange={(v) => run("enh", EnhancedService.SetMode(v ? "tun" : ""))} />
+          <Switch on={mode === "tun"} disabled={off} onChange={(v) => run("enh", EnhancedService.SetFull(v))} />
         </div>
       </div>
 
@@ -70,7 +73,7 @@ export default function Processes({ status, mode, rooted }: { status: Status; mo
       <div className="plist">
         <div className="plist-row static">
           <div className="plist-main"><div className="plist-name">部分增强</div><div className="muted small">{partialState}</div></div>
-          <Switch on={partial} disabled={off} onChange={(v) => run("partial", EnhancedService.SetMode(v ? "process-tun" : ""))} />
+          <Switch on={partial} disabled={off} onChange={(v) => run("partial", EnhancedService.SetPartial(v))} />
         </div>
       </div>
 

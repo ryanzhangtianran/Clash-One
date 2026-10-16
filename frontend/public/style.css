@@ -28,9 +28,10 @@
   --control-h: 28px;
   --gap: 12px; /* between floating cards, and from them (and the sidebar) to the window edge */
   --chrome: calc(40px + 6px + var(--gap)); /* topbar + page padding */
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", system-ui, sans-serif;
   --rounded: ui-rounded, "SF Pro Rounded", -apple-system, "PingFang SC", system-ui, sans-serif; /* numbers */
   color-scheme: light dark;
-  font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", system-ui, sans-serif;
+  font: 13px/1.35 var(--sans);
   color: var(--text);
 }
 @media (prefers-color-scheme: dark) {
@@ -69,17 +70,17 @@ button { font: inherit; color: inherit; }
 }
 .sidebar .item {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; margin-bottom: 4px;
-  border: 0; border-radius: 8px; background: none; text-align: left; font-size: 14px; font-weight: 500;
+  border: 0; border-radius: 8px; background: none; text-align: left; font-size: 14px; font-weight: 400;
   --wails-draggable: no-drag;
 }
 .sidebar .item:hover { background: var(--hover); }
-.sidebar .item.active { background: var(--active); }
+.sidebar .item.active { background: var(--active); font-weight: 500; }
 .nav-icon { width: 17px; height: 17px; flex: none; color: var(--text-2); }
 .sidebar .item.active .nav-icon { color: var(--accent); }
 
 /* main */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.topbar { height: 40px; flex: none; display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; padding: var(--gap) var(--gap) 0; /* pills' tops level with the sidebar's */ --wails-draggable: drag; }
+.topbar { height: 40px; flex: none; display: flex; align-items: flex-start; gap: 8px; padding: var(--gap) var(--gap) 0 28px; /* pills at the left in line with the cards (.page), their tops level with the sidebar's */ --wails-draggable: drag; }
 .pill {
   display: flex; align-items: center; gap: 6px; min-width: 96px; justify-content: center; padding: 3px 12px;
   border: 0; border-radius: 999px; background: var(--pill); font-size: 12px; font-weight: 500;
@@ -88,6 +89,7 @@ button { font: inherit; color: inherit; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: #8e8e93; flex: none; }
 .dot.on { background: var(--good); }
 .dot.warn { background: var(--warn); }
+.dot.part { background: var(--warn); } /* partial enhancement: orange, as on the tray icon */
 .menu.events-menu { left: 0; width: 380px; max-height: 420px; overflow: auto; padding: 12px 16px; border-radius: 14px; }
 .events-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 13px; color: var(--text-2); }
 .events-head .link, .events-head .link:hover { display: inline; width: auto; border: 0; background: none; padding: 0; font-size: 12px; color: var(--accent); }
@@ -96,27 +98,39 @@ button { font: inherit; color: inherit; }
 .event-meta .dot { width: 7px; height: 7px; background: var(--text-2); }
 .event-row.error .event-meta .dot { background: var(--bad); } .event-row.warning .event-meta .dot { background: var(--warn); }
 .event-text { margin-top: 3px; font-size: 13px; line-height: 1.45; word-break: break-word; }
-.topbar .events { margin-right: auto; position: relative; --wails-draggable: no-drag; }
+.topbar .events { position: relative; --wails-draggable: no-drag; }
 .pill.small { min-width: 0; color: var(--text-2); }
 .pill .dot { width: 6px; height: 6px; }
-.page { flex: 1; overflow: auto; padding: 6px 20px var(--gap); } /* a wider margin beside the sidebar than between cards */
+.page { flex: 1; overflow: auto; padding: 18px 28px 28px; } /* a wider margin beside the sidebar than between cards */
 .hint { margin-top: 10px; max-width: 640px; font-size: 12px; line-height: 1.5; color: var(--text-2); text-wrap: pretty; }
 .hint b { color: var(--text); font-weight: 600; }
 
 /* header facts */
-.facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gap); margin: 4px 0 20px; padding: 0 16px; }
+.facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 4px 0 20px; padding: 0 20px; } /* in line with the cards' columns and text */
 .fact { min-width: 0; }
 .fact .label { font-size: 12px; color: var(--text-2); }
-.fact .value { font-size: 17px; font-weight: 600; letter-spacing: -0.2px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fact .value { font-size: 15px; font-weight: 500; letter-spacing: 0; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .menu { position: absolute; z-index: 10; margin-top: 4px; padding: 4px; border-radius: 10px; background: var(--card); backdrop-filter: blur(30px); box-shadow: 0 8px 30px rgba(0,0,0,.18); border: 1px solid var(--line); }
 .menu button { display: flex; justify-content: space-between; gap: 16px; width: 100%; padding: 6px 12px; border: 0; border-radius: 6px; background: none; text-align: left; font-size: 13px; }
 .menu button:hover { background: var(--accent); color: #fff; }
 
 /* cards */
 /* activity fills the window: the top two rows share the spare height, the page scrolls only when too small */
-.activity { display: flex; flex-direction: column; height: calc(100vh - var(--chrome)); }
-.grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: minmax(auto, 1fr) minmax(auto, 1fr) auto; gap: var(--gap); } /* fills the window; small windows scroll */
-.grid .card { padding: 12px 16px; }
+.activity { display: flex; flex-direction: column; }
+/* every card at a set height so rows line up and nothing scrolls at the minimum
+   window size (app.go): figures across the top, then the charts, then the lists, which scroll */
+.grid {
+  display: grid; gap: 16px; /* not --gap: that also places the macOS window buttons */
+  grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: auto 190px 340px;
+  grid-template-areas:
+    "lat lat lat conn conn conn total total total exit exit exit"
+    "up up up down down down hours hours hours hours hours hours"
+    "rank rank rank rank watch watch watch watch tools tools tools tools"; /* figures in quarters, lists in thirds */
+}
+.cell { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.cell > .card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.card-scroll { flex: 1; min-height: 0; overflow: auto; margin: 6px -14px 0 0; padding-right: 14px; } /* its scrollbar in the card's padding, clear of the text */
+.grid .card { padding: 16px 20px; }
 .grid > .card { display: flex; flex-direction: column; }
 .grid .stats { margin-top: auto; padding-top: 12px; }
 .split { display: flex; justify-content: space-between; align-items: flex-end; margin-top: auto; padding-top: 14px; }
@@ -124,18 +138,15 @@ button { font: inherit; color: inherit; }
 .split-bar { display: flex; gap: 4px; height: 10px; margin-top: 8px; }
 .split-bar:empty { border-radius: 5px; background: var(--track); }
 .split-bar i { min-width: 6px; border-radius: 5px; }
-.span2 { grid-row: span 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; } /* the grid row doesn't grow with it: its list scrolls */
-.span2 > .card { flex: 1; }
-.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); }
 .card {
   position: relative; overflow: hidden; border-radius: 18px; background: var(--card); border: 1px solid var(--card-line);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); padding: 16px 18px; min-width: 0;
 }
 .card .label { font-size: 12px; color: var(--text-2); letter-spacing: 0.2px; display: flex; align-items: center; gap: 6px; }
 .card .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 20px; }
-.big { font-size: 34px; font-weight: 500; letter-spacing: -1px; line-height: 1.1; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.big { font-size: 30px; font-weight: 400; letter-spacing: -0.5px; line-height: 1.1; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .big small, .mid small { font-size: 13px; font-weight: 500; margin-left: 3px; letter-spacing: 0; color: var(--text-2); }
-.mid { font-size: 20px; font-weight: 500; letter-spacing: -0.3px; font-variant-numeric: tabular-nums; }
+.mid { font-size: 18px; font-weight: 400; letter-spacing: -0.2px; font-variant-numeric: tabular-nums; }
 .big, .mid, .fact .value, .rank .bytes, .tile .foot { font-family: var(--rounded); }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); align-items: baseline; }
 .stats > div { padding: 0 14px; border-left: 1px solid var(--line); }
@@ -163,17 +174,14 @@ button { font: inherit; color: inherit; }
 
 .seg { display: inline-flex; justify-self: start; padding: 2px; border-radius: 8px; background: var(--track); }
 .seg button { border: 0; border-radius: 6px; padding: 3px 16px; background: none; font-size: 12px; white-space: nowrap; }
-.seg button.on { background: var(--seg-on); color: #fff; font-weight: 600; }
+.seg button.on { background: var(--seg-on); color: #fff; font-weight: 500; }
 .seg.wide { display: flex; margin: 12px 0 8px; }
 .seg.wide button { flex: 1; padding-inline: 8px; }
 
 .rank { display: flex; flex-direction: column; gap: 10px; }
 .rank .row { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 10px; row-gap: 4px; min-height: 24px; }
-.rank.with-icons .row:not(.child) { grid-template-columns: 24px 1fr auto; }
+.rank.with-icons .row:not(.child) { grid-template-columns: 18px 1fr auto; }
 .rank.with-icons .row:not(.child) .client-icon { grid-row: span 2; } /* icon centred on name and bar */
-.rank .row.child { margin: 4px 0 0 34px; font-size: 12px; color: var(--text-2); }
-.rank .row.child .name, .rank .row.child .bytes { font-size: 12px; color: var(--text-2); }
-.rank-toggle { display: flex; align-items: center; gap: 6px; margin: -4px 0 8px; font-size: 12px; color: var(--text-2); }
 .rank .name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rank .bytes { font-size: 13px; font-variant-numeric: tabular-nums; }
 .rank .bar { grid-column: 1 / -1; height: 3px; border-radius: 2px; background: var(--track); overflow: hidden; }
@@ -371,7 +379,7 @@ tr.muted td.rule-actions { text-decoration: none; }
 .field-input { width: 220px; flex: none; }
 .sheet-body.diag { padding-top: 16px; font: 13px/1.6 var(--mono); user-select: text; -webkit-user-select: text; }
 .diag-section + .diag-section { margin-top: 14px; }
-.diag-title { font: 600 13px -apple-system, "PingFang SC", system-ui, sans-serif; margin-bottom: 2px; }
+.diag-title { font: 500 13px var(--sans); margin-bottom: 2px; }
 .diag-title.bad { color: var(--bad); }
 .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--track); border-top-color: var(--text-2); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -392,14 +400,13 @@ tr.muted td.rule-actions { text-decoration: none; }
 .ranking { display: flex; flex-direction: column; min-height: 0; }
 /* four rows tall (24px rows, 10px gaps), scrolling a row at a time; laid out absolutely so a long
    list doesn't add to the card's height: WebKit sizes the grid's fr rows from content */
-.rank-scroll { flex: none; height: calc(4 * 24px + 3 * 10px); position: relative; }
-.rank-scroll > .rank { position: absolute; inset: 0; overflow-y: auto; scroll-snap-type: y mandatory; }
-.rank-scroll > .rank > div { scroll-snap-align: start; }
+.rank-scroll { flex: 1; min-height: 0; margin-top: 12px; overflow: hidden; } /* eight rows, whole */
+
 .ranking .head { margin-bottom: 4px; }
-.client-icon { width: 24px; height: 24px; flex: none; }
+.client-icon { width: 18px; height: 18px; flex: none; }
 .client-icon.device { display: grid; place-items: center; border-radius: 6px; background: var(--track); color: var(--text-2); }
-.client-icon.device svg { width: 16px; height: 16px; }
-.hours { position: relative; flex: 1; min-height: 80px; margin: 12px 0 10px; } /* takes the card's spare height: the ranking below is exactly four rows */
+.client-icon.device svg { width: 12px; height: 12px; }
+.hours { position: relative; flex: 1; min-height: 0; margin-top: 24px; } /* the card's height under its head, room above for the top gridline's label */
 .hours-grid { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--line); }
 .hours-grid span { position: absolute; right: 0; bottom: 2px; font: 500 10px var(--rounded); color: var(--text-2); }
 .hours-bars { position: absolute; inset: 0 0 18px; display: flex; align-items: flex-end; gap: 4px; }
@@ -435,12 +442,59 @@ tr.muted td.rule-actions { text-decoration: none; }
 .diag-controls select { flex: 1; }
 .diag-log { min-height: 220px; }
 .rank.with-icons .row:not(.child) .bar { grid-column: 2 / 4; }
+/* activity tools: exit IP, process monitor, diagnosis and repair */
+.picker {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 60%; height: 24px; padding: 0 10px;
+  border: 0; border-radius: 6px; background: var(--track); font-size: 12px; cursor: pointer;
+}
+.picker span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker svg { flex: none; color: var(--text-2); }
+.picker:hover { background: var(--active); }
+.menu.picker-menu { position: fixed; margin: 0; max-height: 280px; overflow: auto; }
+.menu.picker-menu button { font-size: 12px; padding: 5px 10px; }
+.menu.picker-menu button.current { font-weight: 500; color: var(--accent); }
+.menu.picker-menu button.current:hover { color: #fff; }
+.tool-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; height: 100%; }
+.tools-card .btn { width: 72px; height: 24px; padding: 0; font-size: 12px; border-radius: 6px; } /* one width everywhere, so the column of buttons lines up */
+.tool-row { display: grid; grid-template-columns: auto minmax(0, 1fr) 72px; align-items: center; gap: 10px; min-height: 40px; border-top: 1px solid var(--line); font-size: 12px; }
+.tool-title { color: var(--text); }
+.tool-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-action { display: flex; justify-content: center; } /* a status centred over the buttons' column */
+.tool-log { font: 12px/1.6 var(--sans); color: var(--text-2); user-select: text; -webkit-user-select: text; }
+.tool-log .diag-title { font-size: 12px; color: var(--text); }
+.tool-log .diag-title.bad { color: var(--bad); }
+.tool-log .diag-section + .diag-section { margin-top: 10px; }
+.tools-card .setting-row { gap: 8px; padding: 8px 0; font-size: 12px; }
+.ip-big { margin-top: 6px; font: 400 22px/1.2 var(--rounded); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.exit-stats { grid-template-columns: auto minmax(0, 1fr); } /* the place is short; the ISP takes the rest */
+.exit-stats > div { padding: 0 12px; }
+.exit-stats > div:first-child { padding-left: 0; }
+.exit-value { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.head-actions { display: flex; align-items: center; gap: 12px; }
+.link-btn { border: 0; background: none; padding: 0; font-size: 12px; color: var(--accent); cursor: pointer; }
+.link-btn:disabled { opacity: 0.5; }
+.link-btn.danger { color: var(--bad); }
+.leak-servers { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 12px; text-align: right; }
+.exit-error { margin-top: 8px; color: var(--bad); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.watch-route { display: flex; flex-direction: column; gap: 3px; padding: 10px 0; border-top: 1px solid var(--line); }
+.watch-route:first-child { border-top: 0; padding-top: 0; }
+.watch-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.watch-exit { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watch-chain { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .deploy-log { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--card); max-height: 180px; overflow: auto; font-size: 12px; }
 
-/* Linux: no native blur shows through the window, and the system draws the title bar */
+/* Linux: no native blur shows through the window, and the window is frameless, its buttons at the
+   topbar's end as GNOME places them, round like Adwaita's and as tall as the pills */
 .linux { --bg: #eef0f4; --panel: #ffffff; }
 @media (prefers-color-scheme: dark) { .linux { --bg: #1c1d21; --panel: #26272c; } }
 .linux .sidebar { padding-top: 10px; -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* Noto Sans, Linux's usual fallback, has only regular and bold, so every 500 and 600 above came out
+   bold; Ubuntu Sans has the whole weight range, Noto Sans CJK the Chinese */
+.linux { --sans: "Ubuntu Sans", "Noto Sans CJK SC", system-ui, sans-serif; --rounded: var(--sans); }
+.winbtns { display: flex; gap: 8px; margin-left: auto; --wails-draggable: no-drag; }
+.winbtns button { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: var(--pill); }
+.winbtns button:hover { background: var(--active); }
+.winbtns .nav-icon { width: 13px; height: 13px; color: var(--text); }
 
 /* password fields: the input plus a 显示 / 隐藏 toggle at its right edge */
 .pw { position: relative; display: flex; min-width: 0; }

@@ -103,7 +103,7 @@ func (s *SettingsService) ProcessChoices() []ProcessChoice {
 	if conns, err := s.core.connections(true); err == nil { // processes outside the scope are the ones to add
 		var network []ProcessChoice
 		for _, c := range conns {
-			if systemDaemon(c.Path) {
+			if systemDaemon(c.Path) || c.System {
 				continue
 			}
 			if c.Process != "" && !seen[strings.ToLower(c.Process)] {

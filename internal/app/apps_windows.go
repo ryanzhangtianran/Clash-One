@@ -1,12 +1,19 @@
 package app
 
 import (
+	"encoding/base64"
+	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"unsafe"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/w32"
+	"golang.org/x/sys/windows"
 )
 
 // runningApps lists the processes that have a window, as the user-facing apps. Exec is the image
@@ -41,9 +48,76 @@ func (s *SettingsService) PickApp() (ProcessChoice, error) {
 	return ProcessChoice{Name: strings.TrimSuffix(exe, filepath.Ext(exe)), Exec: exe, Source: "app"}, nil
 }
 
-// AppIcon is empty on Windows: the window shows the client's glyph instead.
-// ponytail: no icon extraction; add ExtractIconEx through x/sys/windows if the list looks bare.
-func (s *SettingsService) AppIcon(string) string { return "" }
+var winIcons, winNames sync.Map // executable path -> icon data URL / its description, "" when none
+
+// AppIcon is the icon of the executable at path, as a PNG data URL; "" when it has none, and the
+// window shows its glyph.
+func (s *SettingsService) AppIcon(path string) string {
+	if v, ok := winIcons.Load(path); ok {
+		return v.(string)
+	}
+	url := ""
+	if h := w32.ExtractIcon(path, 0); h > 1 { // 0: no icon, 1: not an executable
+		url = iconPNG(h)
+		w32.DestroyIcon(h)
+	}
+	winIcons.Store(path, url)
+	return url
+}
+
+// iconPNG is an icon as a PNG data URL, by way of a temporary file, which is how w32 converts one.
+func iconPNG(h w32.HICON) string {
+	f, err := os.CreateTemp("", "connaio-icon-*.png")
+	if err != nil {
+		return ""
+	}
+	name := f.Name()
+	f.Close()
+	defer os.Remove(name)
+	if w32.SaveHIconAsPNG(h, name) != nil {
+		return ""
+	}
+	b, err := os.ReadFile(name)
+	if err != nil {
+		return ""
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(b)
+}
+
+// appName is what the executable at path calls itself ("Google Chrome" for chrome.exe), as Linux
+// names an app from its .desktop entry; "" when it says nothing.
+func appName(path string) string {
+	if v, ok := winNames.Load(path); ok {
+		return v.(string)
+	}
+	name := fileDescription(path)
+	winNames.Store(path, name)
+	return name
+}
+
+// fileDescription reads FileDescription from an executable's version resource.
+func fileDescription(path string) string {
+	size, err := windows.GetFileVersionInfoSize(path, nil)
+	if err != nil || size == 0 {
+		return ""
+	}
+	buf := make([]byte, size)
+	block := unsafe.Pointer(&buf[0])
+	if windows.GetFileVersionInfo(path, 0, size, block) != nil {
+		return ""
+	}
+	var lang *[2]uint16 // the first language and code page the strings are in
+	var n uint32
+	if windows.VerQueryValue(block, `\VarFileInfo\Translation`, unsafe.Pointer(&lang), &n) != nil || n < 4 {
+		return ""
+	}
+	var text *uint16
+	key := fmt.Sprintf(`\StringFileInfo\%04x%04x\FileDescription`, lang[0], lang[1])
+	if windows.VerQueryValue(block, key, unsafe.Pointer(&text), &n) != nil || n == 0 {
+		return ""
+	}
+	return strings.TrimSpace(windows.UTF16PtrToString(text))
+}
 
 // procTable reads the process table: the windowed processes are the apps, as runningApps lists
 // them; one script, so the table is read once.
