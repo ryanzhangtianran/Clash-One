@@ -1,5 +1,5 @@
 # Builds the macOS (12+, Apple silicon) .dmg on macos-latest: Connaio.app with connaio-core inside,
-# ad-hoc signed, attached to the release of a pushed tag.
+# signed with the Apple Development identity in the secrets (ad-hoc without), attached to the release of a pushed tag.
 name: macos
 
 on:
@@ -62,7 +62,7 @@ jobs:
         run: |
           wails3 task darwin:package:dmg
           version=$(git describe --tags --abbrev=0 | sed 's/^v//')
-          mv bin/connaio.dmg "bin/Connaio-$version-macos-arm64.dmg"
+          mv bin/Connaio.dmg "bin/Connaio-$version-macos-arm64.dmg"
 
       - name: Test against the built core
         working-directory: Connaio

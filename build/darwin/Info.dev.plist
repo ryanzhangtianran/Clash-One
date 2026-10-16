@@ -6,7 +6,7 @@
         <key>CFBundleName</key>
             <string>Connaio</string>
         <key>CFBundleExecutable</key>
-            <string>connaio</string>
+            <string>Connaio</string>
         <key>CFBundleIdentifier</key>
             <string>com.ryanzhangtianran.connaio</string>
         <key>CFBundleVersion</key>

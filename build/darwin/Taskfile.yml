@@ -20,7 +20,7 @@ tasks:
           OBFUSCATED: '{{.OBFUSCATED}}'
           GARBLE_ARGS: '{{.GARBLE_ARGS}}'
     vars:
-      DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.APP_NAME}}'
+      DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.BUNDLE_NAME}}'
       OUTPUT: '{{ .OUTPUT | default .DEFAULT_OUTPUT }}'
 
   build:native:
@@ -48,7 +48,7 @@ tasks:
       VERSION:
         sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo 0.0.0
       BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -X github.com/ryanzhangtianran/Connaio/internal/app.appVersion={{.VERSION}}"{{end}}'
-      DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.APP_NAME}}'
+      DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.BUNDLE_NAME}}'
       OUTPUT: '{{ .OUTPUT | default .DEFAULT_OUTPUT }}'
     env:
       GOOS: darwin
@@ -95,7 +95,7 @@ tasks:
       - mv "bin/{{.APP_NAME}}-darwin-{{.DOCKER_ARCH}}" "{{.OUTPUT}}"
     vars:
       DOCKER_ARCH: '{{if eq .ARCH "arm64"}}arm64{{else if eq .ARCH "amd64"}}amd64{{else}}arm64{{end}}'
-      DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.APP_NAME}}'
+      DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.BUNDLE_NAME}}'
       OUTPUT: '{{ .OUTPUT | default .DEFAULT_OUTPUT }}'
       # Generate Docker volume mounts: Go module cache + go.mod replace directives
       # Uses wails3 tool docker-mounts for cross-platform compatibility (Windows/Linux/macOS)
@@ -108,11 +108,11 @@ tasks:
       - task: build
         vars:
           ARCH: amd64
-          OUTPUT: "{{.BIN_DIR}}/{{.APP_NAME}}-amd64"
+          OUTPUT: "{{.BIN_DIR}}/{{.BUNDLE_NAME}}-amd64"
       - task: build
         vars:
           ARCH: arm64
-          OUTPUT: "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
+          OUTPUT: "{{.BIN_DIR}}/{{.BUNDLE_NAME}}-arm64"
     cmds:
       - task: '{{if eq OS "darwin"}}build:universal:lipo:native{{else}}build:universal:lipo:go{{end}}'
 
@@ -120,15 +120,15 @@ tasks:
     summary: Creates universal binary using native lipo (macOS)
     internal: true
     cmds:
-      - lipo -create -output "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}-amd64" "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
-      - rm "{{.BIN_DIR}}/{{.APP_NAME}}-amd64" "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
+      - lipo -create -output "{{.BIN_DIR}}/{{.BUNDLE_NAME}}" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}-amd64" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}-arm64"
+      - rm "{{.BIN_DIR}}/{{.BUNDLE_NAME}}-amd64" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}-arm64"
 
   build:universal:lipo:go:
     summary: Creates universal binary using wails3 tool lipo (Linux/Windows)
     internal: true
     cmds:
-      - wails3 tool lipo -output "{{.BIN_DIR}}/{{.APP_NAME}}" -input "{{.BIN_DIR}}/{{.APP_NAME}}-amd64" -input "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
-      - rm -f "{{.BIN_DIR}}/{{.APP_NAME}}-amd64" "{{.BIN_DIR}}/{{.APP_NAME}}-arm64"
+      - wails3 tool lipo -output "{{.BIN_DIR}}/{{.BUNDLE_NAME}}" -input "{{.BIN_DIR}}/{{.BUNDLE_NAME}}-amd64" -input "{{.BIN_DIR}}/{{.BUNDLE_NAME}}-arm64"
+      - rm -f "{{.BIN_DIR}}/{{.BUNDLE_NAME}}-amd64" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}-arm64"
 
   package:
     summary: Packages the application into a `.app` bundle
@@ -156,7 +156,7 @@ tasks:
     platforms: [darwin]
     cmds:
       - >-
-        wails3 tool package --format dmg --name "{{.APP_NAME}}" --out "{{.BIN_DIR}}"
+        wails3 tool package --format dmg --name "{{.BUNDLE_NAME}}" --out "{{.BIN_DIR}}"
         --background "{{.DMG_BACKGROUND}}"
         --volume-icon "{{.DMG_VOLUME_ICON}}"
         --file-icon "{{.DMG_FILE_ICON}}"
@@ -177,7 +177,7 @@ tasks:
     cmds:
       # A reused bundle can acquire Finder metadata in synced folders. Build a
       # fresh bundle so codesign never has to replace a contaminated signature.
-      - test -n "{{.BIN_DIR}}" && test -n "{{.APP_NAME}}" && rm -rf -- "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app"
+      - test -n "{{.BIN_DIR}}" && test -n "{{.BUNDLE_NAME}}" && rm -rf -- "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app"
       - mkdir -p "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/MacOS"
       - mkdir -p "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/Resources"
       - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/Resources"
@@ -185,7 +185,7 @@ tasks:
         if [ -f build/darwin/Assets.car ]; then
           cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/Resources"
         fi
-      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/MacOS"
+      - cp "{{.BIN_DIR}}/{{.BUNDLE_NAME}}" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/MacOS"
       - cp "{{.BIN_DIR}}/connaio-core" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/MacOS"
       - sed "s/__VERSION__/{{.VERSION}}/g" build/darwin/Info.plist > "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.app/Contents/Info.plist" # the version is the git tag
       - task: '{{if eq OS "darwin"}}codesign:adhoc{{else}}codesign:skip{{end}}'
@@ -214,7 +214,7 @@ tasks:
   run:
     cmds:
       - wails3 tool prepare-macos-output --dir "{{.BIN_DIR}}"
-      - test -n "{{.BIN_DIR}}" && test -n "{{.APP_NAME}}" && rm -rf -- "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app"
+      - test -n "{{.BIN_DIR}}" && test -n "{{.BUNDLE_NAME}}" && rm -rf -- "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app"
       - mkdir -p "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS"
       - mkdir -p "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/Resources"
       - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/Resources"
@@ -222,13 +222,13 @@ tasks:
         if [ -f build/darwin/Assets.car ]; then
           cp build/darwin/Assets.car "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/Resources"
         fi
-      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS"
+      - cp "{{.BIN_DIR}}/{{.BUNDLE_NAME}}" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS"
       - cp "{{.BIN_DIR}}/connaio-core" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS"
       - cp "build/darwin/Info.dev.plist" "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/Info.plist"
       - xattr -cr "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app"
       - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app"
       - codesign --verify --deep --strict "{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app"
-      - '"{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS/{{.APP_NAME}}"'
+      - '"{{.BIN_DIR}}/{{.BUNDLE_NAME}}.dev.app/Contents/MacOS/{{.BUNDLE_NAME}}"'
 
   sign:
     summary: Signs the application bundle with Developer ID

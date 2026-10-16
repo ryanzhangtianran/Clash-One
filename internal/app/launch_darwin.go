@@ -24,6 +24,7 @@ func loginItemFile(exe string) string {
 <plist version="1.0">
 <dict>
 	<key>Label</key><string>%s</string>
+	<key>AssociatedBundleIdentifiers</key><array><string>com.ryanzhangtianran.connaio</string></array>
 	<key>ProgramArguments</key><array><string>%s</string></array>
 	<key>RunAtLoad</key><true/>
 </dict>

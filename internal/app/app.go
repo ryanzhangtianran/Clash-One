@@ -33,6 +33,11 @@ func Run(assets fs.FS, trayIcon []byte) error {
 	enhanced := &EnhancedService{core: svc.core, profiles: profiles, settings: settings}
 	devices := &DeviceService{core: svc, profiles: profiles}
 	settingsSvc := &SettingsService{core: svc, settings: settings}
+	if settingsSvc.LaunchAtLogin() {
+		// written afresh: the app may have moved or been renamed, and older entries lack what the
+		// system lists the item under (macOS 登录项与扩展)
+		_ = settingsSvc.SetLaunchAtLogin(true)
+	}
 	if err := profiles.WriteConfig(); err != nil {
 		log.Printf("build config: %v (keeping the previous config.yaml)", err)
 	}
