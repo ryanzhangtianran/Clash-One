@@ -251,6 +251,13 @@ func TestClientOfSystemService(t *testing.T) {
 			t.Errorf("unnamed connection from %s: %q", src, n)
 		}
 	}
+	cmd := "connaio-test-no-such-command" // no bundle, no process to find a parent app for
+	if runtime.GOOS != "darwin" {
+		name = cmd // Linux keeps a bare command's name
+	}
+	if n, _ := clientOf(Conn{Process: cmd, Path: "/opt/homebrew/bin/" + cmd}); n != name {
+		t.Errorf("a bare command: %q, want %q", n, name)
+	}
 	if n, _ := clientOf(Conn{Source: "192.0.2.9"}); n != "192.0.2.9" {
 		t.Errorf("a LAN device keeps its address: %q", n)
 	}

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -97,9 +98,13 @@ func TestTrayProcessRows(t *testing.T) {
 	conns[0].Upload, conns[1].Download = 400, 60
 	conns = append(conns, Conn{ID: "4", Path: chrome, Download: 1000}) // new since the last tick: counts in full
 	rows := processRows(conns, l.add(conns, now), active, now)
+	curl := procRow{name: "curl", icon: "/usr/bin/curl", rate: 10, total: 60}
+	if runtime.GOOS == "darwin" { // a bare command with no app above it is macOS's
+		curl.name, curl.icon = "macOS", "/System/Applications/System Settings.app"
+	}
 	want := []procRow{ // the idle device stays out
 		{name: "Google Chrome", icon: "/Applications/Google Chrome.app", rate: 1300, total: 1400},
-		{name: "curl", icon: "/usr/bin/curl", rate: 10, total: 60},
+		curl,
 	}
 	if !slices.Equal(rows, want) {
 		t.Fatalf("got %+v\nwant %+v", rows, want)

@@ -252,6 +252,10 @@ func clientOf(c Conn) (name, icon string) {
 			name = strings.TrimSuffix(filepath.Base(b), ".app")
 		}
 		name = cmp.Or(appName(p), name) // a command counts towards the application it was started from
+	} else if runtime.GOOS == "darwin" && name != "" {
+		// no bundle and no app above it: a command gone before its parent was looked up (git's
+		// git-remote-http, npm's node) or one launchd started; macOS's, as the daemons are
+		return "macOS", "/System/Applications/System Settings.app"
 	}
 	return cmp.Or(name, c.Source, "-"), icon
 }
